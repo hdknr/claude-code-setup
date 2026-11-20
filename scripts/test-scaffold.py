@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """`scaffold.py` の回帰テスト。
 
-    python3 scripts/test-scaffold.py
+    python3 scripts/test-scaffold.py            # 試料と変異を作業者 4 つ（CPU が少なければその数）で同時に当てる
+    python3 scripts/test-scaffold.py --jobs 1   # 1 つずつ当てる（check-all.py --jobs 1 が渡す）
 
 **本体はプラグインの中にある**（`plugins/spec-loop/scripts/`）。`test-check-spec-exit.py` と同じ形。
 
@@ -69,8 +70,12 @@
 """
 from __future__ import annotations
 
+import argparse
 import ast
+import concurrent.futures
+import contextvars
 import copy
+import functools
 import hashlib
 import json
 import os
@@ -99,6 +104,9 @@ DEV_LOOP_SKILL = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "S
 LEGACY_MARKERS = ("<!-- spec-loop-handoff: v2 -->", "<!-- spec-loop-handoff: v1 -->")
 # dev-loop が手元の中間表現から機能の指紋を出すスクリプト——`scaffold.py` の `fingerprint` の写しを持つ
 DEV_FINGERPRINT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "spec-fingerprint.py"
+# 試料が走らせる dev-loop のスクリプト。dev-loop の側の変異は、その試料を当てる作業者の中でだけ差し替える（#1361）——
+# グローバルを書き換えると、同時に走るほかの試料が壊したスクリプトで照合してしまう
+DEV_SCRIPT: contextvars.ContextVar[Path] = contextvars.ContextVar("DEV_SCRIPT", default=DEV_FINGERPRINT)
 FINGERPRINT = re.compile(r"`([^`]+)` の `(F-[0-9]+)`（機能の指紋: `([0-9a-f]{64})`）")
 
 HEADER = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
@@ -1408,7 +1416,7 @@ def merge_with_script(repo: Path, out: str = "build/merged", *extra: str) -> Pat
 
 def dev_fingerprint(ir_path: Path, feature: str) -> tuple[int, str]:
     """dev-loop の照合（`spec-gap.md`）が走らせるスクリプトを、そのまま当てる。"""
-    proc = subprocess.run([sys.executable, "-I", str(DEV_FINGERPRINT), str(ir_path), feature],
+    proc = subprocess.run([sys.executable, "-I", str(DEV_SCRIPT.get()), str(ir_path), feature],
                           capture_output=True, text=True)
     return proc.returncode, proc.stdout.strip()
 
@@ -5482,18 +5490,90 @@ def copy_scripts(dest: Path, source: str | None = None) -> Path:
     return dest
 
 
+# **試料と変異は作業者のプールで同時に当てる**（#1361）——直列に 1 件ずつ当てていて、CI の spec-loop-generate の半分（438 秒）を
+# この 1 本が占めていた。試料と変異は、それぞれ別の一時ディレクトリで子プロセスを走らせるので互いに独立している。
+# **プロセスではなくスレッド**——試料はラムダ・クロージャを持ち、spawn のプロセスへは渡せない。仕事の大半は子プロセスの待ちで GIL を放す。
+# **結果は渡した順に `check` する**（終わった順ではない）——失敗の行の並びは直列のときと同じ。
+# **`--jobs N` で絞る**——`check-all.py` が入れ子として親の半分を渡す（`NESTED`）。上限は `test-ledger.py` と同じ 4。
+JOBS_MAX = max(1, min(4, os.cpu_count() or 1))
+JOBS = JOBS_MAX
+pool_sizes: list[int] = []
+
+
+class _Pool(concurrent.futures.ThreadPoolExecutor):
+    """試料と変異の作業者のプール。**渡された作業者の数を `pool_sizes` に残す**（`--pool-size` が出す）。"""
+
+    def __init__(self, max_workers, **kwargs):
+        pool_sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+def run_jobs(jobs: list[Callable[[], tuple[bool, str]]]) -> list[tuple[bool, str]]:
+    """`jobs` を `JOBS` 個の作業者で当て、結果を**渡した順に**返す。"""
+    with _Pool(max_workers=JOBS) as pool:
+        return list(pool.map(lambda job: job(), jobs))
+
+
+def with_dev_script(script: Path, job: Callable[[], tuple[bool, str]]) -> tuple[bool, str]:
+    """dev-loop のスクリプトを `script` に差し替えて `job` を当てる——差し替えはこの作業者の中だけに効く（`DEV_SCRIPT`）。"""
+    token = DEV_SCRIPT.set(script)
+    try:
+        return job()
+    finally:
+        DEV_SCRIPT.reset(token)
+
+
+def mutated_run(scripts_dir: Path, work: Path, case: Case, *, name: str | None = None, text: str | None = None,
+                source: str | None = None) -> tuple[bool, str]:
+    """本体の写しを作り（`name` を `text` に・`TARGET` を `source` に差し替え）、そこで `case` を当てる。作業者の中で呼ぶ。"""
+    mutated = copy_scripts(scripts_dir, source)
+    if name is not None:
+        (mutated / name).write_text(text, encoding="utf-8")
+    return run_case(mutated, work, case)
+
+
+def check_pool_size() -> None:
+    """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
+    （`test-check-deps-declared.py` と同じ形——受けた `--jobs` を使わなくても、遅く・速くなるだけで緑のままなので）。"""
+    for asked in (1, 99):
+        want = min(asked, JOBS_MAX)
+        proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
+                              capture_output=True, text=True, timeout=120)
+        got = proc.stdout.strip()
+        check(f"--jobs {asked} で試料と変異のプールに渡す作業者は {want}（出力: {got or '空'}・終了コード {proc.returncode}）",
+              proc.returncode == 0 and got == str(want))
+
+
 def main() -> int:
+    global JOBS
+    parser = argparse.ArgumentParser(description="scaffold.py の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=JOBS_MAX,
+                        help=f"試料と変異を同時に当てる作業者の数（既定と上限: {JOBS_MAX}。1 で 1 つずつ）")
+    parser.add_argument("--pool-size", action="store_true",
+                        help="試料と変異のプールに渡す作業者の数を出して終わる（試料の中で使う）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    JOBS = min(opts.jobs, JOBS_MAX)
+    if opts.pool_size:
+        run_jobs([])  # 試料と変異を当てる経路そのもの（`run_jobs`）でプールを作る——仕事が 0 件なので作業者は起きない
+        print(pool_sizes[-1] if pool_sizes else "")
+        return 0
     names = [case.name for case in CASES]
     assert len(names) == len(set(names)), "試料の名前が重複している"
     with tempfile.TemporaryDirectory(prefix="scaffold-test-") as tmp:
         tmp_path = Path(tmp)
         scripts = copy_scripts(tmp_path / "scripts")
         folds = case_folding(tmp_path)
-        for index, case in enumerate(CASES):
+        cases = []
+        for case in CASES:
             if case.name in FOLDING_CASES and not folds:
                 case = copy.copy(case)
                 (case.code, case.text), case.post = FOLDING_CASES[case.name], None
-            ok, detail = run_case(scripts, tmp_path / f"case{index}", case)
+            cases.append(case)
+        results = run_jobs([functools.partial(run_case, scripts, tmp_path / f"case{index}", case)
+                            for index, case in enumerate(cases)])
+        for case, (ok, detail) in zip(cases, results):
             check(f"試料が期待どおりでない: {case.name}", ok, detail)
 
         # references との突き合わせ
@@ -5644,7 +5724,17 @@ def main() -> int:
         by_name = {case.name: case for case in CASES}
         # 指紋の式の写しの、dev-loop の側だけを崩す（F。scaffold 側の変異は MUTATIONS にある）——
         # 本文の指紋は dev-loop のスクリプトで照合しているので、こちらだけ変えても落ちること
-        global DEV_FINGERPRINT
+        # 変異はまず全部を並べ（当て先が 1 箇所でないものはその場で失敗に数える）、作業者で同時に当て、宣言順に `check` する
+        planned: list[tuple[str, int | None, bool, str]] = []  # (失敗のときの文言, jobs の番号。当てないなら None, 当てないときの判定, 詳細)
+        jobs: list[Callable[[], tuple[bool, str]]] = []
+
+        def plan(message: str, job: Callable[[], tuple[bool, str]]) -> None:
+            planned.append((message, len(jobs), True, ""))
+            jobs.append(job)
+
+        def unreached(name: str, count: int) -> None:
+            planned.append((f"変異が届いていない: {name}", None, False, f"壊す箇所が {count} 回現れる"))
+
         dev_source = DEV_FINGERPRINT.read_text(encoding="utf-8")
         dev_mutations = (
             ("dev-loop の指紋の式をずらす", 'separators=(",", ":"))', 'separators=(", ", ":"))', "本文から辿れる"),
@@ -5656,54 +5746,56 @@ def main() -> int:
         for index, (name, before, after, killer) in enumerate(dev_mutations):
             count = dev_source.count(before)
             if count != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                unreached(name, count)
                 continue
             mutated_dev = tmp_path / f"mutdev{index}" / "spec-fingerprint.py"
             assert_in_tmp(mutated_dev)
             mutated_dev.parent.mkdir()
             mutated_dev.write_text(dev_source.replace(before, after), encoding="utf-8")
-            real_dev, DEV_FINGERPRINT = DEV_FINGERPRINT, mutated_dev
-            try:
-                ok, detail = run_case(scripts, tmp_path / f"mutdevwork{index}", by_name[killer])
-            finally:
-                DEV_FINGERPRINT = real_dev
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+            plan(f"変異が生き残った: {name}（{killer} で殺せるはず）",
+                 functools.partial(with_dev_script, mutated_dev,
+                                   functools.partial(run_case, scripts, tmp_path / f"mutdevwork{index}", by_name[killer])))
         # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——scaffold は写しを持たずにそれを読む（#404）
         checker = (SCRIPTS / CHECKER).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(CHECKER_MUTATIONS):
             count = checker.count(before)
             if count != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                unreached(name, count)
                 continue
-            mutated = copy_scripts(tmp_path / f"checker-mut{index}")
-            (mutated / CHECKER).write_text(checker.replace(before, after), encoding="utf-8")
-            ok, detail = run_case(mutated, tmp_path / f"checker-mutwork{index}", by_name[killer])
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+            plan(f"変異が生き残った: {name}（{killer} で殺せるはず）",
+                 functools.partial(mutated_run, tmp_path / f"checker-mut{index}", tmp_path / f"checker-mutwork{index}",
+                                   by_name[killer], name=CHECKER, text=checker.replace(before, after)))
         design_source = (SCRIPTS / DESIGN).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(DESIGN_MUTATIONS):
             count = design_source.count(before)
             if count != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                unreached(name, count)
                 continue
-            mutated = copy_scripts(tmp_path / f"design-mut{index}")
-            (mutated / DESIGN).write_text(design_source.replace(before, after), encoding="utf-8")
-            ok, detail = run_case(mutated, tmp_path / f"design-mutwork{index}", by_name[killer])
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+            plan(f"変異が生き残った: {name}（{killer} で殺せるはず）",
+                 functools.partial(mutated_run, tmp_path / f"design-mut{index}", tmp_path / f"design-mutwork{index}",
+                                   by_name[killer], name=DESIGN, text=design_source.replace(before, after)))
         unknown = sorted(set(FOLDING_ONLY) - {name for name, *_ in MUTATIONS})
-        check("FOLDING_ONLY に MUTATIONS に無い変異の名前がある", not unknown, f"{unknown}")
+        planned.append(("FOLDING_ONLY に MUTATIONS に無い変異の名前がある", None, not unknown, f"{unknown}"))
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                unreached(name, count)
                 continue
             if name in FOLDING_ONLY and not folds:
                 # 当てていない——緑には数えず、当てなかったことを出す（数は最後の行にも出る）
                 skipped.append(name)
                 print(f"変異を当てなかった: {name}（{FOLDING_ONLY[name]}。この一時ディレクトリは大文字小文字を区別する）")
                 continue
-            mutated = copy_scripts(tmp_path / f"mut{index}", source.replace(before, after))
-            ok, detail = run_case(mutated, tmp_path / f"mutwork{index}", by_name[killer])
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+            plan(f"変異が生き残った: {name}（{killer} で殺せるはず）",
+                 functools.partial(mutated_run, tmp_path / f"mut{index}", tmp_path / f"mutwork{index}", by_name[killer],
+                                   source=source.replace(before, after)))
+        results = run_jobs(jobs)
+        for message, k, fixed, detail in planned:  # 宣言順（終わった順ではない）
+            if k is None:
+                check(message, fixed, detail)
+            else:
+                ok, detail = results[k]
+                check(message, not ok, detail)
 
         # -OO（docstring が無い）で引数なしに呼んでも、想定外の例外にもトレースバックにもならない（#286）。
         # 引数なしは今のディレクトリを正本として読むので、空のディレクトリでは docs/ が無くて 2
@@ -5722,6 +5814,7 @@ def main() -> int:
             mutated = copy_scripts(tmp_path / "entry-mut", source.replace(ENTRY_GUARD, ENTRY_GUARD.replace("Exception", "ImportError")))
             caught, output = entry_caught(mutated / TARGET, tmp_path / "oo")
             check("変異が生き残った: 入口で想定外の例外を 2 に寄せない", not caught, output[-300:])
+    check_pool_size()
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")

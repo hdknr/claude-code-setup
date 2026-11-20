@@ -171,6 +171,9 @@ jobs:
       - name: 外部レビュー bot のコメントの取り出しのテスト（#997）
         run: python3 scripts/test-external-reviews.py
 
+      - name: コミットの検証の印の hook のテスト（#1192）
+        run: python3 scripts/test-commit-gate.py
+
       # 本体は CI から呼ばない（入力が利用者の ~/.claude にある）。テストだけ回す。
       - name: 不在の前の環境点検のテスト（#394）
         run: python3 scripts/test-check-unattended-env.py
