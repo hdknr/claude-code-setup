@@ -74,7 +74,7 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
 | **全角・半角の違い以外の表記ゆれ**（`F1-5B` と `F1-5b`・`F1‐5b`（別のハイフン）） | 別の番号として数える。NFKC で畳むのは全角の英数字とハイフンだけ |
 | **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
 | **「呼ぶ側の分岐」の行そのものが無い機能** | 機能の単位（仕様が書き分けている単位）を機械で決めない。行の無い機能は条件 2 の判定役（Red Team）が見る |
-| **3 つの形の外の「呼ぶ側の分岐」**（「呼ぶ側の分岐は次のとおり」のような本文・見出しの後ろに字が続く `呼ぶ側の分岐（受注）`）と、**`.md` 以外のファイルの行** | 行の形の決まり（`references/spec-exit.md`）の外は行と読まない——読まない行は揃いを見ない |
+| **4 つの形の外の「呼ぶ側の分岐」**（「呼ぶ側の分岐は次のとおり」のような本文・見出しの後ろに字が続く `呼ぶ側の分岐（受注）`）と、**`.md` 以外のファイルの行** | 行の形の決まり（`references/spec-exit.md`）の外は行と読まない——読まない行は揃いを見ない |
 | **分岐の項目の文の中身**（見せるものが仕様として足りるか・「該当なし」に理由があるか） | 触れているか（`:` の後ろに文があるか）だけを見る。中身は条件 2 の判定役が見る |
 | **4 字下げのコードブロックと HTML コメントの中の行** | フェンスのコードブロックの中だけを外す（テストケースの番号と同じ）。中の行も読んでしまう |
 """
@@ -248,10 +248,10 @@ CALLER_BRANCHES = tuple(f"{group}{particle}{predicate}" for group, preds in CALL
 CALLER_NONE = "該当なし"
 # まとめて書くときの区切り（`入力が欠ける・遅れる`）。NFKC の後なので全角の `／` は `/` になっている
 CALLER_JOINERS = re.compile(r"[・、/]")
-BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?")  # タスクリストのチェックボックスも外す
 BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 # 別の節を指す書き方（「[価格照会書を出力する] と同じ」）——文の末尾が「と同じ」
-REFERS = re.compile(r"と同じ[。.]?$")
+REFERS = re.compile(r"[\]」』]\s*と同じ")  # 角括弧・鉤括弧で名指した先と「同じ」（文の途中でも）
 
 
 def _bare(text: str) -> str:
@@ -292,6 +292,7 @@ def _caller_start(line: str) -> tuple[str, str] | None:
     heading = HEADING.match(text)
     if heading:
         title = _bare(text.strip().strip("#")).rstrip(":").strip()
+        title = re.sub(r"^[0-9]+(?:\.[0-9]+)*\.?\s+", "", _bare(title))  # 節の番号（`3.2 `）を外す
         return ("見出し", "") if _bare(title) == CALLER_LABEL else None
     stripped = text.strip()
     if stripped.startswith("|"):
@@ -353,15 +354,15 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
             at += 1
             continue
         kind, own = start
-        content = [own] if own else []
         follow = at + 1
         if kind == "表" and follow < len(lines) and SEPARATOR.fullmatch(lines[follow].strip()):
-            # 先頭の列の見出しが `呼ぶ側の分岐` の表——続く表の行（先頭のセルが分岐の書き方）が中身
-            follow += 1
-            while follow < len(lines) and lines[follow].strip().startswith("|"):
-                content.append(lines[follow])
-                follow += 1
-        elif kind != "表":
+            # 先頭の列の見出しが `呼ぶ側の分岐` の表——見出し行のほかのセルは列の名前で、続く表の行（先頭のセルが分岐の書き方）が中身
+            kind = "表の見出し"
+            content, follow = _table_body(lines, follow + 1)
+        elif kind == "表":
+            content = [cell for cell in own.split("|") if cell.strip()]  # セルごとに項目（`<br>` でも分ける）
+        else:
+            content = [own] if own else []
             inner = None  # 中身の途中のコードブロック（中は読まずに飛ばし、行は閉じない）
             while follow < len(lines):
                 nxt = lines[follow]
@@ -375,7 +376,13 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
                     inner = fenced.group(1)
                     follow += 1
                     continue
-                if _caller_start(nxt) is not None:
+                nested = _caller_start(nxt)
+                if nested is not None and nested[0] == "表" and follow + 1 < len(lines) and SEPARATOR.fullmatch(lines[follow + 1].strip()):
+                    # 見出しの下の、先頭の列の見出しが `呼ぶ側の分岐` の表は、この行の中身（別の行にしない）
+                    body, follow = _table_body(lines, follow + 2)
+                    content += body
+                    continue
+                if nested is not None:
                     break
                 if HEADING.match(unicodedata.normalize("NFKC", nxt)):
                     break
@@ -387,13 +394,12 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
                         break
                 content.append(nxt)
                 follow += 1
-        else:
-            follow = at + 1
         touched: set[str] = set()
         unread: list[str] = []
         whole_none = False
         refers = False
-        first = True  # 中身の最初の空でない部分か——行ごと該当なしは、中身が `該当なし` で始まるときだけ
+        first = True  # 中身の最初の空でない部分か——行ごと該当なしは、中身が `該当なし` で始まり、分岐の項目を持たないときだけ
+        labelled = False  # 分岐の書き方の項目を 1 つでも持つか
         for part in (piece for entry in content for piece in BREAK.split(entry)):
             item = _caller_item(part)
             plain = _bare(BULLET.sub("", unicodedata.normalize("NFKC", part).strip()).strip("|"))
@@ -407,6 +413,7 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
                     refers = True
                 continue
             label, rest = item
+            labelled = True
             names, bad = caller_label(label)
             text_of = _bare(rest.strip("|"))
             if bad:
@@ -415,10 +422,24 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
                 refers = True  # 別の節を指す書き方は、分岐の項目の文でも触れない
             elif text_of:
                 touched |= names
+        whole_none = whole_none and not labelled
         missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
-        rows.append((at + 1, missing, unread, refers))
+        # 表の行で、分岐の書き方も「該当なし」も別の節も持たないもの（`| 呼ぶ側の分岐 | 下の節 |`）は、ほかの行を指す案内——ほかに行があれば行に数えない
+        pointer = kind == "表" and not labelled and not whole_none and not refers
+        rows.append((at + 1, missing, unread, refers, pointer))
         at = follow
-    return rows
+    if any(not row[4] for row in rows):
+        rows = [row for row in rows if not row[4]]
+    return [row[:4] for row in rows]
+
+
+def _table_body(lines: list[str], at: int) -> tuple[list[str], int]:
+    """`at` から続く表の行（`|` で始まる行）と、その次の行の番号。"""
+    body = []
+    while at < len(lines) and lines[at].strip().startswith("|"):
+        body.append(lines[at])
+        at += 1
+    return body, at
 
 
 def caller_problems(path: Path, text: str) -> list[str]:
