@@ -48,10 +48,10 @@ main へのマージ → GitHub Pages の再ビルド（`docs/plugins/spec-loop.
 
 1. **一から作る案件の合図**: `scaffold.py --foundation`（旗）。スキルが利用者に確かめ、一から作ると答えたときだけ付ける。**v1 でだけ使える**（v2 以降・`--check`・`--red-check` との組み合わせは 2）。
    - 選択肢: A 旗（推奨）／B 中間表現のキー（`"foundation": true`）。推奨の理由: 一から作るかは仕様ではなく案件の事情で、中間表現は「仕様に無いことを足さない」（spec-ir.md）。`--provisional` と同じ「利用者が決めて旗で渡す」形。B は仕様の写しに案件の事情を混ぜ、機能の指紋の外のキーとして扱いを決め直す要がある。
-   - 確認の Issue を立てる。
+   - 確認の Issue: #1392。
 2. **土台の本文の印**: 1 行目は `<!-- spec-loop-foundation: v1 -->` で、handoff の印（`<!-- spec-loop-handoff: v3 -->`）を持たない——dev-loop はふつうの Issue として読む。`issues.json` の項目は `"foundation": true`、ほかの項目の `depends` は依存先の id として `foundation` を持つ。
    - 選択肢: A 独自の印・dev-loop はふつうの Issue と読む（推奨）／B handoff の印を付け、dev-loop の `spec-gap.md` に土台の本文の読み方を足す。推奨の理由: 土台の本文は機能の指紋・Red テストの sha256・受入基準の表を持たず、handoff の読み方（spec-gap.md）がそのまま当たらない。B は dev-loop の写し（spec-gap.md・test-scaffold の突き合わせ）と版を動かし、周を 2 つのプラグインにまたがせる。
-   - 確認の Issue を立てる。
+   - 確認の Issue: #1393。
 3. **依存に数える呼び出し**: 入出力のケースの `setup`・`after`（`seed` は除く）と、トレースのケースの `calls`・`setup`・`after`。Issue の提案 2 の「Red テストの呼び出しから依存を引く」に従い、トレースも Red テストの呼び出しなので含める（Issue の文の写し方で、穴ではない）。
 4. **循環の終了コード**: 中間表現の機能どうしで循環すれば 1（中間表現の問題。組とケースを名指しし、解き方を出す）。`--bundle` のまとめ方でだけ循環するなら今までどおり 2。循環する機能を `--bundle` で 1 件にまとめれば通る（組の中の依存は数えない——前からの決まり）。
 5. **土台で作る seed の線**: Red テストのケース（中間表現の `cases` の全部）の半分以上が使う seed（Issue の例のまま）。
@@ -94,6 +94,7 @@ BLOCKED: なし。
 
 - 周の在り処: ブランチ `issue/1347-scaffold-foundation-depends`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1347`・起点 `33de1e80`・base `origin/main` = `33de1e800c75c6f34a074b8a5cd789c3c9e313b8`
 - 直す線: 既定（出所: cruise の台帳の確かめた線）
+- PR: #1391
 - 割り目: 割らない（cruise の周）。手順 4 の割り目は訊かずに続けた。
 - 実験: A3・A4・A5 の陽性対照（下の「歯止め」）。交絡: 同じ試料（`test-scaffold.py` の `CASES` の中間表現を `build` で置いた正本）・同じ `python3 -I`・本体だけが違う（base `33de1e80` を `git archive` で写した `scripts/` と HEAD）。
 - 既存の試料の直し: 在庫の `staged_ir`（F-004 ⇄ F-005）・文書の例の「前提と後の状態」（F-006 ⇄ F-007）・「実行ごとに変わる出力」（F-009 ⇄ F-010）が循環していたので、Issue の移し方で循環しない形に直した
@@ -115,7 +116,7 @@ BLOCKED: なし。
 
 ## 手順 8
 
-- この周の起票: 2 件（確認の Issue——一から作る案件の合図・土台の本文の印。仕様の穴の線で推奨により決めた）
+- この周の起票: 2 件（確認の Issue #1392・#1393——一から作る案件の合図・土台の本文の印。仕様の穴の線で推奨により決めた）
 
 ## 関門の記録
 
