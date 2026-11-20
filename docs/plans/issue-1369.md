@@ -56,6 +56,7 @@ main へのマージ → GitHub Pages の再ビルド（`docs/plans/` はサイ�
 
 - 周の在り処: ブランチ `issue/1369-qa-to-pptx-sleep`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1369`・起点 `9fe42333`・base は `origin/main`（refs/remotes/origin/HEAD）を解決した `9fe4233329b7b77d32ecb703332d205d2f6b61e8`
 - 直す線: 既定（出所: 手順 3 の回答 2026-11-20）
+- 実装: `cd402cda`。割り目（手順 4）は `AskUserQuestion` で「このまま続ける」（2026-11-20）
 - 関門: 未着手
 - 手元の実測（2026-11-20。load average 60 前後の負荷の中で 1 回ずつ）:
   - base: `observe` 1 回 2.3 秒のうち 2.1 秒が `time.sleep`（cProfile）。約 70 回で約 160 秒
