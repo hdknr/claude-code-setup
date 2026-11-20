@@ -35,11 +35,11 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
   **数えるのは重ねた後の全体**——後の版が同じファイルを置き換えたなら、置き換えられた前の版の行は全体に無いので重複に数えない
   （重ね方は `merge-versions.py`。このスクリプトは重ねない）。番号の形・どの列を番号と読むか・読まないものは `references/spec-exit.md` の
   「テストケースの番号の重複」を正とする。重複が無い仕様では出力も終了コードも変わらない。
-- **「呼ぶ側の分岐」の行が 8 分岐のどれかに触れていなければ 1**（#1340）——仕様の `.md` の、見出し・項目の行・表の行の形の「呼ぶ側の分岐」の行ごとに、
+- **「呼ぶ側の分岐」の行が 8 分岐のどれかに触れていなければ 1**（#1340）——仕様の `.md` の、見出し・項目の行・表の行・表の見出しの形の「呼ぶ側の分岐」の行ごとに、
   分岐（`CALLER_BRANCHES`）のうち触れていないものを、行（`ファイル:行`）と一緒に名指しする。**組の名前だけの項目（`量: …`）と別の節を指す書き方（「…と同じ」）は
   どの分岐にも触れない**（そう添えて出す）。**行の形・まとめて書く書き方・触れているの読み方は `references/spec-exit.md` の「呼ぶ側の分岐の行の形」を正とする。**
   **分岐の名前の原本はここ**で、`scaffold.py` の `BRANCHES`（課題一覧（案）の未決定事項）はこれを読む——検査器と scaffold は同じ定義で数える。
-  行の無い仕様では出力も終了コードも変わらない。
+  行の無い仕様では出力も終了コードも変わらない。`check(callers=False)` は見ない（`scaffold.py` の前の版の時点の `--upto`）。
 - 未決定の印（`MARKERS`）と、印に当たらない語（`NOT_MARKERS`）は `references/spec-exit.md` の写しで、
   **写しがずれていないかはこのリポジトリの `scripts/test-check-spec-exit.py` が突き合わせて見る**。
 
@@ -250,6 +250,8 @@ CALLER_NONE = "該当なし"
 CALLER_JOINERS = re.compile(r"[・、/]")
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# 別の節を指す書き方（「[価格照会書を出力する] と同じ」）——文の末尾が「と同じ」
+REFERS = re.compile(r"と同じ[。.]?$")
 
 
 def _bare(text: str) -> str:
@@ -353,10 +355,27 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
         kind, own = start
         content = [own] if own else []
         follow = at + 1
-        if kind != "表":
+        if kind == "表" and follow < len(lines) and SEPARATOR.fullmatch(lines[follow].strip()):
+            # 先頭の列の見出しが `呼ぶ側の分岐` の表——続く表の行（先頭のセルが分岐の書き方）が中身
+            follow += 1
+            while follow < len(lines) and lines[follow].strip().startswith("|"):
+                content.append(lines[follow])
+                follow += 1
+        elif kind != "表":
+            inner = None  # 中身の途中のコードブロック（中は読まずに飛ばし、行は閉じない）
             while follow < len(lines):
                 nxt = lines[follow]
-                if FENCE.match(nxt) or _caller_start(nxt) is not None:
+                fenced = FENCE.match(nxt)
+                if inner:
+                    if fence_closes(fenced, inner, nxt):
+                        inner = None
+                    follow += 1
+                    continue
+                if fenced:
+                    inner = fenced.group(1)
+                    follow += 1
+                    continue
+                if _caller_start(nxt) is not None:
                     break
                 if HEADING.match(unicodedata.normalize("NFKC", nxt)):
                     break
@@ -368,28 +387,37 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
                         break
                 content.append(nxt)
                 follow += 1
+        else:
+            follow = at + 1
         touched: set[str] = set()
         unread: list[str] = []
         whole_none = False
         refers = False
+        first = True  # 中身の最初の空でない部分か——行ごと該当なしは、中身が `該当なし` で始まるときだけ
         for part in (piece for entry in content for piece in BREAK.split(entry)):
             item = _caller_item(part)
             plain = _bare(BULLET.sub("", unicodedata.normalize("NFKC", part).strip()).strip("|"))
+            if not plain:
+                continue
+            leading, first = first, False
             if item is None or caller_label(item[0]) is None:
-                if plain.startswith(CALLER_NONE):
+                if leading and plain.startswith(CALLER_NONE):
                     whole_none = True
-                if "と同じ" in plain:
+                if REFERS.search(plain):
                     refers = True
                 continue
             label, rest = item
             names, bad = caller_label(label)
+            text_of = _bare(rest.strip("|"))
             if bad:
                 unread.append(_bare(label))
-            elif _bare(rest.strip("|")):
+            elif REFERS.search(text_of):
+                refers = True  # 別の節を指す書き方は、分岐の項目の文でも触れない
+            elif text_of:
                 touched |= names
         missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
-        rows.append((at + 1, missing, unread, refers and not touched and not whole_none))
-        at = follow if kind != "表" else at + 1
+        rows.append((at + 1, missing, unread, refers))
+        at = follow
     return rows
 
 
@@ -436,9 +464,10 @@ def screen_gate(spec_dir: Path, docs: Path | None, upto: int | None, named: str 
 
 
 def check(qa_path: Path, spec_dir: Path, docs: Path | None = None, upto: int | None = None,
-          named: str | None = None, screen: bool = True) -> tuple[int, list[str]]:
+          named: str | None = None, screen: bool = True, callers: bool = True) -> tuple[int, list[str]]:
     """(終了コード, 出力する行) を返す。`docs`・`upto`・`named` は画面の関門（`screen-gate.py`）に渡す。
-    `screen=False` は画面の関門を当てない——呼ぶ側（`scaffold.py`）が自分の条件で `screen-gate.py` を当てるとき。"""
+    `screen=False` は画面の関門を当てない——呼ぶ側（`scaffold.py`）が自分の条件で `screen-gate.py` を当てるとき。
+    `callers=False` は呼ぶ側の分岐の行の揃いを見ない——`scaffold.py` が前の版の時点（`--upto <n-1>`。凍結した版は直せない）を見るとき（#1340）。"""
     code, lines, rows = pptx.read_rows(qa_path)
     provisional = [row for row in rows if pptx.qa.is_provisional(row)]
     if code == 2:
@@ -483,7 +512,8 @@ def check(qa_path: Path, spec_dir: Path, docs: Path | None = None, upto: int | N
         if path.suffix == ".md":
             for number, case in case_numbers(text):
                 numbers.setdefault(case, []).append((path, number))
-            problems += caller_problems(path, text)
+            if callers:
+                problems += caller_problems(path, text)
     problems += duplicate_numbers(numbers)
 
     screen_code, screen_lines = screen_gate(spec_dir, docs, upto, named) if screen else (0, [])

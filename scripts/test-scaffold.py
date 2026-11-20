@@ -5622,6 +5622,8 @@ def main() -> int:
         # 分岐の名前の原本は check-spec-exit.py の CALLER_BRANCHES（#1340。条件 1 の揃いと課題一覧（案）の未決定事項を同じ定義で数える）——scaffold.py は読む
         check("scaffold.py の BRANCHES が check-spec-exit.py の CALLER_BRANCHES を読んでいない（写しを持つ）",
               re.search(r"^BRANCHES = spec_exit\.CALLER_BRANCHES$", source, flags=re.MULTILINE) is not None)
+        check("scaffold.py が前の版の時点（--upto）で呼ぶ側の分岐の揃いを見ている（凍結した版は直せない）",
+              "spec_exit.check(whole / QA_PATH, whole / SPEC_DIR, screen=False, callers=design_gate)" in source)
         exit_source = (SCRIPTS / "check-spec-exit.py").read_text(encoding="utf-8")
         exit_spec = importlib.util.spec_from_file_location("check_spec_exit_names", SCRIPTS / "check-spec-exit.py")
         exit_module = importlib.util.module_from_spec(exit_spec)

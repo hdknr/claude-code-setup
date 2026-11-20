@@ -323,6 +323,23 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
      {"order.md": CALLER_FULL + "- 呼ぶ側の分岐:\n  " + CALLER_GROUPED[0] + "\n"}, 1, "order.md:13: 呼ぶ側の分岐の行が 8 分岐のうち 5 分岐"),
     ("呼ぶ側の分岐: 2 つの行をそれぞれ名指しする", HEADER,
      {"order.md": CALLER_HEAD + CALLER_GROUPED[0] + "\n\n## 出荷\n\n- 呼ぶ側の分岐:\n  " + CALLER_GROUPED[2] + "\n"}, 1, "order.md:9: 呼ぶ側の分岐の行が 8 分岐のうち 6 分岐"),
+    # 1 パス目の指摘で足した試料（#1340）
+    ("呼ぶ側の分岐: 中身の途中の該当なしは行ごと該当なしでない", HEADER, {"order.md": CALLER_HEAD + "- 入力が欠ける: a\n該当なし以外は書いていない\n"}, 1,
+     "8 分岐のうち 7 分岐に触れていない"),
+    ("呼ぶ側の分岐: 列見出しが呼ぶ側の分岐の表を読む", HEADER,
+     {"order.md": "## 受注\n\n| 呼ぶ側の分岐 | 見せるもの |\n| --- | --- |\n" + "".join(f"| {item[2:].split(': ')[0]} | {item[2:].split(': ')[1]} |\n" for item in CALLER_ITEMS)},
+     0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 列見出しの表の欠けを名指しする", HEADER,
+     {"order.md": "## 受注\n\n| 呼ぶ側の分岐 | 見せるもの |\n| --- | --- |\n" + "".join(f"| {item[2:].split(': ')[0]} | {item[2:].split(': ')[1]} |\n" for item in CALLER_ITEMS[:-1])},
+     1, "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 1 分岐に触れていない（量が重なる）"),
+    ("呼ぶ側の分岐: 中身のコードブロックを挟んでも行を閉じない", HEADER,
+     {"order.md": CALLER_HEAD + CALLER_ITEMS[0] + "\n\n```\n例\n```\n\n" + "\n".join(CALLER_ITEMS[1:]) + "\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 分岐の項目の文が別の節を指せば触れない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(item.split(": ")[0] + ": [価格照会書を出力する] と同じ" for item in CALLER_GROUPED) + "\n"}, 1,
+     "8 分岐のうち 8 分岐に触れていない（入力が欠ける・入力が遅れる・入力の順が崩れる・呼ぶ処理が失敗する・呼ぶ処理がやり直される・呼ぶ処理が再起動する・量が上限を超える・量が重なる）"
+     "——分岐ごとに見せるものか「該当なし」と理由を書く。別の節を指す書き方（「…と同じ」）は認めない"),
+    ("呼ぶ側の分岐: 文の途中の「と同じ」は別の節を指す書き方でない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[:-1]) + "\n- 量が重なる: 入力は画面と同じ形式で 1 件ずつ受ける\n"}, 0, "条件 1 を満たす"),
     ("呼ぶ側の分岐: .md 以外のファイルの行は見ない", HEADER, {"order.md": CLEAN_SPEC, "rules.txt": CALLER_HEAD + CALLER_GROUPED[0] + "\n"}, 0, "条件 1 を満たす"),
     ("呼ぶ側の分岐: 形式検査のモデルの行は見ない", HEADER, {"order.md": CLEAN_SPEC, "formal/order/README.md": CALLER_HEAD + CALLER_GROUPED[0] + "\n"}, 0,
      "条件 1 を満たす"),
@@ -487,16 +504,24 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "呼ぶ側の分岐: 別の節を指す書き方は認めない"),
     ("読めない書き方を名指ししない", "            line += f\"。読めない分岐の書き方", "            line += f\"。分岐の書き方",
      "呼ぶ側の分岐: 組の名前だけの項目は触れない"),
-    ("行ごと該当なしを読まない", "                if plain.startswith(CALLER_NONE):\n                    whole_none = True",
-     "                if plain.startswith(CALLER_NONE):\n                    pass", "呼ぶ側の分岐: 項目の行の行ごと該当なしは通す"),
-    ("空の文も触れたと読む", '            elif _bare(rest.strip("|")):', "            else:", "呼ぶ側の分岐: 空の文の項目は触れない"),
+    ("行ごと該当なしを読まない", "                if leading and plain.startswith(CALLER_NONE):\n                    whole_none = True",
+     "                if leading and plain.startswith(CALLER_NONE):\n                    pass", "呼ぶ側の分岐: 項目の行の行ごと該当なしは通す"),
+    ("中身の途中の該当なしでも行ごと該当なしにする", "                if leading and plain.startswith(CALLER_NONE):", "                if plain.startswith(CALLER_NONE):",
+     "呼ぶ側の分岐: 中身の途中の該当なしは行ごと該当なしでない"),
+    ("空の文も触れたと読む", "            elif text_of:\n", "            else:\n", "呼ぶ側の分岐: 空の文の項目は触れない"),
+    ("分岐の項目の文の別の節を触れたと読む", "            elif REFERS.search(text_of):\n                refers = True", "            elif False:\n                refers = True",
+     "呼ぶ側の分岐: 分岐の項目の文が別の節を指せば触れない"),
+    ("列見出しの表を読まない", 'if kind == "表" and follow < len(lines) and SEPARATOR.fullmatch(lines[follow].strip()):',
+     'if False:', "呼ぶ側の分岐: 列見出しが呼ぶ側の分岐の表を読む"),
+    ("中身のコードブロックで行を閉じる", "                if fenced:\n                    inner = fenced.group(1)\n                    follow += 1\n                    continue\n",
+     "                if fenced:\n                    break\n", "呼ぶ側の分岐: 中身のコードブロックを挟んでも行を閉じない"),
     ("空行で項目の行を必ず閉じる", "if ahead >= len(lines) or not _is_branch_item(lines[ahead]):", "if True:",
      "呼ぶ側の分岐: 項目の行は空行の後の分岐の項目も読む"),
     ("空行の後の本文も項目の行に入れる", "if ahead >= len(lines) or not _is_branch_item(lines[ahead]):", "if ahead >= len(lines):",
      "呼ぶ側の分岐: 項目の行は空行の後の本文で終わる"),
     ("次の見出しで行を閉じない", '                if HEADING.match(unicodedata.normalize("NFKC", nxt)):\n                    break',
      '                if HEADING.match(unicodedata.normalize("NFKC", nxt)):\n                    pass', "呼ぶ側の分岐: 次の見出しで行を閉じる"),
-    ("次の行の始まりで中身を閉じない", "                if FENCE.match(nxt) or _caller_start(nxt) is not None:", "                if FENCE.match(nxt):",
+    ("次の行の始まりで中身を閉じない", "                if _caller_start(nxt) is not None:\n                    break", "                if _caller_start(nxt) is not None:\n                    pass",
      "呼ぶ側の分岐: 次の行の始まりで中身を閉じる"),
     ("表の <br> で分けない", "for piece in BREAK.split(entry))", "for piece in [entry])", "呼ぶ側の分岐: 表の行の <br> で分けた項目を読む"),
     ("呼ぶ側の分岐のコードブロックの中も読む",
@@ -505,8 +530,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("飾りを外さない", '    return text.strip().strip("*`_ ").strip()', "    return text.strip()", "呼ぶ側の分岐: 全角のコロンと強調の飾りを外して読む"),
     ("項目の全角のコロンを畳まない", '    text = unicodedata.normalize("NFKC", line).strip()\n    if text.startswith("|"):\n        if SEPARATOR',
      '    text = line.strip()\n    if text.startswith("|"):\n        if SEPARATOR', "呼ぶ側の分岐: 全角のコロンと強調の飾りを外して読む"),
-    (".md 以外の行も見る", "                numbers.setdefault(case, []).append((path, number))\n            problems += caller_problems(path, text)\n",
-     "                numbers.setdefault(case, []).append((path, number))\n        problems += caller_problems(path, text)\n", "呼ぶ側の分岐: .md 以外のファイルの行は見ない"),
+    (".md 以外の行も見る", "                numbers.setdefault(case, []).append((path, number))\n            if callers:\n                problems += caller_problems(path, text)\n",
+     "                numbers.setdefault(case, []).append((path, number))\n        if callers:\n            problems += caller_problems(path, text)\n", "呼ぶ側の分岐: .md 以外のファイルの行は見ない"),
     ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "巨大なセル"),
 ]
@@ -726,6 +751,15 @@ def main() -> int:
         check("組と分岐の写しを崩しても不一致にならない",
               reference_caller_groups(reference.replace("| 量 | が上限を超える・が重なる |", "| 量 | が上限を超える |")) != groups)
         check("CALLER_LABEL が references/spec-exit.md の行の形の見出しと違う", f"`### {module.CALLER_LABEL}`" in reference, module.CALLER_LABEL)
+
+        # check(callers=False) は揃いを見ない（scaffold.py の前の版の時点の --upto。#1340 の 1 パス目の指摘）
+        gap_dir = tmp_path / "callers-off"
+        (gap_dir / "spec").mkdir(parents=True)
+        (gap_dir / "qa.csv").write_text(HEADER, encoding="utf-8")
+        (gap_dir / "spec" / "order.md").write_text(CALLER_HEAD + CALLER_GROUPED[0] + "\n", encoding="utf-8")
+        on_code, _ = module.check(gap_dir / "qa.csv", gap_dir / "spec")
+        off_code, _ = module.check(gap_dir / "qa.csv", gap_dir / "spec", callers=False)
+        check("check(callers=False) が呼ぶ側の分岐の揃いを見ている／既定で見ていない", on_code == 1 and off_code == 0, f"{on_code} {off_code}")
 
         # 版を重ねた全体（#1297）
         for name, got, output, want, needle in merged_cases(scripts, tmp_path / "mergework"):

@@ -1780,7 +1780,8 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
 
         if gate:
             # 画面の関門（#1097）はここでは当てない——`load` が成果物の表の関門と同じ条件で `screen-gate.py` を当てる
-            code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR, screen=False)
+            # 呼ぶ側の分岐の行の揃い（#1340）は作業中の版でだけ見る——前の版の時点（`--upto`）は凍結していて直せない（成果物の表の関門と同じ）
+            code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR, screen=False, callers=design_gate)
             if code:
                 return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, {}
             # システム設計書の成果物の表（#957）。形式の違反（1）と、決まっていない欄（3）で止める——未決定の欄が残るうちは
