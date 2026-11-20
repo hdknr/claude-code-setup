@@ -16,6 +16,8 @@
    無ければ 1（陽性対照）、すべてあれば 0。前の版から変わらない行・消した行は求めない。`確かめられない` の行・ほかの判定役・前の回の行は数えない。
    `共有の Q&A 表に起票する` に振り分けたのに内部の表に残る行は 1、移していれば 0。確かめる行が無ければ 0。重ね合わせの違反・版が読めない・`--docs` が無いなら 2。
    `conditions` は、確かめの行だけの 1 回目を 2 回目ありと読まない。
+   **同じ回の中で、同じ内部の行の判定（重さ）が段ごとに食い違ったら `割れた:` と名指しし、終了コードは変えない**（#1248）——
+   割れても確かめていない行があれば 1 のまま、同じ判定の段・`確かめられない` の行・前の回の判定は割れに数えない。名指しの変異は出力の語の有無で殺す（`OUTPUT_KILLED`）。
 4. **中身を数えていない形を 0 にしない（2）**——指摘の表が検査に通らない・実行の行が無い・`--run` が実行の行でない・見出しが欠けた記録・引数の誤り。
 5. **本体の定数が references と一致する**（`references/spec-exit.md` の「指摘の重さ」の効く重さ・「上限」の数える値と数え直しの判断・
    「指摘の表」の内部の行の印——`agents/domain-checker.md` の印も同じ形か）。
@@ -158,6 +160,47 @@ CASES: dict[str, tuple] = {
     "内部: 移した行は求めない": ("internal", F_HEAD + dc("D-002") + dc("D-003", category="共有の Q&A 表に起票する", weight="判断が要る"), RUNS2, [], 0,
                           "内部の行 1 件——すべて", DOCS_V2_MOVED, 2),
     "内部: 退けた行は残ってよい": ("internal", F_HEAD + dc("D-002") + dc("D-003", category="退ける", weight="判断が要る"), RUNS2, [], 0, "すべて", DOCS_V2, 2),
+    # ---- 判定が段ごとに割れた行の名指し（#1248）。終了コードには数えない
+    "内部: 割れた行を名指しする（陽性対照）": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目", category="退ける", weight="判断が要る")
+                                   + dc("D-002", review="狭いパス", category="退ける", weight="判断が要る") + dc("D-003"), RUNS2, [], 0,
+                                   "割れた: D-002 の判定が同じ回の中で段ごとに食い違う——1回目=変わらない（2 行目）・2回目=変わる（3 行目）・狭いパス=変わる（4 行目）",
+                                   DOCS_V2, 2),
+    "内部: 割れても確かめていない行があれば 1 のまま名指しする": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="狭いパス", weight="判断が要る"), RUNS2, [], 1,
+                                           "割れた: D-002", DOCS_V2, 2),
+    "内部: 結果が割れるも変わる側として割れを名指しする": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目", weight="結果が割れる", category="退ける") + dc("D-003"),
+                                         RUNS2, [], 0, "割れた: D-002", DOCS_V2, 2),
+    "内部: 確かめる行が無くても割れを名指しする": ("internal", F_HEAD + dc("D-001") + dc("D-001", review="狭いパス", weight="判断が要る"), RUNS2, [], 0, "割れた: D-001",
+                                  {**DOCS_V1, "v2/shared/qa.csv": QA_HEAD + qa("Q-001", "共有1"), "v2/spec/qa-dev.csv": QA_HEAD + qa("D-001", "内部1")}, 2),
+    "内部: 往復した判定も割れと名指しする": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目", weight="判断が要る", category="退ける") + dc("D-002", review="狭いパス", category="退ける")
+                                 + dc("D-003"), RUNS2, [], 0, "割れた: D-002", DOCS_V2, 2),
+    # F1（#1248）: 確かめた行を 実装に渡す に振ると重さが - で判定を読めない。名指しする（終了コードは変えない）
+    "内部: 実装に渡すに振った確かめた行を読めないと名指しする（F1。陽性対照）": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="狭いパス", weight="-", category="実装に渡す") + dc("D-003"),
+                                                    RUNS2, [], 0, "読めない: D-002 の確かめた行（3 行目・狭いパス）は 実装に渡す に振られ", DOCS_V2, 2),
+    "内部: 範囲の外に振った確かめた行も読めないと名指しする": ("internal", F_HEAD + dc("D-002") + dc("D-003", weight="-", category="範囲の外として記録する"), RUNS2, [], 0,
+                                            "読めない: D-003 の確かめた行（3 行目・1回目）は 範囲の外として記録する に振られ", DOCS_V2, 2),
+    # 当て直しの P1・P2（#1248）: 重さが - のまま振り分けだけ 内部に記録する・退ける に変えた行
+    "内部: 重さ - で内部に記録する行も読めないと名指しする（P1。陽性対照）": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="狭いパス", weight="-", category="内部の Q&A 表に記録する") + dc("D-003"),
+                                                     RUNS2, [], 0, "読めない: D-002 の確かめた行（3 行目・狭いパス）は 内部の Q&A 表に記録する に振られ（重さが -）", DOCS_V2, 2),
+    "内部: 重さ - で退ける行も読めないと名指しする（P2）": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="狭いパス", weight="-", category="退ける") + dc("D-003"),
+                                         RUNS2, [], 0, "読めない: D-002 の確かめた行（3 行目・狭いパス）は 退ける に振られ（重さが -）", DOCS_V2, 2),
+    # M6: 割れと読めないが同じ行に同時にある。両方を出す
+    "内部: 割れと読めないが同じ行に同時にあれば両方出す": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目", weight="判断が要る", category="退ける")
+                                         + dc("D-002", review="狭いパス", weight="-", category="実装に渡す") + dc("D-003"), RUNS2, [], 0,
+                                         "読めない: D-002", DOCS_V2, 2),
+    "内部: 割れと読めないが同じ行に同時にあれば割れも出す": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目", weight="判断が要る", category="退ける")
+                                         + dc("D-002", review="狭いパス", weight="-", category="実装に渡す") + dc("D-003"), RUNS2, [], 0,
+                                         "割れた: D-002", DOCS_V2, 2),
+    "内部: 退けた行は読めないと名指ししない": ("internal", F_HEAD + dc("D-002") + dc("D-003", category="退ける", weight="判断が要る"), RUNS2, [], 0, "!読めない", DOCS_V2, 2),
+    # F2: 1・2 回目が一致し、狭いパスだけ違う形（先頭 2 段だけ比べる変異を殺す）
+    "内部: 3 段目だけ違う判定も割れと名指しする（F2）": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目") + dc("D-002", review="狭いパス", weight="判断が要る", category="退ける")
+                                      + dc("D-003"), RUNS2, [], 0, "割れた: D-002", DOCS_V2, 2),
+    "内部: 同じ判定の段は割れと読まない": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目") + dc("D-003", weight="判断が要る", category="退ける")
+                                 + dc("D-003", review="狭いパス", weight="判断が要る", category="退ける"), RUNS2, [], 0, "!割れた", DOCS_V2, 2),
+    "内部: 確かめられない行は割れに数えない": ("internal", F_HEAD + dc("D-002") + dc("D-003") + dc("D-002", review="2回目", confirmed="確かめられない", weight="判断が要る"),
+                                   RUNS2, [], 0, "!割れた", DOCS_V2, 2),
+    "内部: 前の回の判定は割れに数えない": ("internal", F_HEAD + dc("D-002", run="1", day="2026-11-02", weight="判断が要る") + dc("D-002", run="2") + dc("D-003", run="2"),
+                               R_HEAD + run_row("1", "2026-11-02", "抜けていない", "満たす", feature="-")
+                               + run_row("2", "2026-11-03", "抜けていない", "満たす", feature="-"), [], 0, "!割れた", DOCS_V2, 2),
     "内部: 確かめる行が無い": ("internal", F_HEAD, RUNS2, [], 0, "確かめる行が無い",
                          {**DOCS_V1, "v2/shared/qa.csv": QA_HEAD + qa("Q-001", "共有1"), "v2/spec/qa-dev.csv": QA_HEAD + qa("D-001", "内部1")}, 2),
     "判定しない: 内部の重ね合わせが決まりに反する": ("internal", F_HEAD + dc("D-002"), RUNS2, [], 2, "重ね合わせが決まりに反する",
@@ -196,6 +239,9 @@ CASES: dict[str, tuple] = {
     "判定しない: --limit が 0": ("limit", None, RUNS, ["--limit", "0"], 2, "--limit は 1 以上"),
     "判定しない: 引数なし": ("", None, RUNS, [], 2, "usage"),
 }
+
+# 終了コードを変えず、出力の語の有無でだけ殺す変異（#1248。割れた行の名指しは出力だけで、終了コードに数えない）
+OUTPUT_KILLED = {"割れを名指ししない", "読めない行を名指ししない", "範囲の外を読めないと数えない", "重さ - でも振り分けで絞る", "読めないを割れの後に置き換える", "先頭 2 段だけを比べる", "最初と最後だけを比べる", "結果が割れるを変わると読まない", "確かめる行が無いとき割れを出さない", "同じ判定の段も割れと読む", "重さでなく振り分けで判定を読む"}
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -254,6 +300,22 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内部: 重ね合わせの違反でも判定する", "        return EXIT_UNJUDGED, problems + [f\"v{version}", "        return EXIT_OK, problems + [f\"v{version}",
      "判定しない: 内部の重ね合わせが決まりに反する"),
     ("内部: 版が読めないのに判定する", "        return EXIT_UNJUDGED, [f\"正本の版を読めない", "        return EXIT_OK, [f\"正本の版を読めない", "判定しない: 内部の版が無い"),
+    # ---- 割れた行の名指し（#1248）。名指しは出力だけで終了コードを変えないので、殺す条件は「期待どおりでなくなる」（終了コードか、語の有無）
+    ("割れを名指ししない", "    split = split_judgments(judged)  #", "    split = []  #", "内部: 割れた行を名指しする（陽性対照）"),
+    ("割れを終了コードに数える", '    return EXIT_OK, [f"満たす: {seen}——すべて Domain Checker が確かめた"] + split\n',
+     '    return (EXIT_UNMET if split else EXIT_OK), [f"満たす: {seen}——すべて Domain Checker が確かめた"] + split\n', "内部: 割れた行を名指しする（陽性対照）"),
+    ("結果が割れるを変わると読まない", '**{w: "変わる" for w in EFFECTIVE}}', '"判断が要る": "変わる"}', "内部: 結果が割れるも変わる側として割れを名指しする"),
+    ("確かめる行が無いとき割れを出さない", '[f"満たす: {seen}——確かめる行が無い"] + split', '[f"満たす: {seen}——確かめる行が無い"]', "内部: 確かめる行が無くても割れを名指しする"),
+    ("最初と最後だけを比べる", "        if len({v for _, v, _ in verdicts}) > 1:\n", "        if verdicts and verdicts[0][1] != verdicts[-1][1]:\n", "内部: 往復した判定も割れと名指しする"),
+    ("読めない行を名指ししない", "    return lines + unread\n", "    return lines\n", "内部: 実装に渡すに振った確かめた行を読めないと名指しする（F1。陽性対照）"),
+    ("範囲の外を読めないと数えない", ' if c["重さ"] == "-"]', ' if c["振り分け"] == "実装に渡す"]', "内部: 範囲の外に振った確かめた行も読めないと名指しする"),
+    ("重さ - でも振り分けで絞る", ' if c["重さ"] == "-"]', ' if c["重さ"] == "-" and c["振り分け"] in findings.NO_WEIGHT]', "内部: 重さ - で内部に記録する行も読めないと名指しする（P1。陽性対照）"),
+    ("読めないを割れの後に置き換える", "    return lines + unread\n", "    return lines or unread\n", "内部: 割れと読めないが同じ行に同時にあれば両方出す"),
+    ("先頭 2 段だけを比べる", "        if len({v for _, v, _ in verdicts}) > 1:\n", "        if len({v for _, v, _ in verdicts[:2]}) > 1:\n", "内部: 3 段目だけ違う判定も割れと名指しする（F2）"),
+    ("同じ判定の段も割れと読む", "        if len({v for _, v, _ in verdicts}) > 1:\n", "        if len(verdicts) > 1:\n", "内部: 同じ判定の段は割れと読まない"),
+    ("重さでなく振り分けで判定を読む", '        verdicts = [(c["レビュー"], names[c["重さ"]], number) for number, c in rows if c["重さ"] in names]\n',
+     '        verdicts = [(c["レビュー"], names[c["重さ"]], number) for number, c in rows if c["重さ"] in names and c["振り分け"] != REJECTED]\n',
+     "内部: 割れた行を名指しする（陽性対照）"),
     ("表が無ければ判定しない", "    if not record.exists():\n        return EXIT_OK", "    if False:\n        return EXIT_OK", "上限: 表が無ければ 0 回"),
 ]
 
@@ -301,7 +363,10 @@ def run_one(script: Path, work: Path, case: tuple) -> tuple[int, str]:
 
 
 def as_expected(case: tuple, result: tuple[int, str]) -> bool:
-    return result[0] == case[4] and case[5] in result[1]
+    """終了コードと出力の語を見る。語が `!` で始まれば、その語が出力に無いことを見る（#1248——割れた行を名指ししない試料）。"""
+    word = case[5]
+    present = word[1:] not in result[1] if word.startswith("!") else word in result[1]
+    return result[0] == case[4] and present
 
 
 def section(markdown: str, heading: str) -> str:
@@ -394,7 +459,8 @@ def main() -> int:
             original = run_one(scripts / TARGET, root / "orig", case)
             result = run_one(mutated / TARGET, root / "mut", case)
             check(f"変異の前は期待どおり: {name}", as_expected(case, original))
-            check(f"変異を殺す（終了コードが変わる）: {name} ← {killer}", result[0] != original[0], f"{result[0]} {result[1][-300:]!r}")
+            killed = result[0] != original[0] or (name in OUTPUT_KILLED and not as_expected(case, result))
+            check(f"変異を殺す（終了コードが変わる。名指しの変異だけは語の有無）: {name} ← {killer}", killed, f"{result[0]} {result[1][-300:]!r}")
         print(f"  変異 {len(MUTATIONS)} 件 OK")
     print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
     return 0
