@@ -22,7 +22,7 @@
    重複の無い仕様・先頭のセル以外の言及・コードブロックの中・形の外の識別子（連番 `1`・数字の無い名前）・`.md` 以外・形式検査のモデルは数えない（陰性対照）。
    **後の版が同じファイルを置き換えたのは重複に数えない**（`merge-versions.py` で重ねた全体に当てる。別のファイルに同じ番号を置けば 1）。
    **番号の形が `references/spec-exit.md` の「テストケースの番号の重複」と一致する**（写しのずれ）。
-   **テストケースの節（直前の見出しが `CASE_HEADER` に当たる）の中では、見出しが `ID`・`No`・`項番` の表も読み、節の外では読まない**（#1333。`ID_HEADER` の写しも突き合わせる）。
+   **テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の中では、見出しが `ID`・`No`・`項番` の表も読み、節の外では読まない**（#1333。`ID_HEADER`・`SECTION_HEADER` の写しも突き合わせる）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -185,6 +185,18 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
      {"order.md": CASE_TABLE, "flow.md": "## テストケース\n| **ID** | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
     ("全角の節の見出しもそろえて読む", HEADER,
      {"order.md": CASE_TABLE, "flow.md": "## ＴＣ\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("小見出しの下も節の中", HEADER,
+     {"order.md": "## テストケース\n\n### 正常系\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | a |\n\n#### 境界\n\n### 異常系\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | b |\n"}, 1,
+     "テストケースの番号 F1-1"),
+    ("浅い見出しで節を抜ける", HEADER,
+     {"order.md": "### テストケース\n\n" + CASE_HEAD + "| F1-1 | a | b |\n\n## 質問\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("末尾が一覧の節の見出しも読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## F2 のテストケース一覧\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("括弧書きの付いた節の見出しも読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## TC（注文）\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの語で終わらない見出しは節でない", HEADER,
+     {"order.md": "## テストケースの前提となるマスタ\n\n| ID | 名前 |\n| --- | --- |\n| M-001 | a |\n| M-001 | b |\n"}, 0, "条件 1 を満たす"),
     ("テストケースの節の外の ID の表は読まない", HEADER,
      {"order.md": "## 質問\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
     ("次の見出しで節を引き継がない", HEADER,
@@ -349,11 +361,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("フェンスの字下げを 2 字までにする", 'FENCE = re.compile(r"^ {0,3}', 'FENCE = re.compile(r"^ {0,2}', "3 字下げのフェンスも開く"),
     ("閉じのフェンスを同じ長さだけにする", "len(opened.group(1)) >= len(fence)", "len(opened.group(1)) == len(fence)", "長いフェンスで閉じる"),
     # テストケースの節の ID・No・項番の表（#1333）
-    ("節の ID の表を読まない", "\n                                                 or (section and ID_HEADER.fullmatch(previous) is not None))",
+    ("節の ID の表を読まない", "\n                                                 or (section is not None and ID_HEADER.fullmatch(previous) is not None))",
      ")", "テストケースの節の ID の表は読む"),
-    ("節を見ずに ID の表を読む", "(section and ID_HEADER.fullmatch(previous) is not None)", "(ID_HEADER.fullmatch(previous) is not None)",
+    ("節を見ずに ID の表を読む", "(section is not None and ID_HEADER.fullmatch(previous) is not None)", "(ID_HEADER.fullmatch(previous) is not None)",
      "テストケースの節の外の ID の表は読まない"),
-    ("次の見出しで節を変えない", '            section = CASE_HEADER.search(', '            section = section or CASE_HEADER.search(', "次の見出しで節を引き継がない"),
+    ("次の見出しで節を変えない", "            if section is None or level <= section:", "            if section is None:", "次の見出しで節を引き継がない"),
+    ("小見出しで節を抜ける", "            if section is None or level <= section:", "            if True:", "小見出しの下も節の中"),
+    ("浅い見出しで節を抜けない", "            if section is None or level <= section:", "            if section is None or level == section:", "浅い見出しで節を抜ける"),
+    ("節の見出しを部分一致で読む", '                section = level if SECTION_HEADER.search(title) else None', '                section = level if CASE_HEADER.search(title) else None',
+     "テストケースの語で終わらない見出しは節でない"),
+    ("節の見出しの一覧を許さない", r'(?:\s*一覧)?', '', "末尾が一覧の節の見出しも読む"),
+    ("節の見出しの括弧書きを許さない", r'\s*(?:[(（][^()（）]*[)）])?$", re.IGNORECASE)', r'$", re.IGNORECASE)', "括弧書きの付いた節の見出しも読む"),
     ("ID の見出しを前方一致で読む", "ID_HEADER.fullmatch(previous)", 're.match(r"(?i)id|no|項番", previous)', "ID で始まるだけの見出しの表は読まない"),
     ("ID の見出しの大文字小文字を区別する", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:ID|no\.?|項番)$")',
      "テストケースの節の小文字の id の表も読む"),
@@ -361,10 +379,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "テストケースの節の No. の表も読む"),
     ("項番を読まない", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:id|no\.?)$", re.IGNORECASE)',
      "テストケースの節の項番の表も読む"),
-    ("# の後の空白を要らなくする", r'HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")', r'HEADING = re.compile(r"^ {0,3}#{1,6}")',
+    ("# の後の空白を要らなくする", r'HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")', r'HEADING = re.compile(r"^ {0,3}(#{1,6})")',
      "# の後に空白の無い行は見出しでない"),
-    ("深い字下げの # も見出しにする", r'HEADING = re.compile(r"^ {0,3}#', r'HEADING = re.compile(r"^ *#', "4 字下げの # は見出しでない"),
-    ("節の見出しをそろえない", 'CASE_HEADER.search(unicodedata.normalize("NFKC", line.strip().strip("#")))', 'CASE_HEADER.search(line.strip().strip("#"))',
+    ("深い字下げの # も見出しにする", r'HEADING = re.compile(r"^ {0,3}(#', r'HEADING = re.compile(r"^ *(#', "4 字下げの # は見出しでない"),
+    ("節の見出しをそろえない", 'title = unicodedata.normalize("NFKC", line.strip().strip("#")).strip()', 'title = line.strip().strip("#").strip()',
      "全角の節の見出しもそろえて読む"),
     ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "巨大なセル"),
@@ -538,6 +556,11 @@ def main() -> int:
         check("本体に ID_HEADER が見つからない", code_id is not None)
         if code_id:
             check("ID_HEADER が references/spec-exit.md と違う", f"`ID_HEADER`: `{code_id.group(1)}`" in reference, code_id.group(1))
+        code_section = re.search(r'^SECTION_HEADER = re.compile\(r"(.*)", re.IGNORECASE\)$', source, flags=re.MULTILINE)
+        check("本体に SECTION_HEADER が見つからない", code_section is not None)
+        if code_section:
+            check("SECTION_HEADER が references/spec-exit.md と違う", f"`SECTION_HEADER`。大文字小文字を区別しない）に当たる見出しから" in reference
+                  and f": `{code_section.group(1)}`（" in reference, code_section.group(1))
         check("本体に CASE_NUMBER が見つからない", code_number is not None)
         check("references/spec-exit.md の「テストケースの番号の重複」に番号の形が見つからない", ref_number is not None)
         if code_number and ref_number:

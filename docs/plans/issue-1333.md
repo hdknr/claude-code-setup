@@ -4,14 +4,17 @@
 
 触る:
 
-- `plugins/spec-loop/scripts/check-spec-exit.py` — `case_rows` がテストケースの節（直前の見出し `#` が `CASE_HEADER` に当たる）の中の、見出しが `ID`・`No`・`項番`（`ID_HEADER`）の表も読む。docstring
+- `plugins/spec-loop/scripts/check-spec-exit.py` — `case_rows` がテストケースの節（`#` の見出しの末尾がテストケースの語・小見出しの下を含む。1 パス目の指摘で直した）の中の、見出しが `ID`・`No`・`項番`（`ID_HEADER`）の表も読む。docstring
 - `plugins/spec-loop/scripts/scaffold-estimate.py` — docstring の「守らないもの」の限界の行だけ
 - `plugins/spec-loop/references/spec-exit.md` — 「テストケースの表の見出し」（雛形）を足す・「テストケースの番号の重複」の `ID` の表の読み方・「仕様の規模」の数え方を道具の件数にそろえる・記録の表の `記法の移行` の定義
 - `plugins/spec-loop/references/spec-ir.md` — 「入口と観測点を置いてよい範囲」を足す（発行した知らせのケースは受入基準に回す）・「書き起こすときの決まり」から指す
 - `plugins/spec-loop/skills/spec-review/SKILL.md` — Planner に雛形を使わせる・記録の `テストケース` の列を `scaffold-estimate.py list` の件数で書く
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 守ることと手順 1a から「入口と観測点を置いてよい範囲」を指す・分け方の決まり・3 のときの案内
-- `scripts/test-check-spec-exit.py`・`scripts/test-scaffold-estimate.py` — 試料と変異
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版 0.127.3 → 0.128.0
+- `scripts/test-check-spec-exit.py` — 試料と変異
+- `scripts/test-scaffold-estimate.py` — 試料
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版 0.127.3 → 0.128.0
+- `.claude-plugin/marketplace.json` — 同上
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plans/issue-1333.md` — この計画
 
 触らない:
@@ -85,7 +88,7 @@ BLOCKED: なし。
 - 直す線: 既定（出所: cruise の台帳の確かめた線）
 - 割り目: 割らない（cruise の周）。手順 4 の割り目は訊かずに続けた。
 - 実験: A2 の陽性対照（base と HEAD の本体を一時ディレクトリに写し、同じ試料に `scaffold-estimate.py list` を当てた——base は 3、HEAD は 0 で 2 行を数えた）。交絡: 同じ試料・同じ `python3 -I`・写した `scripts/` だけが違う。
-- 1 パス目の関門に渡した成果物: `c09fcb90`（1 パス目の指摘対応の起点）。Verifier（sonnet・`dev-loop:dev-loop-verifier`）と `/code-review` に渡す。
+- 1 パス目の関門に渡した成果物: `86b282bb`（1 パス目の指摘対応の起点）。Verifier（sonnet・`dev-loop:dev-loop-verifier`）と `/code-review` に渡す。
 
 ## 既知の限界・決着済みの論点
 
@@ -93,3 +96,18 @@ BLOCKED: なし。
 - 知らせ（event）を読み返す観測点の形を中間表現に足すか（提案 3）——採らなかった: 受入基準に回す。理由は上の「決めたこと」。
 - 節の見出しは ATX（`#`）だけを読み、下線の見出し（`===`・`---`）は読まない——採った（限界として spec-exit.md と docstring に書いた）。理由: `---` の下線は表の区切りの行・水平線と紛れ、Markdown の仕様と同じ形で読むには前の段落を持つ必要がある。雛形（`テストケース`）で書けば節に依らず読む。
 - HTML コメントの中の見出しも読んでしまう——表と同じ既存の限界（「読んでしまうもの」）。採った: 書き足さない（既存の限界の行が表を言い、見出しは同じ読み方）。
+
+### 1 パス目の採否（Verifier 反証 1 件・/code-review 指摘 8 件）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V-R1・CR2（同じもの）`## テストケース` の下の小見出し（`### 正常系`）の `| ID |` の表を読まない（節を直前の見出しだけで決めていた） | 示せる——関門が `scaffold-estimate.py list` で 1 件（F2-1 だけ）・rc=0 を出した。直した後の試料「小見出しの下も節の中」は変異「小見出しで節を抜ける」（旧い振る舞い）で赤（陽性対照） | A2 | 直す——見出しの深さを持ち、同じか浅い見出しまで節を引き継ぐ |
+| CR3（と V-R1 の逆向きの穴）見出しに `テストケース` を含むだけで節になり、`## テストケースの前提となるマスタ` の下の `ID` の表（M-001・R-F10）を数える | 示せる——関門が base 1 件・HEAD 3 件を出した。試料「テストケースの語で終わらない見出しは節でない」は変異「節の見出しを部分一致で読む」（旧い振る舞い）で赤 | A3 | 直す——見出しの末尾がテストケースの語（`SECTION_HEADER`。一覧・括弧書きを許す）のときだけ節 |
+| CR1 機能の `operation` は 1 つなので、既にある機能に後の状態を読む入口・画面の初期値の入口を「足す」ことはできない。観測のための機能を足すと機能一覧の検査で止まる | 示せる（`scaffold.py` の `operations()` と spec-ir.md の機能の表を関門が読んだ。文面の事実の誤り） | A4（書いた事実が正しい） | 直す——後の状態はほかの機能の `operation` だけを呼び、無ければ `acceptance`。画面の初期値は仕様がその振る舞いを書いた機能の `operation` |
+| CR7 時計の `seed` はトレースのケースに書けない（spec-ir.md が無条件に書いていた） | 示せる（spec-ir.md の「前提と後の状態」が `seed` はトレースに書けないと言う） | A4 | 直す——入出力のケースだけと書き、トレースは `acceptance` |
+| CR4 spec-review の手順 6 で 3 が出たら直せと書いたが、手順 6 は判定役の後——レビューを通らない直しになる | 示せない（手順の読み方。実行の例は無い） | 無し | 残課題 |
+| CR5 3 の原因は見出しだけでなく番号の形（`TC001`・`1`）もある | 示せる（関門が試料で 3 を出した）。ただし案内が狭いだけで、受入基準（雛形どおりの表を読む）は破らない | 無し | 残課題 |
+| CR6 雛形の節の文が「テストケースを含む節」と言い、実装（`CASE_HEADER`）より狭い。`番号`・`#` の見出しを読まないと書いていない | 示せる（文面） | 無し（1 行目の直しで節の決まりを `SECTION_HEADER` に書き直し、`番号`・`#` を限界に足した） | 残課題（直しの中で解消） |
+| CR8 記録の手順が `list` の 1・2 のときを言わない。`list` は重複を除いた件数で、計画の A5 の「`case_rows` の数」と違う | 示せる（`unique_cases`） | 無し | 残課題 |
+
+- 1 パス目の指摘対応の起点: `86b282bb`。指摘対応のコミットは下の 2 パス目の欄に書く。
