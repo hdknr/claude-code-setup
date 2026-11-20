@@ -615,6 +615,14 @@ def acceptance_dot_source(repo: Path) -> str | None:
     return None if section and f"{ACC_HEADER}\n{ACC_ROWS[2]}\n\n{ACC_COPIED}" in section else f"./ を含む source の行に表の見出しが付かない: {section}"
 
 
+FOLDED_SOURCE_CASE = "受入基準: source が大文字小文字だけ違う綴りでも表の見出しが付く"
+
+
+def acceptance_folded_source(repo: Path) -> str | None:
+    section = accepted_section(bodies(repo)["F-001"])
+    return None if section and f"{ACC_HEADER}\n{ACC_ROWS[2]}\n\n{ACC_COPIED}" in section else f"大文字小文字だけ違う source の行に表の見出しが付かない: {section}"
+
+
 def acceptance_unnumbered(repo: Path) -> str | None:
     section = accepted_section(bodies(repo)["F-001"])
     return None if section and f"{ACC_INTRO}\n\n{ACC_FREE}\n\n{ACC_COPIED}" in section else f"番号の無い行が写っていない: {section}"
@@ -3995,6 +4003,10 @@ CASES: list[Case] = [
          ir=accepting((), ["## 別の表"]), spec=ACC_FILES),
     Case("受入基準: source が ./ を含む綴りでも表の見出しが付く", 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/./order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]))),
          spec=ACC_FILES, post=acceptance_dot_source),
+    # 大文字小文字だけ違う綴り（#1317）。区別しないファイルシステムでは `check_source` が通すので、原文に届いて表の見出しが付く。
+    # 区別するファイルシステムでは `check_source` が止める——期待は `FOLDING_CASES` が差し替える
+    Case(FOLDED_SOURCE_CASE, 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/Order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]))),
+         spec=ACC_FILES, post=acceptance_folded_source),
     Case("受入基準: 空の配列", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
          ir=accepting((), []), spec=ACC_FILES),
     Case("受入基準: 配列でない", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
@@ -4883,8 +4895,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "受入基準: 消した機能の本文には小見出しを付けない"),
     ("acceptance の表の見出しを付けない", "        if header is not None and (index == 0 or header != previous):\n            lines += list(header)",
      "        if False:\n            lines += list(header)", "受入基準: 行を原文のまま本文に写す"),
-    ("source の綴りを正規化せずに原文を引く", "for rel in feature.get(\"source\", []) if os.path.normpath(rel) in rendered}", "for rel in feature.get(\"source\", []) if rel in rendered}",
+    ("source の綴りのまま原文を引く", "                key = keys.get((found.st_dev, found.st_ino))", "                key = rel if rel in rendered else None",
      "受入基準: source が ./ を含む綴りでも表の見出しが付く"),
+    ("source の綴りを文字列で正規化して原文を引く（#1317 の前の形）", "                key = keys.get((found.st_dev, found.st_ino))",
+     "                key = os.path.normpath(rel) if os.path.normpath(rel) in rendered else None", FOLDED_SOURCE_CASE),
     ("acceptance を中間表現の順でなく並べ替える", "for index, text in enumerate(feature[ACCEPTANCE]):", "for index, text in enumerate(sorted(feature[ACCEPTANCE])):",
      "受入基準: 行を原文のまま本文に写す"),
     ("acceptance の注意書きを書かない", '    lines = ["下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、', '    lines = ["", "下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、',
@@ -5406,7 +5420,12 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
 # 大文字小文字を区別しないファイルシステムでだけ当てる変異（名前 → 理由）。区別するファイルシステムでは、綴りの違う
 # `NFR.csv` は本体の検査が無くても開けないので、試料がその変異を判別しない（#852 の狭いパスの N1）
 FOLDING_ONLY = {"表の名前の綴りを見ない": "綴りの違う表の名前を開けるのは大文字小文字を区別しないファイルシステムだけで、区別するなら本体の検査が無くても「表が無い」になる",
-                "参考資料が在るかを resolve で見る": "大文字小文字だけ違う綴りのファイルを開けるのは区別しないファイルシステムだけで、区別するなら変異の後も「無い」になる（#951）"}
+                "参考資料が在るかを resolve で見る": "大文字小文字だけ違う綴りのファイルを開けるのは区別しないファイルシステムだけで、区別するなら変異の後も「無い」になる（#951）",
+                "source の綴りを文字列で正規化して原文を引く（#1317 の前の形）":
+                    "大文字小文字だけ違う `source` を `check_source` が通すのは区別しないファイルシステムだけで、区別するなら変異の前も後も「無い」で止まる（#1317）"}
+# 大文字小文字を区別するファイルシステムで期待を差し替える試料（名前 → (終了コード, 出力の文言)）。区別するなら
+# `check_source` が綴りの違う `source` を止めるので、生成まで届かない（#1317）
+FOLDING_CASES = {FOLDED_SOURCE_CASE: (1, "F-001.source: spec/Order.md が無い")}
 skipped: list[str] = []
 
 
@@ -5545,9 +5564,16 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="scaffold-test-") as tmp:
         tmp_path = Path(tmp)
         scripts = copy_scripts(tmp_path / "scripts")
+        folds = case_folding(tmp_path)
+        cases = []
+        for case in CASES:
+            if case.name in FOLDING_CASES and not folds:
+                case = copy.copy(case)
+                (case.code, case.text), case.post = FOLDING_CASES[case.name], None
+            cases.append(case)
         results = run_jobs([functools.partial(run_case, scripts, tmp_path / f"case{index}", case)
-                            for index, case in enumerate(CASES)])
-        for case, (ok, detail) in zip(CASES, results):
+                            for index, case in enumerate(cases)])
+        for case, (ok, detail) in zip(cases, results):
             check(f"試料が期待どおりでない: {case.name}", ok, detail)
 
         # references との突き合わせ
@@ -5748,7 +5774,6 @@ def main() -> int:
             plan(f"変異が生き残った: {name}（{killer} で殺せるはず）",
                  functools.partial(mutated_run, tmp_path / f"design-mut{index}", tmp_path / f"design-mutwork{index}",
                                    by_name[killer], name=DESIGN, text=design_source.replace(before, after)))
-        folds = case_folding(tmp_path)
         unknown = sorted(set(FOLDING_ONLY) - {name for name, *_ in MUTATIONS})
         planned.append(("FOLDING_ONLY に MUTATIONS に無い変異の名前がある", None, not unknown, f"{unknown}"))
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
