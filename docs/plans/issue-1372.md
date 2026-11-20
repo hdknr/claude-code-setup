@@ -55,8 +55,9 @@ main へのマージ → GitHub Pages の再ビルド（計画ファイルだけ
 - 周の在り処: ブランチ `issue/1372-clock-check-fix`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1372`・起点 `de438dca`・base は `origin/main`（refs/remotes/origin/HEAD）を解決した `de438dcacaae20c2a44c2006cb8107add0fb69b0`
 - 探索（`find-cycle.py`）の当たりは #1369 の計画ファイルのコミット `fa2d3479`（メッセージが #1372 を起票先として名指ししていた）だけで、#1372 の worktree・ブランチ・計画ファイルは無かった——新規の周と判断した
 - 直す線: 既定（出所: 手順 3 の回答 2026-11-20）
-- 割り目（手順 4）: 前の 2 周で利用者は続けるを選んでおり、この周も続ける——`AskUserQuestion` は実装のコミット後に訊く
-- 関門: 未着手
+- 実装: `5c1843b3`（`Fixes #1372`）
+- 割り目（手順 4）: `AskUserQuestion` で「ここで割る」（2026-11-20）。**再開は手順 5 から**——1 パス目の Verifier と `/code-review` を当てる。1 パス目の起点は再開した側が関門に渡す時点の HEAD を書く（この計画を書いたコミット）。`check-all.py` もまだ回していない
+- 関門: 未着手（1 パス目の Verifier・`/code-review` とも未着手）
 - 手元の実測（2026-11-20）:
   - 素の起動: `PPTX 生成のテスト: すべて合格`・「本物の本体の決定性の観測は zip の時刻の刻みをまたぐ（実際: True）」（C4）
   - 陽性対照の写し（走らせた後に消した）: 新しい版に「主な生成を非 0 にする」変異を足した写しは終了コード 0（動的な検査は緑・「変異を殺せる」も緑）（C1）。base（`de438dca`）の版に同じ変異を足した写しは「時計を読むらしい変異が CLOCK_MUTATIONS に無い: X: 主な生成を非 0 にする」で赤（直す前の欠陥の陽性対照）。新しい版に `writestr(name`・`__import__("time").localtime()` の変異を足した写しは 2 本とも動的な検査が赤（違った観測は `deterministic`）（C2）
