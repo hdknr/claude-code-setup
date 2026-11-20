@@ -454,6 +454,11 @@ def list_notes(origin, kinds):
 **入口の名前に `reset_state` は使えない**（`setup`・`after` を書いたケースがあるとき）。**`seed` を書いたケースがあるときは、入口の名前に `seed` も、どの入口の入力にも項目 `seed` も使えない**
 （口と重なる。生成のスクリプトが止める。`checkpoint` と同じ扱い）。
 
+**`setup`・`after` でほかの機能の入口を呼ぶと、その機能の Issue に依存する**（その入口ができるまで Red テストが緑にならない。トレースのケースの呼び出しも同じ。#1347）——
+scaffold は依存を `issues.json` の `depends` に書き、**依存が循環すれば登録の前に止まる**（循環する組とケースを名指しする。`handoff-issue.md` の「依存の連鎖」）。
+循環を解くときは、循環の中のケースを、呼び出しの順と期待を変えずに、依存の順で一番後の機能へ移す——その機能の入口の呼び出しを本体にし、前の呼び出しは `setup`、後ろは `after` に置く
+（下の例の `F-007-C3` は、作る → 取り消す → 送り直す、の取り消すを本体にした形）。
+
 **性能テストは `setup` を呼ばず、入出力のケースの `input` だけで測る**（前提の無い呼び出しの時間になる。`references/nfr.md` の「性能テストは `条件` の負荷を再現しない」と同じ限界）。
 
 **例**（前提あり・2 回の操作。次の 3 つの機能の `features` の要素）:
@@ -474,13 +479,7 @@ def list_notes(origin, kinds):
        "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"},
        "after": [{"operation": "get_order", "input": {"order_no": "A-1"}, "expected": {"status": "open"}}]},
       {"id": "F-006-C2", "title": "顧客が登録されていなければ拒否する",
-       "input": {"order_no": "A-1", "customer": "none"}, "error": "UNKNOWN_CUSTOMER"},
-      {"id": "F-006-C3", "title": "2 回の操作: 作る → 取消にする → 同じ番号で送り直すと拒否し、取消のまま",
-       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}},
-                 {"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"}},
-                 {"operation": "cancel_order", "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}}],
-       "input": {"order_no": "A-1", "customer": "c1"}, "error": "DUPLICATE",
-       "after": [{"operation": "get_order", "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}}]}
+       "input": {"order_no": "A-1", "customer": "none"}, "error": "UNKNOWN_CUSTOMER"}
     ]
   },
   {
@@ -494,7 +493,13 @@ def list_notes(origin, kinds):
        "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}},
                  {"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"}}],
        "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}},
-      {"id": "F-007-C2", "title": "無い注文は取り消せない", "input": {"order_no": "none"}, "error": "NOT_FOUND"}
+      {"id": "F-007-C2", "title": "無い注文は取り消せない", "input": {"order_no": "none"}, "error": "NOT_FOUND"},
+      {"id": "F-007-C3", "title": "2 回の操作: 作る → 取消にする → 同じ番号で送り直すと拒否し、取消のまま",
+       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}},
+                 {"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"}}],
+       "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"},
+       "after": [{"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "error": "DUPLICATE"},
+                 {"operation": "get_order", "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}}]}
     ]
   },
   {
@@ -542,7 +547,7 @@ def seed(name, /, **values):
 - **書かないケースは今までと変わらない**——`$any`・`$ref`・`as` を 1 つも書いていない機能の Red テスト・Issue の本文・機能の指紋は、1 バイトも変わらない。
   書いたケースは `self.dynamic(…)` で比べる（前提・後の状態があるケースは、`reset_state()` を呼ぶところまで前提と後の状態と同じ。実装に求める口は変わらない）。
 
-**例**（成功の応答の URN は実行ごとに変わる。`features` の要素）:
+**例**（成功の応答の URN は実行ごとに変わる。`features` の要素。読む機能 `F-010` のケースが作る入口を呼ぶので、`F-010` は `F-009` に依存する——作る機能のケースから読む入口を呼ぶと依存が循環する。上の「前提と後の状態」）:
 
 ```json
 [
@@ -557,10 +562,6 @@ def seed(name, /, **values):
     "cases": [
       {"id": "F-009-C1", "title": "URN を返す: 作ると URN と版が返る（URN は実行ごとに変わるので、型だけを見る）",
        "input": {"title": "契約書"}, "expected": {"urn": {"$any": "string"}, "version": {"$any": "integer"}}},
-      {"id": "F-009-C2", "title": "作った後に読むと、作ったときの URN が返る（最初の版は 1）",
-       "input": {"title": "契約書"}, "expected": {"urn": {"$any": "string"}, "version": 1}, "as": "created",
-       "after": [{"operation": "get_document", "input": {"title": "契約書"},
-                  "expected": {"urn": {"$ref": "created.urn"}, "title": "契約書", "version": {"$ref": "created.version"}}}]},
       {"id": "F-009-C3", "title": "題が空なら拒否する", "input": {"title": ""}, "error": "EMPTY_TITLE"}
     ]
   },
@@ -578,7 +579,13 @@ def seed(name, /, **values):
                   "expected": {"urn": {"$any": "string"}, "version": 1}, "as": "created"}],
        "input": {"title": "契約書"},
        "expected": {"urn": {"$ref": "created.urn"}, "title": "契約書", "version": {"$ref": "created.version"}}},
-      {"id": "F-010-C2", "title": "無い文書は見つからない", "input": {"title": "none"}, "error": "NOT_FOUND"}
+      {"id": "F-010-C2", "title": "無い文書は見つからない", "input": {"title": "none"}, "error": "NOT_FOUND"},
+      {"id": "F-010-C3", "title": "読み直しても、前に読んだときと同じ URN と版が返る",
+       "setup": [{"operation": "create_document", "input": {"title": "契約書"}, "expected": {"urn": {"$any": "string"}, "version": 1}}],
+       "input": {"title": "契約書"},
+       "expected": {"urn": {"$any": "string"}, "title": "契約書", "version": {"$any": "integer"}}, "as": "read",
+       "after": [{"operation": "get_document", "input": {"title": "契約書"},
+                  "expected": {"urn": {"$ref": "read.urn"}, "title": "契約書", "version": {"$ref": "read.version"}}}]}
     ]
   }
 ]
