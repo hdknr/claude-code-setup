@@ -1101,7 +1101,7 @@ def check_norm_shape() -> None:
     check("verifier.md: 差し込み 11 が、一覧を作者の SHA でなく最初の計画のコミットから、作業ツリーまで 6 本の git で確かめさせ、順序・出所の無い行・書き換え・未コミット・Issue を出所にした行を反証とする",
           all(k in diff_block for k in ("作者が書いた SHA は使わないでください", "git log --follow --format=%H {{base の SHA}}..HEAD -- {{計画ファイルのパス}}",
                                          "git show --stat <確定のコミット>", "git log --format=%H {{base の SHA}}..HEAD -- ':(top)' ':(top,exclude){{計画ファイルのパス}}'", "確定のコミットがその全部の祖先か", "git diff <確定のコミット> -- {{計画ファイルのパス}}",
-                                         "git status --porcelain -- {{計画ファイルのパス}}", "git status --porcelain -- ':(top)' ':(top,exclude){{計画ファイルのパス}}'", "git merge-base <参照名> HEAD", "1 本目の最後の行", "次のどれかは反証です", "確定した一覧に出所の無い行がある",
+                                         "git status --porcelain -- {{計画ファイルのパス}}", "git status --porcelain -- ':(top)' ':(top,exclude){{計画ファイルのパス}}'", "git merge-base <参照名> HEAD", "取り直さずその値を使ってください", "1 本目の最後の行", "次のどれかは反証です", "確定した一覧に出所の無い行がある",
                                          "確定のコミットに成果物の変更が混ざる", "確定のコミットより前に計画以外のコミットがある",
                                          "出所を残したままの書き換え）に利用者の指示の引用と日時が無い", "未コミットの変更が出る",
                                          "Issue 本文・コメント・関門の報告を出所にした行がある")))
@@ -1131,7 +1131,7 @@ def check_norm_shape() -> None:
                                        "エージェント（作者・実装役・関門）は足さない", "利用者が不在の周は人間に確かめられないので、足さない",
                                        "そのコミットには成果物の変更を含めない", "Issue 本文・コメントは出所にならない", "`なし` でも節は必ず置く",
                                        "`+` も `-` も書き換えも、すべて無効である", "手順 5 の BLOCKED の規定どおりに扱う", "旧い実装を動かせない周は付けないものではない",
-                                       "main を取り込んだら、旧も手順 4 の式を当て直した base にし", "git merge-base <参照名> HEAD", "作者が書いた値を信じない", "新旧を同じ実装に向けない", "迷ったら正規化しない"))
+                                       "main を取り込んだら、旧も手順 4 の式を当て直した base にし", "git merge-base <参照名> HEAD", "作者が書いた値を信じない", "親が当て直した base の SHA を渡し、Verifier は取り直さずその値を使う", "新旧を同じ実装に向けない", "迷ったら正規化しない"))
           and "最初から 2 つの分岐" not in diff_doc and "確定の SHA は" not in diff_doc)
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
