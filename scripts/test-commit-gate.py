@@ -226,6 +226,94 @@ def suite(script: Path) -> list[str]:
           r1.returncode == 0 and "would_stop 1" in r1.stdout and "pass 1" in r1.stdout
           and "[would_stop]" in r1.stdout and "missing" in r1.stdout, r1.stdout)
     c.close()
+    # 形の読み方（1 パス目の指摘: -m を 2 本・&& で続く・$'…'・git commit でないコマンド）
+    c = Case(script, cfg("enforce"))
+    check("-m を 2 本渡す形のトレーラーを読む", c.hook('git commit -m "x" -m "Verified: tests"').returncode == 0)
+    check("&& で続く形のトレーラーを読む", c.hook('git add -A && git commit -m "x\n\nVerified: tests" && git push').returncode == 0)
+    check("後ろにオプションが続く形のトレーラーを読む", c.hook('git commit -m "x\n\nVerified: tests" --no-verify').returncode == 0)
+    check("$'…' の形のトレーラーを読む", c.hook("git commit -m $'x\\n\\nVerified: tests,gates'").returncode == 0)
+    check("none (理由) の後ろに続く形", c.hook('git commit -m "x\n\nVerified: none (計画のみ)" && git push').returncode == 0)
+    check("インデントした印を読む", c.hook('git commit -m "x\n\n  Verified: tests"').returncode == 0)
+    for cmd in ("git commit-tree HEAD^{tree} -m x", 'gh pr create --title t --body "run git commit -m x to save"',
+                "git commit-graph write", 'git log --grep "git commit"'):
+        r = c.hook(cmd)
+        check(f"git commit でないコマンドを止めない: {cmd[:30]}", r.returncode == 0, f"rc={r.returncode}")
+    check("git commit でないコマンドは記録しない", all(e["reason"] != "missing" or "tree" not in e["command_head"] for e in c.entries()))
+    check("絶対パスの git commit も見る", c.hook("/usr/bin/git commit -m x").returncode == 2)
+    check("引用符つきの -C の git commit も見る", c.hook('git -C "/tmp/a b" commit -m x').returncode == 2)
+    check("別のコマンドの --dry-run に引きずられない", c.hook("git push --dry-run && git commit -m x").returncode == 2)
+    check("空白なしの ; の後の git commit も見る", c.hook("echo a;git commit -m x").returncode == 2)
+    check("最後の印を採る（先が正しく後が誤り）", c.hook('git commit -m "x\n\nVerified: tests\n\nVerified: magic"').returncode == 2)
+    check("最後の印を採る（先が誤りで後が正しい）", c.hook('git commit -m "x\n\nVerified: magic\n\nVerified: tests"').returncode == 0)
+    check("--amend -m は直前のメッセージを読まない", c.hook('git commit --amend -m "y"').returncode == 2)
+    (c.repo / "bin.txt").write_bytes(b"\xff\xfe")
+    r = c.hook("git commit -F bin.txt")
+    check("UTF-8 でない -F はトレースバックを出さない", "Traceback" not in r.stderr, r.stderr[-200:])
+    head = sh("git", "rev-parse", "HEAD", cwd=c.repo).stdout.strip()
+    (c.repo / ".git/MERGE_HEAD").write_text(head + "\n")
+    r = c.hook("git commit --no-edit")
+    check("マージの締めは見ない", r.returncode == 0, f"rc={r.returncode}")
+    check("マージ中の -m 付きの commit も見ない", c.hook('git commit -m "Merge x"').returncode == 0)
+    (c.repo / ".git/MERGE_HEAD").unlink()
+    check("メッセージを渡さない --no-edit は見ない", c.hook("git commit --no-edit").returncode == 0)
+    c.close()
+
+    # 判定できないとき・記録が書けないとき
+    c = Case(script, cfg("enforce"))
+    env = {**os.environ, "DEV_LOOP_GATE_LOG": str(c.log), "HOME": str(c.tmp), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/nonexistent"}
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": plain}, "cwd": str(c.repo)})
+    r = subprocess.run([sys.executable, str(script)], input=payload, cwd=c.repo, env=env, capture_output=True, text=True)
+    check("git が使えなければ通す（enforce でも）", r.returncode == 0 and c.entries() == [], f"rc={r.returncode}")
+    env = {**os.environ, "DEV_LOOP_GATE_LOG": str(c.tmp / "no-such-dir" / "x.jsonl"), "HOME": str(c.tmp), "GIT_CONFIG_GLOBAL": "/dev/null"}
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": plain}, "cwd": str(c.repo)})
+    r = subprocess.run([sys.executable, str(script)], input=payload, cwd=c.repo, env=env, capture_output=True, text=True)
+    check("記録を書けなくても enforce は止める", r.returncode == 2 and "記録を書けなかった" in r.stderr, f"rc={r.returncode} {r.stderr}")
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": plain}, "cwd": str(c.repo)})
+    r = subprocess.run([sys.executable, str(script)], input=payload, cwd=c.tmp, env={**env, "DEV_LOOP_GATE_LOG": str(c.log)},
+                       capture_output=True, text=True)
+    check("stdin の cwd を使う（プロセスの cwd が別でも）", r.returncode == 2, f"rc={r.returncode}")
+    c.close()
+    # .git でない共通ディレクトリでは設定を読まない
+    c = Case(script, None)
+    sep = c.tmp / "sep"
+    sep.mkdir()
+    sh("git", "init", "-q", "--separate-git-dir", str(c.tmp / "gitdir"), str(sep), cwd=c.tmp)
+    (c.tmp / ".claude").mkdir()  # 共通ディレクトリ（c.tmp/gitdir）の親。ここを読んでしまうと enforce になる
+    (c.tmp / ".claude/dev-loop.md").write_text(cfg("enforce"), encoding="utf-8")
+    c.repo = sep
+    check(".git でない共通ディレクトリでは off", c.hook(plain).returncode == 0 and c.entries() == [])
+    c.close()
+
+    # 設定の行が読めないとき status が名指しする
+    c = Case(script, "- 検証の関門: enforce\n")
+    s = sh(sys.executable, str(script), "status", "--project", str(c.repo), cwd=c.repo)
+    check("status が読めなかった行を名指しする", "行頭から" in s.stdout and "off" in s.stdout, s.stdout)
+    check("読めない行は off", c.hook(plain).returncode == 0)
+    c.close()
+
+    # report --since
+    c = Case(script, None)
+    c.log.write_text(json.dumps({"ts": "2026-01-05T10:00:00+0900", "action": "would_stop", "reason": "missing", "command_head": "a"}) + "\n"
+                     + json.dumps({"ts": "2026-12-05T10:00:00+0900", "action": "pass", "reason": None, "command_head": "b"}) + "\n", encoding="utf-8")
+    r2 = sh(sys.executable, str(script), "report", "--log", str(c.log), "--since", "2026-06-01", cwd=c.repo)
+    check("report --since は古い記録を数えない", "pass 1" in r2.stdout and "would_stop" not in r2.stdout, r2.stdout)
+    c.close()
+
+    # 語彙の写し（原本・実装役の指示）
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gate_under_test", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ref = (ROOT / "plugins/dev-loop/skills/dev-loop/references/verification-trailer.md").read_text(encoding="utf-8")
+    impl = (ROOT / "plugins/dev-loop/skills/dev-loop/prompts/implementer.md").read_text(encoding="utf-8")
+    c = Case(script, cfg("enforce"))
+    for m in mod.METHODS:
+        check(f"語彙 {m} は通る", c.hook(f'git commit -m "x\n\nVerified: {m}"').returncode == 0)
+        check(f"語彙 {m} が原本の表にある", f"| `{m}` |" in ref)
+        check(f"語彙 {m} が実装役の指示にある", f"`{m}`" in impl)
+    for k in mod.MODES + mod.ESCAPES:
+        check(f"設定の値 {k} が原本にある", k in ref)
+    c.close()
     return fails
 
 
@@ -238,13 +326,28 @@ MUTATIONS = [
     ("逃げ道なしが効かない", 'return "none_not_allowed" if escape == "なし" else None', "return None"),
     ("語彙の外を通す", '    return "malformed"', "    return None"),
     ("off でも判定する", '    if mode == "off":\n        return 0', "    if False:\n        return 0"),
-    ("コードフェンスを設定に読む", "values = pat.findall(strip_noise(text))", "values = pat.findall(text)"),
-    ("--dry-run を見る", ' or "--dry-run" in command', ""),
-    ("amend の直前メッセージを読まない", 'and (not has_msg or "--no-edit" in command)', "and False"),
+    ("コードフェンスを設定に読む", "clean = strip_noise(text)", "clean = text"),
+    ("--dry-run を見る", 'if "--dry-run" not in s]', "if True]"),
+    ("amend の直前メッセージを読まない", 'and (not has_msg or "--no-edit" in segment)', "and False"),
     ("2 本の行の最初の値を採る", 'return default, f"`{key}:` の行が', 'return values[0], f"`{key}:` の行が'),
     ("値違いをそのまま採る", 'return default, f"`{key}:` の値', 'return values[0], f"`{key}:` の値'),
     ("worktree の写しを読む", 'path = Path(common).parent / ".claude" / "dev-loop.md"', 'path = Path(cwd) / ".claude" / "dev-loop.md"'),
-    ("-F を読まない", "        try:\n            text += \"\\n\" + p.read_text(encoding=\"utf-8\")\n        except OSError:\n            pass\n", ""),
+    ("最初の印を採る", "value = clean_value(found[-1])", "value = clean_value(found[0])"),
+    ("--amend -m でも直前を読む", '(not has_msg or "--no-edit" in segment)', "(True)"),
+    ("非 UTF-8 の -F で落ちる", "        except (OSError, ValueError):\n            pass\n", "        except OSError:\n            pass\n"),
+    ("マージの締めも判定する", "merge_in_progress(cwd) or (", "False or ("),
+    ("--no-edit も判定する", 'or ("--no-edit" in segment and "--amend" not in segment)', ""),
+    ("git commit-tree に当たる", "commit(?=[ \\t\\n;&|)]|$)", "commit"),
+    ("引用符の中の git commit に当たる", "    skel = skeleton(command)\n", "    skel = command\n"),
+    ("引用符の閉じ以降を値に含める", "return (value[:m.start()] if m else value).strip()", "return value.strip()"),
+    ("-m 2 本の形を読まない", '(?:^|[\\"\']|\\\\n)[ \\t]*Verified:', '^[ \\t]*Verified:'),
+    ("記録が書けないと通す", 'print(f"検証の関門: 記録を書けなかった（{exc}）", file=sys.stderr)', "sys.exit(0)"),
+    ("stdin の cwd を読まない", 'cwd = data.get("cwd") or os.getcwd()', "cwd = os.getcwd()"),
+    ("report --since を無視する", 'if since and r.get("ts", "") < since:', "if False:"),
+    ("語彙を足しても止まらない", 'METHODS = ("tests", "gates", "verify", "code-review")', 'METHODS = ("tests", "gates", "verify", "code-review", "lint")'),
+    (".git でない共通ディレクトリでも設定を読む", 'if not common or Path(common).name != ".git":', "if not common:"),
+    ("読めない行を名指ししない", "        if loose:\n", "        if False:\n"),
+    ("-F を読まない", 'text += "\\n" + p.read_text(encoding="utf-8")', "pass"),
     ("記録に全文を書く", "command[:HEAD_LEN]", "command"),
 ]
 

@@ -7,8 +7,8 @@
 ## 使い方
 
 - **hook として（引数なし）**: stdin に PreToolUse の JSON（`tool_name`・`tool_input.command`・`cwd`）を受ける。
-  Bash の `git commit` だけを見て、コミットメッセージに `Verified:` の行があるかを数える。
-  モードは**メインの作業ツリー**の `.claude/dev-loop.md`（worktree の中の写しは読まない。周のブランチが自分のモードを変えられないように）の `検証の関門: off|observe|enforce` の行（既定 `off`）で決まる。
+  Bash の `git commit` だけを見て（`git commit-tree`・引用符やヒアドキュメントの中の `git commit` は見ない）、コミットメッセージに `Verified:` の行があるかを数える。
+  モードは**メインの作業ツリー**の `.claude/dev-loop.md`（worktree の中の写しは読まない。周のブランチの変更でモードが変わらないように）の `検証の関門: off|observe|enforce` の行（既定 `off`）で決まる。
   - `off`: 何もしない（記録もしない）。
   - `observe`: 通す（終了コード 0）。「止めていたはず」を記録に 1 行残す。
   - `enforce`: 満たさないコミットを止める（終了コード 2 と、直し方を stderr に出す）。
@@ -30,7 +30,7 @@
 
 ## 守ること
 
-- **hook として、判定できないときは通す**（stdin が JSON でない・`git` が使えない・設定の誤り）。**`enforce` でもそう**——
+- **hook として、判定できないときは通す**（stdin が JSON でない・`git` が使えない・設定の誤り・`-F` のファイルが読めない）。**`enforce` でもそう**——
   hook は壊れても止めない側に倒す（止めると利用者の作業を巻き込む）。**だから `enforce` は保証ではない**（下）。
 - **設定の誤り（値が表に無い・同じ行が 2 本以上）は `off`**。止める側に倒さない。誤りは `status` が名指しする。
 - **コードフェンスと HTML コメントの中の行は設定として読まない。**
@@ -45,6 +45,7 @@
   真似て呼ぶ（`scripts/test-commit-gate.py`）。stdin の鍵と終了コード 2 の意味は公式の説明に従った。
 - **`git commit` を直接呼ばない形**（`git` の別名・スクリプトの中のコミット・IDE のコミット）は見ない。
 - `-C`／`-c`（メッセージの再利用）と、エディタを開くコミットはメッセージを読めず、`missing` になる。
+- **マージの締め（`MERGE_HEAD` がある・`--no-edit`）は見ない**（通す。記録もしない）。
 - `--amend` でメッセージを渡さないときは、直前のコミットのメッセージを読む。
 - **同じセッションで 2 回止めたら次は通す、という逃げ道は採っていない**（セッションの状態を持つ必要がある）。
 
@@ -67,10 +68,17 @@ DEFAULT_MODE = "off"
 DEFAULT_ESCAPE = "理由を書けば通す"
 METHODS = ("tests", "gates", "verify", "code-review")
 
+# 引用符の中とヒアドキュメントの本体を消した「骨組み」に当てる（`gh ... --body "git commit"`・`git commit-tree` に当てないため）
 GIT_COMMIT = re.compile(
-    r"(?:^|[;&|\n(]|\s)git(?:\s+(?:-C\s+\S+|-c\s+\S+|--[\w-]+(?:=\S+)?))*\s+commit\b"
+    r"(?:^|[;&|(\n])[ \t]*(?:\w+=\S*[ \t]+)*(?:\S*/)?git"
+    r"(?:[ \t]+(?:-C[ \t]+\S+|-c[ \t]+\S+|--[\w-]+(?:=\S+)?))*[ \t]+commit(?=[ \t\n;&|)]|$)"
 )
-TRAILER = re.compile(r"^[ \t]*Verified:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
+HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.DOTALL)
+SEGMENT_END = re.compile(r"&&|\|\||;|\||\n")
+# 行頭・引用符の直後・文字のままの `\n` の直後の `Verified:`（-m を 2 本渡す形・$'…' の形も読む）
+TRAILER = re.compile(r"(?:^|[\"']|\\n)[ \t]*Verified:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
+# 値の終わり: 閉じの引用符（後ろが行末・&&・;・|・リダイレクト・次のオプション）と、文字のままの `\n`
+VALUE_END = re.compile(r"""["'](?=[ \t]*(?:$|&&|\|\||[;|)<>]|-{1,2}[A-Za-z]))""")
 NONE_FORM = re.compile(r"^none(?:[ \t]*[(（](.*)[)）])?$")
 FENCE = re.compile(r"^[ \t]*(```|~~~)")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -78,8 +86,8 @@ HEAD_LEN = 120
 
 GUIDE = (
     "コミットメッセージの最後の段落に検証の印を付けてください: "
-    "`Verified: tests,gates,verify,code-review` のうち実際に回したもの、"
-    "回していなければ `Verified: none (理由)`。"
+    "`Verified: tests,gates,verify,code-review` のうち実際に回したものだけ（回していない手段は書かない）、"
+    "何も回していなければ `Verified: none (理由)`。"
 )
 
 
@@ -99,8 +107,12 @@ def strip_noise(text: str) -> str:
 def read_setting(text: str, key: str, allowed: tuple[str, ...], default: str) -> tuple[str, str | None]:
     """`<key>: <値>` の行を読む。(値, 誤りの説明)。誤りは既定に倒す。"""
     pat = re.compile(rf"^{re.escape(key)}:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
-    values = pat.findall(strip_noise(text))
+    clean = strip_noise(text)
+    values = pat.findall(clean)
     if not values:
+        loose = [ln for ln in clean.splitlines() if key in ln]
+        if loose:
+            return default, f"`{key}` を含む行が行頭から `{key}: <値>` の形でない（{loose[0].strip()[:40]!r}）ので読まなかった"
         return default, None
     if len(values) > 1:
         return default, f"`{key}:` の行が {len(values)} 本ある（1 本にまとめる）"
@@ -111,7 +123,7 @@ def read_setting(text: str, key: str, allowed: tuple[str, ...], default: str) ->
 
 def git(cwd: str, *args: str) -> str | None:
     try:
-        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, timeout=20)
+        r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, errors="replace", timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
     return r.stdout.strip() if r.returncode == 0 else None
@@ -133,7 +145,31 @@ def load_config(cwd: str) -> tuple[str, str, list[str]]:
     return mode, esc, errors
 
 
-def commit_message_text(command: str, cwd: str) -> str:
+def skeleton(command: str) -> str:
+    """ヒアドキュメントの本体と引用符の中を消す（コマンドの形だけを残す）。"""
+    out = HEREDOC.sub("<<heredoc", command)
+    out = re.sub(r'"(?:\\.|[^"\\])*"', '""', out)
+    return re.sub(r"'[^']*'", "''", out)
+
+
+def find_commits(command: str) -> list[str]:
+    """`git commit` の呼び出しごとの、続くオプションの並び（次の `&&`・`;`・`|` まで）。"""
+    skel = skeleton(command)
+    return [SEGMENT_END.split(skel[m.end():], maxsplit=1)[0] for m in GIT_COMMIT.finditer(skel)]
+
+
+def merge_in_progress(cwd: str) -> bool:
+    return git(cwd, "rev-parse", "-q", "--verify", "MERGE_HEAD") is not None
+
+
+def clean_value(value: str) -> str:
+    """トレーラーの値から、コマンドの続き（閉じの引用符以降）と文字のままの `\\n` 以降を落とす。"""
+    value = value.split("\\n")[0]
+    m = VALUE_END.search(value)
+    return (value[:m.start()] if m else value).strip()
+
+
+def commit_message_text(command: str, segment: str, cwd: str) -> str:
     """判定に使うメッセージの文面。コマンド全体（-m・ヒアドキュメント）＋ -F のファイル＋ amend の直前のメッセージ。"""
     text = command
     for m in re.finditer(r"(?:-F|--file)(?:=|\s+)(\S+)", command):
@@ -141,10 +177,10 @@ def commit_message_text(command: str, cwd: str) -> str:
         p = p if p.is_absolute() else Path(cwd) / p
         try:
             text += "\n" + p.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, ValueError):
             pass
-    has_msg = re.search(r"(?:^|\s)(?:-[a-zA-Z]*m\b|--message\b|-F\b|--file\b)", command) or "<<" in command
-    if re.search(r"--amend\b", command) and (not has_msg or "--no-edit" in command):
+    has_msg = re.search(r"(?:^|\s)(?:-[a-zA-Z]*m(?=[\s=\"']|$)|--message\b|-F\b|--file\b)", segment) or "<<" in segment
+    if re.search(r"--amend\b", segment) and (not has_msg or "--no-edit" in segment):
         prev = git(cwd, "log", "-1", "--format=%B")
         if prev:
             text += "\n" + prev
@@ -156,7 +192,7 @@ def judge(text: str, escape: str) -> str | None:
     found = TRAILER.findall(text)
     if not found:
         return "missing"
-    value = found[-1].rstrip("\"'").strip()
+    value = clean_value(found[-1])
     m = NONE_FORM.match(value)
     if m:
         if not (m.group(1) or "").strip():
@@ -197,12 +233,16 @@ def hook() -> int:
         return 0  # 判定できないときは通す
     if tool != "Bash" or not isinstance(command, str):
         return 0
-    if not GIT_COMMIT.search(command) or "--dry-run" in command:
+    segments = [s for s in find_commits(command) if "--dry-run" not in s]
+    if not segments:
         return 0
     mode, escape, errors = load_config(cwd)
     if mode == "off":
         return 0
-    reason = judge(commit_message_text(command, cwd), escape)
+    segment = segments[0]
+    if merge_in_progress(cwd) or ("--no-edit" in segment and "--amend" not in segment):
+        return 0  # マージの締め・メッセージを渡さずに済ませる形は、メッセージを読めない（見ない）
+    reason = judge(commit_message_text(command, segment, cwd), escape)
     action = "pass" if reason is None else ("would_stop" if mode == "observe" else "stopped")
     write_log(cwd, {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "mode": mode, "action": action,
