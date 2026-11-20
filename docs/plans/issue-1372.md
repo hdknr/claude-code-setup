@@ -71,7 +71,8 @@ main へのマージ → GitHub Pages の再ビルド（計画ファイルだけ
 - 指摘対応の実測（2026-11-20。写しはリポジトリの外）: 素の起動 `すべて合格`・刻みをまたぐ `True`（C4）。時計を読む `X-both`・`X-mono`・`X-lt` は「時計を読むらしい…」が FAIL（C2）。時計を読まない `X-state`・`X-rand`・`X-name`・`X-rc` は ok（C1・C1b）。`check-all.py`: 17/99 本を回して失敗 0（82 本はキャッシュ）
 - 狭いパス（`dev-loop:dev-loop-verifier`・sonnet、`c247b771`→`28842c62` の 2 点）: 反証 0 件・限界 2 件（NP-1・NP-2。採否は人間が決める）。git status は前後とも空。Verifier の変異 10 本のうち、時計を読むのに赤にならなかったのは `X-M1-proc`（`process_time_ns`）だけ（陽性対照 `X-M3-timefull` は赤）
 - 満たしていない受入基準: C2 の一部——`frozen_clock` が止めない細かい時計（`process_time_ns` など）を `CLOCK_READERS` に当たらない書き方で読む変異は、入れ忘れても何も赤にならない（NP-1。base では赤）
-- 外部レビュー: PR を作った後に見る
+- PR #1373 を作った。PR 側の CI: pass 8・skipping 1（deploy）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。レビュー結果を PR コメントに書いた
+- マージ: 待ち——NP-1 の判断と起票の確認（2026-11-20 に `AskUserQuestion` で訊いたが回答が無かった）を人間に仰いでいる
 - 実験の交絡: 「赤にならない」の主張（C1・C1b）は base で赤になる陽性対照を取った（1 パス目）。2 パス目の `X-state` も base で赤・HEAD で ok
 - 手元の実測（2026-11-20）:
   - 素の起動: `PPTX 生成のテスト: すべて合格`・「本物の本体の決定性の観測は zip の時刻の刻みをまたぐ（実際: True）」（C4）
