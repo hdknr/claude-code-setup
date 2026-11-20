@@ -64,7 +64,7 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
 | **図（`FIGURE_SUFFIXES`）の中の印** | 図を置くことがあるので落とさない。**見なかったファイルは件数と名前を出す**。図以外の読めないファイルは 2 にする |
 | **印を使わずに書いた未決定**（「あとで決める」「検討中」） | 言い回しは列挙しきれない。判定役（Red Team）が条件 2・3 で見る |
 | **ドット始まりのファイル・ディレクトリの中** | `.git` などを見ないため |
-| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（`===`・`---`）は見出しと読まず、テストケースの節を閉じる）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
+| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（本文の行の直後の `===`・`---`）は見出しと読まず、テストケースの節を閉じる。空行の後の `---` は区切りの線で、閉じない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
 | **番号の形に当たらない行の識別子**（`1`・`あ`・`No.3` など） | 表ごとに 1 から振り直す連番は、表が違えば重複でも誤りでない。形に当たる番号だけを全体で一意とみなす |
 | **全角・半角の違い以外の表記ゆれ**（`F1-5B` と `F1-5b`・`F1‐5b`（別のハイフン）） | 別の番号として数える。NFKC で畳むのは全角の英数字とハイフンだけ |
 | **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
@@ -128,8 +128,9 @@ ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)
 # テストケースの節の見出し（`#` の見出しの文）。**末尾が**テストケースの語（後ろに `一覧` と括弧書きを許す）。同じ写し
 SECTION_HEADER = re.compile(r"(?:テストケース|\btest ?cases?|\btc)(?:\s*一覧)?\s*(?:[(（][^()（）]*[)）])?$", re.IGNORECASE)
 HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")
-# 下線の見出し（`===`・`---`）と区切りの線。節の見出しと読まず、テストケースの節を閉じる（#1333。下線の見出しの下の表をテストケースに数えない）
-UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})[ \t]*$")
+# 下線の見出しの下線（`===`・`---`）。本文の行の直後にあるときだけ下線の見出しで、節の見出しと読まず、テストケースの節を閉じる
+# （#1333。下線の見出しの下の表をテストケースに数えない。空行の後の `---`・`***` は区切りの線で、節を閉じない）
+UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
 SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
@@ -161,6 +162,7 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
     fence = None
     previous = None  # 直前の行が表の行なら、その先頭のセル（次の行が区切りの行なら見出し）
     counting = False  # いまの表の見出しがテストケースの表か
+    prose = False  # 直前の行が本文の行（空でなく、表・見出し・コードブロックでない）か——次の下線で下線の見出しになる
     section = None  # いまの見出しがテストケースの節の中なら、その節の見出しの深さ（#1333。小見出しは節を引き継ぐ）
     for number, line in enumerate(text.splitlines(), 1):
         opened = FENCE.match(line)
@@ -170,7 +172,7 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
             continue
         if opened:
             fence = opened.group(1)
-            previous, counting = None, False
+            previous, counting, prose = None, False, False
             continue
         heading = HEADING.match(line)
         if heading:
@@ -178,16 +180,18 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
             if section is None or level <= section:
                 title = unicodedata.normalize("NFKC", line.strip().strip("#")).strip(" `*_").rstrip(":：").strip(" `*_")
                 section = level if SECTION_HEADER.search(title) else None
-            previous, counting = None, False
+            previous, counting, prose = None, False, False
             continue
-        if UNDERLINE.match(line):
+        if UNDERLINE.match(line) and prose:
             section = None
-            previous, counting = None, False
+            previous, counting, prose = None, False, False
             continue
         stripped = line.strip()
         if not stripped.startswith("|"):
             previous, counting = None, False
+            prose = bool(stripped)
             continue
+        prose = False
         cell = unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip().strip("`*_ ")
         if SEPARATOR.fullmatch(stripped):
             counting = previous is not None and (CASE_HEADER.search(previous) is not None
