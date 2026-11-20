@@ -153,6 +153,7 @@ BLOCKED: なし。
 
 - `check-all.py`（run-serial 越し）1 回目（`c09fcb90`）: 99 本中 63 本・失敗 2（`check-plan-counts.py`・`check-plan-scope.py`。どちらも計画ファイル。範囲の書式を 1 行 1 パターンに直した）。
 - 2 回目（`19696b7a`）: 失敗 1（`check-plan-counts.py`——件数の行。この追記で直す）。
+- PR #1377 の CI（head `8f85f8e7`）: 8 件成功・1 件スキップ（deploy）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。
 - 3 回目（`eea6fdfb`。当て直しの後）: 99 本中 63 本を回して失敗 0（36 本は `CACHED`。PR 側の CI は全部回す）。
 
 ```dev-loop-gates
