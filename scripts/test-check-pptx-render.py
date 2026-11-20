@@ -41,6 +41,9 @@ TARGET = "check-pptx-render.py"
 
 FAKE_SOFFICE = """#!/usr/bin/env python3
 import os, sys, pathlib
+if os.environ.get("FAKE_SOFFICE_FAIL2"):  # 2 行の標準エラー——本当の原因は 2 行目
+    print("javaldx: Could not find a Java Runtime Environment!", file=sys.stderr)
+    print("Error: source file could not be loaded", file=sys.stderr); sys.exit(1)
 if os.environ.get("FAKE_SOFFICE_FAIL"):
     print("soffice が壊れている", file=sys.stderr); sys.exit(3)
 if os.environ.get("FAKE_SOFFICE_NOWRITE"):
@@ -206,10 +209,14 @@ REAL_TIMEOUT = 900  # 本体は soffice・pdftotext・pdftoppm にそれぞれ 3
 
 
 def why_unverified(stderr: str) -> str:
-    """本体が確かめられなかった（2・3）ときの理由の行。本体の行が無ければ最後の行。"""
+    """本体が確かめられなかった（2・3）ときの理由。本体の名指しの行から終わりまで（soffice の標準エラーは複数行で続く）。
+
+    名指しの行が無ければ最後の行。行は ` ⏎ ` でつなぎ、500 字で切る。
+    """
     lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
-    named = [ln for ln in lines if "確かめられなかった" in ln or "描画の道具が無い" in ln or "想定外の例外" in ln]
-    return ((named or lines or ["（本体は理由を出さなかった）"])[-1])[:300]
+    named = [i for i, ln in enumerate(lines) if "確かめられなかった" in ln or "描画の道具が無い" in ln or "想定外の例外" in ln]
+    picked = lines[named[-1]:] if named else lines[-1:]
+    return (" ⏎ ".join(picked) or "（本体は理由を出さなかった）")[:500]
 
 
 def real_tools_check(pp, work: Path, path: str | None = None, env_extra: dict[str, str] | None = None) -> tuple[str, str]:
@@ -260,6 +267,9 @@ def real_stage_reading(pp, base: Path) -> dict[str, bool]:
     state, detail = real_tools_check(pp, base / "rs-fail", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_FAIL": "1"})
     obs["soffice が落ちたら確かめられないと言い、理由を出す"] = (
         state == "unverified" and "本体の終了コード 2" in detail and "soffice が壊れている" in detail and "収まる枚 2・はみ出す枚 2" in detail)
+    state, detail = real_tools_check(pp, base / "rs-fail2", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_FAIL2": "1"})
+    obs["soffice の標準エラーが複数行でも、後ろの行（本当の原因）まで出す"] = (
+        state == "unverified" and "source file could not be loaded" in detail and "javaldx" in detail)
     state, detail = real_tools_check(pp, base / "rs-nowrite", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_NOWRITE": "1"})
     obs["PDF を書かずに 0 で終わっても確かめられないと言う"] = state == "unverified" and "soffice の終了コード 0" in detail
     (boxes / "real-bad.xml").write_text(page((40, 25, 90, 40, "収まる文")), encoding="utf-8")
