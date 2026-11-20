@@ -52,6 +52,10 @@ if "FAKE:PASS" in text:
     print("Model checking completed. No error has been found.")
     # 最後の行は区切らない（TLC 2.19 はロケールに依らずこの形。#1339 で ドイツ語のロケールでも確かめた）
     print("1234567 states generated, 456789 distinct states found, 0 states left on queue."); sys.exit(0)
+if "FAKE:PRUNED" in text:  # CONSTRAINT と PROPERTY を一緒に検査した（TLC 2.19 の警告の行。#1339 で本物の TLC から取った）
+    print("Warning: Declaring state or action constraints during liveness checking is dangerous: Please read section 14.3.5 on page 247 of Specifying Systems.")
+    print("Model checking completed. No error has been found.")
+    print("5 states generated, 4 distinct states found, 0 states left on queue."); sys.exit(0)
 if "FAKE:QUIETPASS" in text:  # 状態数の行を出さずに通る（ほかの版で形が違うとき）
     print("Model checking completed. No error has been found."); sys.exit(0)
 if "FAKE:VIOLATE" in text:
@@ -64,10 +68,11 @@ if "FAKE:DEADLOCK" in text:
 if "FAKE:SILENT" in text:
     sys.exit(0)
 # 時間切れの前の進み具合の行の区切りは JVM のロケールで変わる（#1339 で本物の TLC 2.19 から取った形）
-for form, sep in (("SLEEPDE", "."), ("SLEEPFR", "\u202f"), ("SLEEPCH", "'")):
+for form, sep in (("SLEEPDE", "."), ("SLEEPFR", "\u202f"), ("SLEEPNB", "\u00a0"), ("SLEEPCH", "'")):
     if "FAKE:" + form in text:
+        # 状態数の前は `(` にする——数の始まりが空白でない形も読むことを見る（`Progress(` と同じ文字）
         print(f"Progress(67) at 2026-11-20 11:11:02: 56{{sep}}259{{sep}}125 states generated (54{{sep}}153{{sep}}637 s/min), "
-              f"12{{sep}}118{{sep}}483 distinct states found (11{{sep}}632{{sep}}650 ds/min), 866{{sep}}583 states left on queue.", flush=True)
+              f"(12{{sep}}118{{sep}}483 distinct states found (11{{sep}}632{{sep}}650 ds/min), 866{{sep}}583 states left on queue.", flush=True)
         time.sleep(3)
         sys.exit(0)
 if "FAKE:SLEEP" in text:
@@ -134,10 +139,12 @@ CASES: dict[str, tuple] = {
     "反例ありが判定できなかったより先": (f"TLC の呼び方: {CALL}\n", {T1: target(body="VIOLATE"), T2: target(controls=("PASS",))}, [], 1, "反例あり 1 件"),
     "時間切れ": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEP")}, ["--timeout", "1"], 4, "時間切れ"),
     # 重さの注記（#1339）——判定には使わない
+    "制約で刈った時相の性質は判定できなかった": (f"TLC の呼び方: {CALL}\n", {T1: target(body="PRUNED")}, [], 4, "時相の性質の「反例なし」は根拠にならない（状態数 4・"),
     "状態数を出す": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "本体 Order.tla: 反例なし（状態数 456789・"),
     "本体の反例の行にも重さの注記": (f"TLC の呼び方: {CALL}\n", {T1: target(body="VIOLATE")}, [], 1, "本体 Order.tla で反例が出た（状態数 9・"),
     "進み具合の行の . 区切り（ドイツ語のロケール）": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPDE")}, ["--timeout", "1"], 4, "（状態数 12118483・"),
     "進み具合の行の U+202F 区切り（フランス語のロケール）": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPFR")}, ["--timeout", "1"], 4, "（状態数 12118483・"),
+    "進み具合の行の U+00A0 区切り": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPNB")}, ["--timeout", "1"], 4, "（状態数 12118483・"),
     "知らない区切りの数は読まない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPCH")}, ["--timeout", "1"], 4, "（状態数は読めなかった・"),
     "陽性対照の状態数も出す": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "反例が出た（空振りでない）（状態数 9・"),
     "時間切れは進み具合の行の状態数": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEP")}, ["--timeout", "1"], 4, "（状態数 37791・"),
@@ -171,6 +178,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("最初の状態数を読む（時間切れの最後の進み具合でなく）", "'', found[-1])", "'', found[0])", "時間切れは進み具合の行の状態数"),
     ("桁区切りを , だけにする", 'GROUP_SEPARATORS = ",.\\u00a0\\u202f"', 'GROUP_SEPARATORS = ","', "進み具合の行の . 区切り（ドイツ語のロケール）"),
     ("U+202F を区切りにしない", 'GROUP_SEPARATORS = ",.\\u00a0\\u202f"', 'GROUP_SEPARATORS = ",.\\u00a0"', "進み具合の行の U+202F 区切り（フランス語のロケール）"),
+    ("U+00A0 を区切りにしない", 'GROUP_SEPARATORS = ",.\\u00a0\\u202f"', 'GROUP_SEPARATORS = ",.\\u202f"', "進み具合の行の U+00A0 区切り"),
+    ("数の始まりを空白だけにする", "(?<![^ \\t:(\\n])", "(?<![^ ])", "進み具合の行の . 区切り（ドイツ語のロケール）"),
+    ("制約で刈った時相の性質の反例なしを満たすにする", "            elif PRUNED_LIVENESS in out:\n", "            elif False:\n", "制約で刈った時相の性質は判定できなかった"),
     ("数の始まりを縛らない", "(?<![^ \\t:(\\n])", "", "知らない区切りの数は読まない"),
     ("本体の反例の行に重さの注記を付けない", "で反例が出た{weight}: ", "で反例が出た: ", "本体の反例の行にも重さの注記"),
     ("経過時間に 秒 を付けない", "{seconds:.1f} 秒）", "{seconds:.1f}）", "時間切れは進み具合の行の状態数"),

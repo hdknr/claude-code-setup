@@ -26,7 +26,7 @@ usage:
 
 走らせたモデルごとの行の終わりに `（状態数 <m>・<秒> 秒）` を付ける——状態数は TLC の出力の最後の `<m> distinct states found` の数（進み具合の行の 3 桁ごとの区切り `,`・`.`・U+00A0・U+202F は外す）、秒はこのスクリプトが測った経過時間。
 **時間切れ・重いモデルの切り分け**（状態数が多いのか、少ないのに遅いのか）の材料で、**判定と終了コードには使わない**。読めなければ `状態数は読めなかった` と言う。
-時間切れの回の状態数は、そこまでの進み具合の行の数（全体より少ない）。読み方を変えたいときは `agents/formal-checker.md` の「検査が重いとき」を見る。
+時間切れの回の状態数は、そこまでの進み具合の行の数（全体より少ない）。状態数を見た後に何を試すかは `agents/formal-checker.md` の「検査が重いとき」を正とする。
 
 ## 判定（対象ごと）
 
@@ -34,7 +34,7 @@ usage:
 | --- | --- |
 | `満たす` | 本体がどれも終了コード 0 で `No error has been found` を出し、陽性対照がどれも違反の印（下）を出した |
 | `反例あり` | 本体のどれかが違反の印を出した |
-| `判定できなかった` | 上のどれでもない——**陽性対照が違反の印を出さない（空振り）**・本体が通らず違反の印も出さない（構文の誤り・時間切れ）・TLC のモデルが一覧に無い・`陽性対照のファイル` が無いか TLC のモデルを含まない・一覧のファイルが無い・記録が読めない・呼び方の行が無い |
+| `判定できなかった` | 上のどれでもない——**陽性対照が違反の印を出さない（空振り）**・**本体が通ったが、制約（`CONSTRAINT`）で刈ったまま時相の性質を検査した（TLC の警告 `Declaring state or action constraints during liveness checking is dangerous` が出た。#1339）**・本体が通らず違反の印も出さない（構文の誤り・時間切れ）・TLC のモデルが一覧に無い・`陽性対照のファイル` が無いか TLC のモデルを含まない・一覧のファイルが無い・記録が読めない・呼び方の行が無い |
 
 **違反の印**: `is violated`（不変条件。`check-tlc.py` の陽性対照と同じ）・`were violated`（時相の性質）・`Deadlock reached`（行き止まり）。
 
@@ -57,6 +57,7 @@ usage:
 | 本体で反例が出たら 1 | 判定役が「反例なし」と書き写したモデルを通す |
 | 本体が通らず違反も出さない（構文の誤り・時間切れ）なら 4 | 走っていないモデルを反例なしと読む |
 | `陽性対照のファイル` が無い対象は 4 | 空振りでないことを確かめないまま 0 にする |
+| 制約で刈ったまま時相の性質を検査した本体の「反例なし」は 4（#1339） | `CONSTRAINT` で刈った先の時相の性質の違反を隠したまま 0 にする |
 | 呼び方の行が無ければ 4 | `PATH` の `tlc` で走らせる（探し方を `check-tlc.py` に揃える） |
 | 一時ディレクトリで走らせる | 正本に `states/` と出力が残り、`formal-baseline.py check` が落ちる |
 | 1 回の検査を `--timeout` 秒で止める（プロセスグループごと） | 大きいモデルで待ち続ける |
@@ -104,6 +105,9 @@ baseline = _load("formal_baseline", "formal-baseline.py")
 MODEL_ITEM = "モデルのファイル"
 CONTROL_ITEM = "陽性対照のファイル"
 VIOLATED = (tlc.BROKEN_MARK, "were violated", "Deadlock reached")
+# 状態・行為の制約（`CONSTRAINT`・`ACTION_CONSTRAINT`）と時相の性質を一緒に検査したときに TLC 2.19 が出す警告（#1339 で本物の TLC で確かめた）。
+# 刈った先の状態が消えるので、時相の性質の「反例なし」は根拠にならない（`agents/formal-checker.md` の「検査が重いとき」）
+PRUNED_LIVENESS = "Declaring state or action constraints during liveness checking is dangerous"
 TIMEOUT = 600
 PASS, COUNTEREXAMPLE, UNKNOWN = "満たす", "反例あり", "判定できなかった"
 EXIT_OK, EXIT_COUNTEREXAMPLE, EXIT_USAGE, EXIT_UNKNOWN = 0, 1, 2, 4
@@ -180,6 +184,11 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
                 verdict = COUNTEREXAMPLE
             elif rc != 0 or tlc.GOOD_MARK not in out:
                 lines.append(f"{directory}: 本体 {name}.tla が通らず、反例も出さなかった（終了コード {rc}）{weight}: {tlc.tail(out)}")
+                if verdict == PASS:
+                    verdict = UNKNOWN
+            elif PRUNED_LIVENESS in out:
+                lines.append(f"{directory}: 本体 {name}.tla は反例なしだが、制約（CONSTRAINT）で刈ったまま時相の性質を検査している——"
+                             f"時相の性質の「反例なし」は根拠にならない{weight}")
                 if verdict == PASS:
                     verdict = UNKNOWN
             else:
