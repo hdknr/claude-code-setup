@@ -3730,7 +3730,7 @@ def foundation_body(loaded: Loaded) -> str:
     if reset:
         lines.append(f"- [ ] `{RESET}()` があり、状態を空に戻す")
     if seeds:
-        lines.append(f"- [ ] `{SEED}` が上の一覧の名前を受ける" + (
+        lines.append(f"- [ ] `{SEED}` が上の一覧の名前を全部受ける（受けない名前で例外を上げない——値を置くのが機能の Issue の seed も、ここでは何もしない口でよい）" + (
             "。**土台で作る seed（" + "・".join(f"`{n}`" for n in shared) + "）は、ここで値を置けるところまで作る**" if shared else ""))
     lines += [
         "- [ ] 開発のリポジトリの `CLAUDE.md`・`.claude/dev-loop.md` に、上の verify の手順が書いてある",
@@ -4104,15 +4104,22 @@ def fail(repo: Path, writing: bool, code: int, lines: list[str]) -> int:
 
 
 def run(repo: Path, args, writing: bool) -> int:
+    if args.foundation:
+        # 一から作る案件の土台は最初の版で作る（#1347）——v2 以降は v1 の土台の上に足す。`load` の関門（条件 1・基盤要件・画面）より先に、
+        # 版の数だけで見る（引数の誤りを関門の 1 に隠さない）。版を数えられなければ、`load` が判定していないと言う
+        try:
+            found = versions.find_versions(repo / DOCS, []) if (repo / DOCS).is_dir() else []
+        except versions.Unreadable:
+            found = []
+        number = args.upto if args.upto is not None else len(found)
+        if found and number != 1:
+            return fail(repo, writing, 2, [f"--foundation は v1 でだけ使う（一から作る案件の最初の版。いまは v{number}）。判定していない"])
     try:
         code, lines, loaded = load(repo, args.upto, args.provisional)
     except Unjudged as exc:
         code, lines = 2, [str(exc)]
     if code:
         return fail(repo, writing, code, lines)
-    if args.foundation and loaded.number != 1:
-        # 一から作る案件の土台は最初の版で作る（#1347）——v2 以降は v1 の土台の上に足す。ほかの関門より先に見る（引数の誤りを関門の 1 に隠さない）
-        return fail(repo, writing, 2, [f"--foundation は v1 でだけ使う（一から作る案件の最初の版。いまは v{loaded.number}）。判定していない"])
     if not (args.check or args.red_check):
         # デザインの正本の参照（#1156）——本文を作るモードだけ
         code, lines = check_design(repo, loaded)

@@ -2659,7 +2659,7 @@ def foundation_written(repo: Path) -> str | None:
         "| `customer` | `id`・`name` | 3 件 | F-006・F-007 | 機能の Issue で作ってよい |",
         "Red テストのケース 9 件のうち、1/2 以上が使う seed は**土台で作る**",
         "- Red テストの走らせ方（`python3 -m unittest discover -s scaffold/tests`。",
-        "- [ ] `seed` が上の一覧の名前を受ける\n",
+        "- [ ] `seed` が上の一覧の名前を全部受ける（受けない名前で例外を上げない——値を置くのが機能の Issue の seed も、ここでは何もしない口でよい）\n",
         "- [ ] 開発のリポジトリの `CLAUDE.md`・`.claude/dev-loop.md` に、上の verify の手順が書いてある",
     ), "土台")
 
@@ -4297,6 +4297,9 @@ CASES: list[Case] = [
     Case("土台: --red-check と一緒に使えない", 2, "--foundation は書く生成か --dry-run と一緒にだけ使う", args=("--red-check", "--foundation")),
     Case("土台: v2 ではほかの関門より先に 2", 2, "--foundation は v1 でだけ使う", extra=v2([V2_CHANGED]), args=("--foundation",),
          pre=lambda repo: ((repo / "design").mkdir(), (repo / "design" / "sources.csv").write_text("壊れた,表\n", encoding="utf-8"))),
+    # v2 の条件 1（load の中の関門）が落ちても、--foundation の引数の誤り（2）を先に言う（2 パス目の /code-review の指摘）
+    Case("土台: v2 では条件 1 より先に 2", 2, "--foundation は v1 でだけ使う", args=("--foundation",),
+         extra={**v2([V2_CHANGED]), str(V2 / "spec" / "extra.md"): "# 追加\n\n割引の上限は未定。\n"}),
     Case("土台: v2 では使えない", 2, "--foundation は v1 でだけ使う（一から作る案件の最初の版。いまは v2）", extra=v2([V2_CHANGED]),
          args=("--foundation",), pre=plant_old_issues, post=nothing_written_issues),
     Case("まとめる機能が 1 件", 2, "まとめるには機能を 2 件以上並べる", args=("--bundle", "F-001"),
@@ -4944,7 +4947,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "shared = []", "土台: 多くのケースが使う seed は土台で作る"),
     ("seed を使うケースを数えない", '                found[name]["cases"] += 1', '                found[name]["cases"] += 0', "土台: 作る"),
     ("口の無い中間表現にも口を書く", "    if reset or seeds:\n", "    if True:\n", "土台: 口の無い中間表現"),
-    ("v2 でも --foundation を受け付ける", "    if args.foundation and loaded.number != 1:", "    if False:", "土台: v2 では使えない"),
+    ("v2 でも --foundation を受け付ける", "        if found and number != 1:", "        if False:", "土台: v2 では使えない"),
+    ("--foundation の版を条件 1 の後で見る", "    if args.foundation:\n        # 一から作る案件の土台は最初の版で作る", "    if False:\n        # 一から作る案件の土台は最初の版で作る",
+     "土台: v2 では条件 1 より先に 2"),
     ("--check・--red-check と --foundation を受け付ける", "    if args.foundation and (args.check or args.red_check):", "    if False:",
      "土台: --check と一緒に使えない"),
     ("変化の揃いを見ない", "        elif len({by_id[i].kind for i in ids}) != 1:", "        elif False:", "まとめる機能の変化が揃わない"),
