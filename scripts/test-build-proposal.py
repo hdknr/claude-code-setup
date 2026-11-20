@@ -227,13 +227,12 @@ PROVISIONAL = [("w", QA, PROVISIONAL_QA)] + BASE[1:] + [("t", R1), ("t", B1)]
 AFFIRMED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A を暫定で採用します（業務部の確認待ち）"))] + BASE[1:] + [("t", R1), ("t", B1)]
 # 確定した回答が暫定の経緯に触れただけの行（否定・取り下げの書き方が続く）——確定の行
 SETTLED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（暫定で採用していた B を取り下げ、業務部が A に決定）"))] + BASE[1:] + [("t", R1), ("t", B1)]
-STALE = ["proposal.md", "gantt.svg", "spec.md", "spec.pptx", "spec-figure-01.svg"]
+STALE = ["proposal.md", "gantt.svg", "spec.md", "spec.pptx", "decisions.xlsx", "spec-figure-01.svg"]
 # 出力と同じ場所に本体が置く印（#405）。試料の「前の出力」は、本体が書くのと同じ形の印と一緒に置く
 MANIFEST = ".build-proposal"
 # 手で置いたファイル（印に無い）。前 3 つは出力と同じ名前、最後は出力と関係の無い名前（#397）
 HAND = ["proposal.md", "spec.md", "spec-figure-01.svg", "notes.md"]
 HAND_TEXT = "手書き\n"
-FIGURE_NOTE = "PPTX に載せていない"
 
 
 class Result:
@@ -312,6 +311,34 @@ def pptx_ok(parts: dict) -> bool:
     except Exception:
         return False
     return True
+
+
+# PPTX の差し替えスクリプト（#1289）の試料。`python3 <script> --materials <dir> --proposal-out <p> --spec-out <s>`
+SCRIPT_OK = (
+    "import sys, zipfile, pathlib\n"
+    "a = dict(zip(sys.argv[1::2], sys.argv[2::2]))\n"
+    "names = sorted(p.name for p in pathlib.Path(a['--materials']).iterdir())\n"
+    "for key in ('--proposal-out', '--spec-out'):\n"
+    "    with zipfile.ZipFile(a[key], 'w') as z:\n"
+    "        z.writestr('ppt/x.xml', '<a>' + ','.join(names) + '</a>')\n"
+)
+SCRIPT_FAIL = "import sys\nprint('boom', file=sys.stderr)\nsys.exit(7)\n"
+SCRIPT_NONE = "pass\n"
+SCRIPT_NOTZIP = "import sys\nfor i in (4, 6):\n    open(sys.argv[i], 'w').write('x')\n"
+# 範囲の文書を指す反映済みの質問を足した試料（範囲を決めた質問の 1 枚の既定の選び方）
+SCOPE_ROW = "Q-009,要求確定,初版では帳票を作らない範囲でよいか,A: 作らない / B: 作る,A,理由,A（業務部が回答）,spec/scope.md,反映済み,\n"
+SIGNED_SCOPE = [("w", QA, QA_HEAD + QA_ROWS + SCOPE_ROW)] + BASE[1:] + [("t", R1), ("t", B1)]
+
+
+def xlsx_rows(blob: bytes | None) -> int:
+    """別紙（xlsx）の行の数（見出しを含む）。zip として読めなければ -1。"""
+    import io
+    import zipfile
+    try:
+        with zipfile.ZipFile(io.BytesIO(blob or b"")) as z:
+            return z.read("xl/worksheets/sheet1.xml").decode("utf-8").count("<row ")
+    except (zipfile.BadZipFile, KeyError):
+        return -1
 
 
 # (名前, 手順, 前の出力を置くか, 判定)
@@ -558,10 +585,10 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("v2 の暫定の節はこの版の Q&A と書く", V2C, False,
      lambda r: made(r) and "## この版の Q&A で利用者にまだ確かめていない決定（" in r.text
      and "前の版までの Q&A の暫定の行はここに載らない" in r.text),
-    # PPTX は `##` ごとにスライドを分ける——暫定の節が「主な決定事項」の題のスライドに載らない
+    # PPTX では、暫定の節は概要の枚と分けた 1 枚（0 件でも出す）
     ("暫定の節は決定事項のスライドと分ける", SIGNED + [("arg", "--pptx")], False,
-     lambda r: made(r) and any("利用者にまだ確かめていない決定" in t for t in slide_texts(r.pptx.get("proposal.pptx", {})))
-     and not any("主な決定事項" in t and "利用者にまだ確かめていない決定" in t
+     lambda r: made(r) and any(t.startswith("利用者にまだ確かめていない決定") for t in slide_texts(r.pptx.get("proposal.pptx", {})))
+     and not any("利用者と決めたことの概要" in t and "利用者にまだ確かめていない決定" in t
                  for t in slide_texts(r.pptx.get("proposal.pptx", {})))),
     ("承認の後に書き足した暫定は載らない", SIGNED + [("w", QA, PROVISIONAL_QA), ("c",)], False,
      lambda r: made(r) and "## 利用者にまだ確かめていない決定（0 件）" in r.text and "Q-007" not in r.text),
@@ -581,9 +608,9 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("仕様書に BPMN の書き出しを載せる", SIGNED_BPMN, False, bpmn_figures),
     # 合わない図の見出しは、図を載せない PPTX でも偽にならない（利用者の判断で P2-7 を直した）
     ("合わない図の見出しは PPTX でも偽にならない", SIGNED_BPMN + [("arg", "--pptx")], False,
-     lambda r: made(r) and "spec.pptx" in (r.pptx or {}) and "の図には載せている" in pptx_text(r.pptx["spec.pptx"])
+     lambda r: made(r) and "spec.pptx" in (r.pptx or {}) and "の図にも載せている" in pptx_text(r.pptx["spec.pptx"])
      and "返品.svg" in pptx_text(r.pptx["spec.pptx"]) and "上に載せた" not in pptx_text(r.pptx["spec.pptx"])
-     and FIGURE_NOTE in pptx_text(r.pptx["spec.pptx"])),
+     and "PNG にする道具" in pptx_text(r.pptx["spec.pptx"])),
     # `Spec.html` は PPTX が `Spec.pptx`——仕様書の PPTX と大文字小文字だけ違う（区別しない FS では同じファイル）
     ("出力の名前が仕様書の PPTX と重なると作らない", SIGNED + [("out", "Spec.html"), ("arg", "--pptx")], False,
      collided),
@@ -660,13 +687,48 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      lambda r: made(r) and "## 前の版（v1）からの変更" in r.spec and "spec/formal/" not in r.spec and "spec/formal/" not in r.text
      and "requirements/c.md" in r.text),
     # ---- PPTX（--pptx）
+    # ---- PPTX の指示（#1289）。差し替えスクリプト・別紙・範囲の 1 枚
+    ("差し替えスクリプトで PPTX を作る", SIGNED + [("w", "tools/make.py", SCRIPT_OK), ("arg", "--pptx", "--pptx-script", "tools/make.py")], False,
+     lambda r: made(r) and set(k for k in r.pptx if not k.endswith(":bytes")) == {"proposal.pptx", "spec.pptx"}
+     and all(w in r.pptx["proposal.pptx"].get("ppt/x.xml", "") for w in ("proposal.md", "spec.md", "gantt.svg", "decisions.xlsx"))
+     and "proposal.pptx" not in r.pptx["proposal.pptx"].get("ppt/x.xml", "")),
+    ("差し替えスクリプトが落ちたら作らない", SIGNED + [("w", "tools/make.py", SCRIPT_FAIL), ("arg", "--pptx", "--pptx-script", "tools/make.py")], False,
+     lambda r: not_made(2)(r) and "終了コード 7" in r.output and "boom" in r.output),
+    ("差し替えスクリプトの出力が揃わないと作らない", SIGNED + [("w", "tools/make.py", SCRIPT_NONE), ("arg", "--pptx", "--pptx-script", "tools/make.py")], False,
+     lambda r: not_made(2)(r) and "出力が揃っていない" in r.output),
+    ("差し替えスクリプトの出力が zip でないと作らない", SIGNED + [("w", "tools/make.py", SCRIPT_NOTZIP), ("arg", "--pptx", "--pptx-script", "tools/make.py")], False,
+     lambda r: not_made(2)(r) and "zip（PPTX）として読めない" in r.output),
+    ("差し替えスクリプトが無いと作らない", SIGNED + [("arg", "--pptx", "--pptx-script", "tools/none.py")], False,
+     lambda r: not_made(2)(r) and "スクリプトが無い" in r.output),
+    ("PPTX の指示は --pptx と一緒にしか渡せない", SIGNED + [("arg", "--no-appendix")], False,
+     lambda r: r.code == 2 and "--pptx と一緒に" in r.output and r.text is None and not r.names),
+    ("--overview は決まった値だけ", SIGNED + [("arg", "--pptx", "--overview", "counts,nothing")], False,
+     lambda r: r.code == 2 and "--overview は" in r.output and r.text is None and not r.names),
+    ("--overview がコンマだけなら作らない", SIGNED + [("arg", "--pptx", "--overview", ",")], False,
+     lambda r: r.code == 2 and "--overview が空" in r.output and r.text is None and not r.names),
+    ("--slide-strip は正規表現として読めること", SIGNED + [("arg", "--pptx", "--slide-strip", "(")], False,
+     lambda r: r.code == 2 and "正規表現として読めない" in r.output and r.text is None),
+    ("別紙の表に Q&A の全件がある", SIGNED + [("arg", "--pptx")], False,
+     lambda r: made(r) and xlsx_rows(r.files.get("decisions.xlsx")) == 1 + QA_ROWS.count("\n")
+     and "decisions.xlsx" in pptx_text(r.pptx["proposal.pptx"])),
+    ("別紙を作らない指示", SIGNED + [("arg", "--pptx", "--no-appendix")], False,
+     lambda r: made(r) and "decisions.xlsx" not in r.files and "decisions.xlsx" not in pptx_text(r.pptx["proposal.pptx"])),
+    ("範囲を決めた質問の 1 枚が載る", SIGNED_SCOPE + [("arg", "--pptx")], False,
+     lambda r: made(r) and any(t.startswith("何を作り、何を作らないか") and "帳票を作らない" in t for t in slide_texts(r.pptx["proposal.pptx"]))),
+    ("範囲を決めた質問の 1 枚を載せない指示", SIGNED_SCOPE + [("arg", "--pptx", "--no-scope-slide")], False,
+     lambda r: made(r) and not any(t.startswith("何を作り、何を作らないか") for t in slide_texts(r.pptx["proposal.pptx"]))),
+    ("範囲を決めた質問を番号で選ぶ", SIGNED_SCOPE + [("arg", "--pptx", "--scope-questions", "Q-001")], False,
+     lambda r: made(r) and any(t.startswith("何を作り、何を作らないか") and "割引は" in t and "帳票を作らない" not in t
+                               for t in slide_texts(r.pptx["proposal.pptx"]))),
+    ("指示に無い質問番号は載せない", SIGNED_SCOPE + [("arg", "--pptx", "--scope-questions", "Q-999")], False,
+     lambda r: made(r) and not any(t.startswith("何を作り、何を作らないか") for t in slide_texts(r.pptx["proposal.pptx"]))),
     ("PPTX も作る", SIGNED_S + [("arg", "--pptx")], False,
      lambda r: made(r) and set(k for k in r.pptx if not k.endswith(":bytes")) == {"proposal.pptx", "spec.pptx"}
      and pptx_ok(r.pptx["proposal.pptx"]) and pptx_ok(r.pptx["spec.pptx"])
      and "利用者にまだ確かめていない決定" in pptx_text(r.pptx["proposal.pptx"])
-     and "ゴールド ／ すべて ／ 5%" in pptx_text(r.pptx["spec.pptx"])
-     and FIGURE_NOTE in pptx_text(r.pptx["spec.pptx"])
-     and "（spec.md で見る）" in pptx_text(r.pptx["spec.pptx"]) and "（proposal.md で見る）" in pptx_text(r.pptx["proposal.pptx"])
+     and "ゴールドすべて5%" in pptx_text(r.pptx["spec.pptx"])
+     and "PNG にする道具" in pptx_text(r.pptx["spec.pptx"]) and "spec.md で見る" in pptx_text(r.pptx["spec.pptx"])
+     and "decisions.xlsx" in r.files and "図 1 枚を仕様書の PPTX に載せていない" in r.output
      and r.pptx["spec.pptx:bytes"] == r.again_pptx.get("spec.pptx:bytes")
      and r.pptx["proposal.pptx:bytes"] == r.again_pptx.get("proposal.pptx:bytes")),
     # ---- 想定外の例外・読めなさの原因（#286）
@@ -683,6 +745,8 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("--overview の空の要素を数えて通す", '    if args.overview is not None and not [i for i in args.overview.split(",") if i.strip()]:', '    if args.overview is not None and not args.overview.strip():',
+     "--overview がコンマだけなら作らない"),
     # #1154: 目的と成功の判定
     ("目的の表を読まない", '    purposes = read_purposes(whole.files, info["req"])\n', "    purposes = None\n", "目的の表から目的と成功の判定の節を作る"),
     ("目的の表を作業ツリーから読む", '    purposes = read_purposes(whole.files, info["req"])\n',
@@ -809,7 +873,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("仕様書を最後の版だけから作る", "diffs.merge_versions.merge(Path(tmp) / signoff.DOCS, version)",
      "diffs.merge_versions.merge(Path(tmp) / signoff.DOCS, 1)", "v2 の仕様書は重ねた全体と変更"),
     ("図を写さない", "        figures[name] = whole.files[path]\n", "", "仕様書を作る"),
-    ("書き出しの無い図を言わない", "    if missing:\n", "    if False:\n", "仕様書を作る"),
+    ("書き出しの無い図を言わない", "\n    if missing:\n", "\n    if False:\n", "仕様書を作る"),
     # ---- 業務フロー（BPMN）と書き出しの鮮度（#902）
     ("BPMN をソースと見ない", "for s in diagrams.SUFFIXES if", 'for s in (".drawio",) if', "仕様書に BPMN の書き出しを載せる"),
     ("ソースの拡張子の大文字小文字を区別する", "if p.lower().endswith(s)), None)", "if p.endswith(s)), None)", "仕様書に BPMN の書き出しを載せる"),
@@ -827,7 +891,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("書き出しの中身で指紋を比べる", "eol_digests(whole.files[p])", "eol_digests(whole.files[out])",
      "仕様書に BPMN の書き出しを載せる"),
     ("合わない図を書かない", "    if stale:\n", "    if False:\n", "仕様書に BPMN の書き出しを載せる"),
-    ("合わない図の見出しが PPTX で偽になる", "（仕様書（`spec.md`）の図には載せている。", "（上に載せた。", "合わない図の見出しは PPTX でも偽にならない"),
+    ("合わない図を PPTX に渡さない", '"missing": missing, "stale": stale,', '"missing": missing, "stale": [],', "合わない図の見出しは PPTX でも偽にならない"),
     ("隣に .bpmn のある .bpmn.svg も載せる", ' and not (p.lower().endswith(".bpmn.svg") and p[:-4].lower() in bpmn_sources)]', "]",
      "仕様書に BPMN の書き出しを載せる"),
     (".bpmn.svg を全部載せない", " and p[:-4].lower() in bpmn_sources)]", ")]", "仕様書に BPMN の書き出しを載せる"),
@@ -870,20 +934,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("UTF-8 で書けない名前を見ない", '        out.name.encode("utf-8")\n', "        pass\n", "出力の名前が UTF-8 で書けないと 2"),
     ("仕様書の名前の上書きを見ない", "    for path in outputs:\n        if path.exists()",
      "    for path in list(outputs)[:1]:\n        if path.exists()", "手で置いた仕様書だけでも上書きしない"),
-    ("印の名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME)",
+    ("印の名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, DECISIONS_NAME, MANIFEST)", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, DECISIONS_NAME)",
      "出力の名前が印と重なると作らない"),
     ("PPTX を作らない", "    if args.pptx:\n", "    if False:\n", "PPTX も作る"),
-    ("PPTX の図はどれも仕様書で見ると書く", "FIGURE_NOTE.format(source)", "FIGURE_NOTE.format(SPEC_NAME)", "PPTX も作る"),
     ("shared/ の図も載せる", "for p in whole.files if p.startswith(FIGURE_DIRS)", "for p in whole.files", "仕様書を作る"),
     ("出力の PPTX の名前を照らさない", ', out.with_suffix(".pptx").name.lower()}', "}", "出力の名前が仕様書の PPTX と重なると作らない"),
     ("出力の PPTX の名前を大文字小文字で区別する", 'out.with_suffix(".pptx").name.lower()}', 'out.with_suffix(".pptx").name}',
      "出力の名前が仕様書の PPTX と重なると作らない"),
     ("頼まれなくても PPTX を作る", "    if args.pptx:\n", "    if True:\n", "仕様書を作る"),
-    ("ガントチャートの名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)", "(SPEC_NAME, SPEC_PPTX_NAME, MANIFEST)",
+    ("ガントチャートの名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, DECISIONS_NAME, MANIFEST)", "(SPEC_NAME, SPEC_PPTX_NAME, DECISIONS_NAME, MANIFEST)",
      "出力の名前がガントチャートと重なると作らない"),
     ("PPTX の拡張子の出力を照らさない", ' or out.suffix.lower() == ".pptx"', "", "出力が PPTX の名前だと作らない"),
     ("図の接頭辞を照らさない", "            or out.name.lower().startswith(FIGURE_PREFIX)):", "            ):", "出力の名前が図と重なると作らない"),
-    ("暫定の節を決定事項の下に置く", '[f"## {scope}利用者にまだ', '[f"### {scope}利用者にまだ', "暫定の節は決定事項のスライドと分ける"),
     ("v2 でもこの版と書かない", 'scope = "この版の Q&A で" if diff is not None else ""', 'scope = ""', "v2 の暫定の節はこの版の Q&A と書く"),
     ("v1 でもこの版と書く", 'scope = "この版の Q&A で" if diff is not None else ""', 'scope = "この版の Q&A で"', "確定した行は暫定にしない"),
     ("空の範囲の外も節が無いと書く", "    elif body is not None:\n", "    elif False:\n", "範囲の外の節が空"),
@@ -1423,7 +1485,7 @@ def link_problems(scripts: Path, work: Path, env: dict[str, str], stop: bool = F
 
 # 作れなかったときに残った前の出力の名指し（#498）。
 # 出力の名前のファイル（大文字小文字・PPTX・図を含む）と、出力と関係の無い名前の 1 つ（名指ししない）
-LEFT_NAMED = ["proposal.md", "gantt.svg", "spec.md", "Spec.pptx", "proposal.pptx", "spec-figure-01.svg"]
+LEFT_NAMED = ["proposal.md", "gantt.svg", "spec.md", "Spec.pptx", "proposal.pptx", "Decisions.xlsx", "spec-figure-01.svg"]
 # 出力と関係の無い名前（名指ししない）。`gantt.pptx` は一度も出力したことが無く、図は `spec-figure-<数字>.svg` だけ（#498 の 2 パス目 P2-4）。
 # `spec-figure-01.svg.bak` は図の名前で始まるが図ではない——前方一致（`re.match`）で見る本体を判別する（#552 N1）
 LEFT_OTHERS = ["notes.md", "gantt.pptx", "spec-figure-notes.svg", "spec-figure-01.svg.bak"]
@@ -1863,7 +1925,9 @@ class _AgainSkipped(BaseException):
 def sandbox_env(home: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(home / "gitconfig"), GIT_CONFIG_NOSYSTEM="1",
-               GIT_AUTHOR_DATE="2026-01-01T00:00:00Z", GIT_COMMITTER_DATE="2026-01-01T00:00:00Z")
+               GIT_AUTHOR_DATE="2026-01-01T00:00:00Z", GIT_COMMITTER_DATE="2026-01-01T00:00:00Z",
+               # 図を PNG にする道具は無いものとして試す（手元に `rsvg-convert` があっても結果を変えない。#1289）。PNG を載せる側は test-proposal-pptx.py が見る
+               SPEC_LOOP_RSVG="/nonexistent/rsvg-convert")
     return env
 
 
@@ -2007,7 +2071,7 @@ def read_pptx(directory: Path) -> dict:
     for path in sorted(directory.glob("*.pptx")) if directory.is_dir() else []:
         try:
             with zipfile.ZipFile(path) as z:
-                found[path.name] = {n: z.read(n).decode("utf-8") for n in z.namelist()}
+                found[path.name] = {n: z.read(n).decode("utf-8" if n.endswith((".xml", ".rels")) else "latin-1") for n in z.namelist()}
         except (zipfile.BadZipFile, UnicodeDecodeError):
             found[path.name] = {}
         found[path.name + ":bytes"] = path.read_bytes()
@@ -2080,8 +2144,8 @@ def run_previous(scripts: Path, root: Path, env: dict[str, str]) -> tuple[int, i
 
 def previous_removed(result: tuple[int, int, str, list[str]]) -> bool:
     first, second, output, left = result
-    # 前の実行は提案書・ガントチャート・仕様書・図 1 つ・PPTX 2 つ（6 つ）を書いた
-    return first == 0 and second == 2 and not left and output.count("前に作った出力を消した") == 6
+    # 前の実行は提案書・ガントチャート・仕様書・図 1 つ・PPTX 2 つ・別紙（7 つ）を書いた
+    return first == 0 and second == 2 and not left and output.count("前に作った出力を消した") == 7
 
 
 # 本物の前の実行で殺す変異。(名前, 壊す前, 壊した後)

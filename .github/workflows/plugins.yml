@@ -251,6 +251,13 @@ jobs:
       - name: spec-loop の提案書の生成のテスト（#218）
         run: python3 scripts/test-build-proposal.py
 
+      # 本体は plugins/spec-loop/scripts/ にある。描画の道具（LibreOffice・poppler）は CI に無いので偽の道具で回す——実機は手元（PR に貼る）。
+      - name: spec-loop の提案書・仕様書の PPTX の既定のデザインのテスト（#1289）
+        run: python3 scripts/test-proposal-pptx.py
+
+      - name: spec-loop の PPTX の描画の確かめのテスト（#1289）
+        run: python3 scripts/test-check-pptx-render.py
+
       # 本体は plugins/spec-loop/scripts/ にある（バージョンアップの差分を重ねる）。
       - name: spec-loop の版の重ね合わせのテスト（#261）
         run: python3 scripts/test-merge-versions.py
