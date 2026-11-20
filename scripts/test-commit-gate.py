@@ -284,6 +284,12 @@ def suite(script: Path) -> list[str]:
           c.hook("cat > notes.md <<'EOF'\nnote\ngit commit -m later\nEOF").returncode == 0)
     check("単一引用符の中の git commit は見ない", c.hook("gh pr create --body 'steps: add; git commit -m x'").returncode == 0)
     check("&& の後ろの --dry-run は別のコマンドのもの", c.hook("git commit -m x && git push --dry-run").returncode == 2)
+    check("-F - のヒアドキュメントの後に && が続く形", c.hook("git commit -F - <<'EOF' && git push\nfeat: x\n\nVerified: verify\nEOF").returncode == 0)
+    check("区切りに - を含むヒアドキュメント", c.hook("git commit -F - <<'COMMIT-MSG'\nfeat: x\n\nVerified: verify\nCOMMIT-MSG").returncode == 0)
+    check("CRLF のヒアドキュメント", c.hook("git commit -F - <<'EOF'\r\nfeat: x\r\n\r\nVerified: verify\r\nEOF\r\n").returncode == 0)
+    check("ヒアドキュメントに印が無ければ止める", c.hook("git commit -F - <<'EOF' && git push\nfeat: x\nEOF").returncode == 2)
+    check("別のコマンドのヒアドキュメントの印を拾わない",
+          c.hook("git commit -m x && cat <<'EOF'\nVerified: verify\nEOF").returncode == 2)
     (c.repo / "msg.txt").write_text("x\n\nVerified: gates\n")
     check("--file= のファイルを読む", c.hook("git commit --file=msg.txt").returncode == 0)
     check("-F は commit の部分だけで読む（別コマンドの -F を拾わない）", c.hook("git log -F msg.txt && git commit -m x").returncode == 2)
@@ -323,6 +329,11 @@ def suite(script: Path) -> list[str]:
     c.close()
 
     # status: 別の鍵・散文の行を誤りと名指ししない
+    for name, text in (("太字の鍵", "**検証の関門**: enforce\n"), ("バッククォートの鍵", "`検証の関門`: enforce\n"), ("= の行", "検証の関門=enforce\n")):
+        c = Case(script, text)
+        s = sh(sys.executable, str(script), "status", "--project", str(c.repo), cwd=c.repo)
+        check(f"status は {name} を名指しする", "設定の誤り" in s.stdout, s.stdout)
+        c.close()
     for name, text in (("逃げ道の行だけ", "検証の関門の逃げ道: なし\n"), ("散文の行", "検証の関門は後で入れる予定。\n")):
         c = Case(script, text)
         s = sh(sys.executable, str(script), "status", "--project", str(c.repo), cwd=c.repo)
@@ -396,11 +407,15 @@ MUTATIONS = [
     ("if などの前置を見ない", "(?:(?:if|then|else|elif|while|until|do|time|sudo|nohup|command|exec|env|!)[ \\t]+)*", ""),
     ("値の終わりがリダイレクトを知らない", "|[;&|)<>])", "|[;&|)])"),
     ("値の終わりが空白を知らない", "(?=\\s|$|[", "(?=$|["),
-    ("判定を全体の文面で行う", "commit_message_text(command[a:b], segment, cwd)", "commit_message_text(command, segment, cwd)"),
+    ("判定を全体の文面で行う", "command[a:b] + heredoc_text(command, a, b)", "command"),
     ("1 本でも満たさなければ止める、をやめる", "        if reason:\n            break\n", "        if False:\n            break\n"),
     ("~~~ のフェンスを読む", "(```|~~~)", "(```)"),
     ("--file= を読まない", '(?:-F|--file)(?:=|\\s+)(\\S+)', '(?:-F)(?:=|\\s+)(\\S+)'),
-    ("鍵の接頭辞に当たる", "[ \\t]*[:：]\")", "\")"),
+    ("鍵の接頭辞に当たる", '{re.escape(key)}[*` \\t]*[:：=|]")', '{re.escape(key)}")'),
+    ("ヒアドキュメントの本文を読まない", '+ heredoc_text(command, a, b)', ""),
+    ("区切りに - を許さない", "([\\w.\\-]+)", "(\\w+)"),
+    ("CRLF の終端を許さない", "[ \\t]*\\r?(?=\\n|$)", "[ \\t]*(?=\\n|$)"),
+    ("太字の鍵を名指ししない", "[*` \\t]*[:：=|]", "[ \\t]*[:：]"),
     ("-F を読まない", 'text += "\\n" + p.read_text(encoding="utf-8")', "pass"),
     ("記録に全文を書く", "command[:HEAD_LEN]", "command"),
 ]

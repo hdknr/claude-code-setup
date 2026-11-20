@@ -30,7 +30,7 @@
 
 ## 守ること
 
-- **hook として、判定できないときは通す**（stdin が JSON でない・`git` が使えない・設定の誤り・`-F` のファイルが読めない）。**`enforce` でもそう**——
+- **hook として、判定できないときは通す**（stdin が JSON でない・`git` が使えない・設定の誤り）。**`-F` のファイルが読めないときは、メッセージが空として満たさない扱い（`missing`）になる**（git 自体もそのコミットに失敗する）。**`enforce` でもそう**——
   hook は壊れても止めない側に倒す（止めると利用者の作業を巻き込む）。**だから `enforce` は保証ではない**（下）。
 - **設定の誤り（値が表に無い・同じ行が 2 本以上）は `off`**。止める側に倒さない。誤りは `status` が名指しする。
 - **コードフェンスと HTML コメントの中の行は設定として読まない。**
@@ -77,7 +77,7 @@ GIT_COMMIT = re.compile(
     r"(?:\w+=\S*[ \t]+)*(?:\S*/)?git"
     r"(?:[ \t]+(?:-C[ \t]+\S+|-c[ \t]+\S+|--[\w-]+(?:=\S+)?))*[ \t]+commit(?=[ \t\n;&|)]|$)"
 )
-HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.DOTALL)
+HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([\w.\-]+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*\r?(?=\n|$)", re.DOTALL)
 SEGMENT_END = re.compile(r"&&|\|\||;|\||\n")
 # 行頭・引用符の直後・文字のままの `\n` の直後の `Verified:`（-m を 2 本渡す形・$'…' の形も読む）
 TRAILER = re.compile(r"(?:^|[\"']|\\n)[ \t]*Verified:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
@@ -116,7 +116,7 @@ def read_setting(text: str, key: str, allowed: tuple[str, ...], default: str) ->
     clean = strip_noise(text)
     values = pat.findall(clean)
     if not values:
-        keyed = re.compile(rf"^[ \t>*+`\-]*{re.escape(key)}[ \t]*[:：]")
+        keyed = re.compile(rf"^[ \t>*+`|\-]*{re.escape(key)}[*` \t]*[:：=|]")
         loose = [ln for ln in clean.splitlines() if keyed.match(ln)]
         if loose:
             return default, f"`{key}` を含む行が行頭から `{key}: <値>` の形でない（{loose[0].strip()[:40]!r}）ので読まなかった"
@@ -163,6 +163,12 @@ def skeleton(command: str) -> str:
 
     out = HEREDOC.sub(heredoc, out)
     return QUOTED.sub(lambda m: m.group(0)[0] + "_" * (len(m.group(0)) - 2) + m.group(0)[-1], out)
+
+
+def heredoc_text(command: str, a: int, b: int) -> str:
+    """その commit の部分（a〜b）で始まるヒアドキュメントの本文（`git commit -F - <<EOF && git push` の形）。"""
+    folded = command.replace("\\\n", "  ")
+    return "".join("\n" + folded[m.start():m.end()] for m in HEREDOC.finditer(folded) if a <= m.start() < b)
 
 
 def find_commits(command: str) -> tuple[str, list[tuple[int, int]]]:
@@ -266,7 +272,7 @@ def hook() -> int:
         if merge_in_progress(cwd) or ("--no-edit" in segment and "--amend" not in segment and not has_message_flag(segment)):
             continue  # マージの締め・メッセージを渡さない --no-edit は、メッセージを読めない（見ない）
         judged = True
-        reason = judge(commit_message_text(command[a:b], segment, cwd), escape)
+        reason = judge(commit_message_text(command[a:b] + heredoc_text(command, a, b), segment, cwd), escape)
         if reason:
             break
     if not judged:
