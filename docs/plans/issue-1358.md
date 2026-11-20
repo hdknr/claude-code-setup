@@ -131,6 +131,8 @@ dup-counts-ok: 理由
 
 - `python3 scripts/check-all.py`（run-serial 越し。実装の差分の上で）: 1 回目は 2 本が落ちた——`check-duplicate-counts.py`（この計画の直す前・直した後の文言の引用）と `check-plan-counts.py`（件数の行が無い）。どちらも計画ファイルで、上の免除と下の件数の行で直して回し直した。
 - 2 回目: 99 本のうち 17 本を回して失敗 0（82 本は入力が前回の緑から変わっていないので `CACHED`。PR 側の CI は全部回す）。
+- 3 回目（1 パス目の指摘対応の後）: 99 本のうち 20 本を回して失敗 0（79 本は `CACHED`）。
+- PR #1375 の CI（head `d42023da`）: 8 件成功・1 件スキップ（deploy）。
 
 ## 手順 8
 
