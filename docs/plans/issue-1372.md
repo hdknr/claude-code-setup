@@ -64,6 +64,8 @@ main へのマージ → GitHub Pages の再ビルド（計画ファイルだけ
 - 指摘対応の実測（2026-11-20。写しはリポジトリの外）: 素の起動 `すべて合格`・刻みをまたぐ `True`（C4）。時計を読まない「出力名を属性に混ぜる」（`info.external_attr = (0o644 << 16) | len(out.name)`）は動的な検査が ok（直す前の版では赤——/code-review の実測が陽性対照）。`writestr(name`・`__import__("time").localtime()`・`CLOCK_MUTATIONS` から外した「zip の時刻を固定しない」は動的な検査が赤のまま（C2）。主な生成を非 0 にする変異は動的な検査が ok（C1）。`__import__("time").strftime` を読む変異は「変異を殺せる」だけが赤（新しいコメントのとおり）
 - 指摘対応のコミット: `db55e432`。その後の `check-all.py`: 18/99 本を回して失敗 0（81 本はキャッシュ）
 - 割り目（手順 6、2 パス目の前）: `AskUserQuestion` で「ここで割る」（2026-11-20）。**再開は 2 パス目から**——残りは**手順 5 の当て直し（Verifier 2 パス目）**と **`/code-review` 2 パス目**の**両方**（どちらも未着手）。base は上の `de438dca…` のまま。2 パス目の指摘対応を始める直前に、狭いパスの起点（その時点の HEAD）をここに書く
+- 再開（2026-11-20、`/clear` の後）: 肯定的な確認でブランチ `issue/1372-clock-check-fix`・HEAD `11c16bc8` を確かめた。1 パス目の指摘対応の差分（起点 `659caee1` から、計画ファイルを除く）は `scripts/test-qa-to-pptx.py` の 75 行で 0 行ではない——2 パス目を回す
+- 関門 2 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件・限界 1 件（V2-1。採否の表）。git status は前後とも空。`/code-review`（high）は結果待ち
 - 手元の実測（2026-11-20）:
   - 素の起動: `PPTX 生成のテスト: すべて合格`・「本物の本体の決定性の観測は zip の時刻の刻みをまたぐ（実際: True）」（C4）
   - 陽性対照の写し（走らせた後に消した）: 新しい版に「主な生成を非 0 にする」変異を足した写しは終了コード 0（動的な検査は緑・「変異を殺せる」も緑）（C1）。base（`de438dca`）の版に同じ変異を足した写しは「時計を読むらしい変異が CLOCK_MUTATIONS に無い: X: 主な生成を非 0 にする」で赤（直す前の欠陥の陽性対照）。新しい版に `writestr(name`・`__import__("time").localtime()` の変異を足した写しは 2 本とも動的な検査が赤（違った観測は `deterministic`）（C2）
@@ -88,3 +90,18 @@ main へのマージ → GitHub Pages の再ビルド（計画ファイルだけ
 | CR1-4 | 静的な検査 `CLOCK_READERS` が `__import__("time")`・`from time import` を見逃す | 示せる | 無し（前からある。C2 は動的な検査） | 残課題 |
 | CR1-5 | `observe` のコメントが、待つ枝だけが zip の変異を捕まえるように読める | 示せる——待たない枝でも `deterministic=False` | C3 | 直す |
 | CR1-6 | `SOURCE_DATE_EPOCH` を設定した Python 3.13 以降では `zipfile` の既定の時刻が固定され、docstring が当たらない | 示せない（走らせていない） | 無し | 残課題 |
+
+### 2 パス目の採否の表（直す線: 既定）
+
+再現は著者がリポジトリの外の写し（`git archive` で展開）に変異を 1 つ足して素の起動を回した。HEAD は `11c16bc8`、base は `de438dca`。
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V2-1 | Verifier: 時計も読み出力名でも割れる変異（`X-both`）を `CLOCK_MUTATIONS` に入れ忘れても、動的な検査が赤にならない（Verifier は「限界」として添えた） | 示せる——`X-both`（`len(out.name)` と `__import__("time").localtime()[5]`）が HEAD で rc=0・「時計を読むらしい…」ok、base で FAIL | C2（今までどおり赤、が後退） | 直す |
+| CR2-1 | `frozen_clock` が止めない時計（`monotonic_ns`・`perf_counter` など）を読む変異が、入れ忘れても赤にならない | 示せる——`X-mono`（`__import__("time").monotonic_ns()`）が HEAD で rc=0、base で FAIL | C2 | 直す |
+| CR2-2 | `split_with_frozen_clock` が `observe` で何度も呼んだ同じ `mod` で作り直すので、初回と 2 回目以降で出力が変わる（時計を読まない）変異が赤になる | 示せる——`X-state`（`globals()` に名前を貯める）が HEAD で FAIL（base でも FAIL——前からある） | C1 | 直す |
+| CR2-3 | `CLOCK_MUTATIONS` のコメント「進まない時計を読む変異は、ここに入れないと殺せない」が偽 | 示せる——`X-mono` は入れずに待たないで殺された（違った観測: deterministic） | C3 | 直す |
+| CR2-4 | 時計を止めた生成の例外・出力なし・非 0 を「時計のほかで割れた」と扱い、赤を消す | 示せない（走らせていない） | 無し | 残課題（ただし CR2-1・CR2-2 の書き直しで同じ関数の振る舞いを決め直すので、「決められない」は時計を読む側（赤）に倒す——狭いパスで見る） |
+| CR2-5 | `frozen_clock` が `shifted_clock` の時計の一覧と退避・復元を写している | 示せない（一覧がずれた実例は無い） | 無し | 残課題 |
+
+直し方: 時計を止めた生成は、同じ変異の本体を毎回新しく読み込み直し（`load`）、同じ出力名で別のディレクトリに 3 回作る——止めた時刻 T で 2 回（割れたら止めた時計のほかで割れている）、T+`CLOCK_SHIFT` で 1 回（T の 1 回と割れたら時計を読む）。`frozen_clock` は止める時刻を引数に取り、`monotonic`・`perf_counter`（と `_ns`）も止める。コメント・docstring を合わせる（C3）
