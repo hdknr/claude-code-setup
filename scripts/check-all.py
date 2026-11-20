@@ -195,6 +195,7 @@ TESTS: list[str] = [
     "test-formal-sync.py",
     "test-artifact-reads.py",
     "test-external-reviews.py",
+    "test-commit-gate.py",
     "test-check-unattended-env.py",
     "test-launch-with-long-token.py",
     "test-ledger.py",
