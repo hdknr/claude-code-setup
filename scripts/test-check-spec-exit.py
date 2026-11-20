@@ -22,6 +22,7 @@
    重複の無い仕様・先頭のセル以外の言及・コードブロックの中・形の外の識別子（連番 `1`・数字の無い名前）・`.md` 以外・形式検査のモデルは数えない（陰性対照）。
    **後の版が同じファイルを置き換えたのは重複に数えない**（`merge-versions.py` で重ねた全体に当てる。別のファイルに同じ番号を置けば 1）。
    **番号の形が `references/spec-exit.md` の「テストケースの番号の重複」と一致する**（写しのずれ）。
+   **テストケースの節（直前の見出しが `CASE_HEADER` に当たる）の中では、見出しが `ID`・`No`・`項番` の表も読み、節の外では読まない**（#1333。`ID_HEADER` の写しも突き合わせる）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -171,6 +172,35 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("見出しが ID・No の表は読まない（見逃しの限界）", HEADER,
      {"order.md": "| ID | 手順 |\n| --- | --- |\n| TC-001 | a |\n| TC-001 | b |\n", "flow.md": "| No | 手順 |\n| --- | --- |\n| TC-001 | c |\n"}, 0,
      "条件 1 を満たす"),
+    # テストケースの節（直前の見出しが CASE_HEADER に当たる）の ID・No・項番の表は読む（#1333）
+    ("テストケースの節の ID の表は読む", HEADER,
+     {"order.md": "## テストケース\n\n| ID | 手順 |\n| --- | --- |\n| TC-001 | a |\n| TC-001 | b |\n"}, 1, "テストケースの番号 TC-001"),
+    ("テストケースの節の No. の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "### テストケース\n| No. | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの節の項番の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "### テストケース\n| 項番 | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの節の小文字の id の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## テストケース\n| id | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの節の強調した ID の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## テストケース\n| **ID** | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("全角の節の見出しもそろえて読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## ＴＣ\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの節の外の ID の表は読まない", HEADER,
+     {"order.md": "## 質問\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("次の見出しで節を引き継がない", HEADER,
+     {"order.md": "## テストケース\n\n" + CASE_HEAD + "| F1-1 | a | b |\n\n## 質問\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("テストケースの節でも ID・No でない見出しの表は読まない", HEADER,
+     {"order.md": "## テストケース\n\n| 質問 | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("ID で始まるだけの見出しの表は読まない", HEADER,
+     {"order.md": "## テストケース\n\n| ID番号 | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("# の後に空白の無い行は見出しでない", HEADER,
+     {"order.md": "#テストケース\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("4 字下げの # は見出しでない", HEADER,
+     {"order.md": "    ## テストケース\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("コードブロックの中の見出しは節を変えない", HEADER,
+     {"order.md": "## テストケース\n\n```\n## 質問\n```\n\n| ID | 内容 |\n| --- | --- |\n| TC-001 | a |\n| TC-001 | b |\n"}, 1,
+     "テストケースの番号 TC-001"),
     ("見出しは先頭のセルだけを見る", HEADER,
      {"order.md": "| No | テストケース内容 |\n| --- | --- |\n| F1-5b | a |\n", "flow.md": "| No | テストケース内容 |\n| --- | --- |\n| F1-5b | b |\n"}, 0,
      "条件 1 を満たす"),
@@ -300,8 +330,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("形の外の識別子も番号に数える", 'CASE_NUMBER = r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+"', 'CASE_NUMBER = r"[A-Za-z0-9][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*"',
      "表ごとに振り直す連番は数えない"),
     ("見出しを見ずに全部の表を数える", "        if counting and CASE_NUMBER_RE", "        if CASE_NUMBER_RE", "Q&A の番号を引く表は数えない"),
-    ("見出し行も数える", "            counting = previous is not None and CASE_HEADER.search(previous) is not None\n            previous = None\n",
-     "            counting = previous is not None and CASE_HEADER.search(previous) is not None\n            previous = None\n"
+    ("見出し行も数える", "is not None))\n            previous = None\n",
+     "is not None))\n            previous = None\n"
      "            if counting:\n                found.append((number, \"F1-5b\"))\n", "見出し行の先頭のセルは番号に数えない"),
     ("区切りの行が無くても数える", "        if counting and CASE_NUMBER_RE", "        if (counting or (previous and CASE_HEADER.search(previous))) and CASE_NUMBER_RE",
      "区切りの行が無い表は数えない"),
@@ -318,6 +348,24 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            fence = opened.group(1)\n            previous = None\n", "フェンスは見出しの状態を消す"),
     ("フェンスの字下げを 2 字までにする", 'FENCE = re.compile(r"^ {0,3}', 'FENCE = re.compile(r"^ {0,2}', "3 字下げのフェンスも開く"),
     ("閉じのフェンスを同じ長さだけにする", "len(opened.group(1)) >= len(fence)", "len(opened.group(1)) == len(fence)", "長いフェンスで閉じる"),
+    # テストケースの節の ID・No・項番の表（#1333）
+    ("節の ID の表を読まない", "\n                                                 or (section and ID_HEADER.fullmatch(previous) is not None))",
+     ")", "テストケースの節の ID の表は読む"),
+    ("節を見ずに ID の表を読む", "(section and ID_HEADER.fullmatch(previous) is not None)", "(ID_HEADER.fullmatch(previous) is not None)",
+     "テストケースの節の外の ID の表は読まない"),
+    ("次の見出しで節を変えない", '            section = CASE_HEADER.search(', '            section = section or CASE_HEADER.search(', "次の見出しで節を引き継がない"),
+    ("ID の見出しを前方一致で読む", "ID_HEADER.fullmatch(previous)", 're.match(r"(?i)id|no|項番", previous)', "ID で始まるだけの見出しの表は読まない"),
+    ("ID の見出しの大文字小文字を区別する", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:ID|no\.?|項番)$")',
+     "テストケースの節の小文字の id の表も読む"),
+    ("No. を読まない", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:id|no|項番)$", re.IGNORECASE)',
+     "テストケースの節の No. の表も読む"),
+    ("項番を読まない", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:id|no\.?)$", re.IGNORECASE)',
+     "テストケースの節の項番の表も読む"),
+    ("# の後の空白を要らなくする", r'HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")', r'HEADING = re.compile(r"^ {0,3}#{1,6}")',
+     "# の後に空白の無い行は見出しでない"),
+    ("深い字下げの # も見出しにする", r'HEADING = re.compile(r"^ {0,3}#', r'HEADING = re.compile(r"^ *#', "4 字下げの # は見出しでない"),
+    ("節の見出しをそろえない", 'CASE_HEADER.search(unicodedata.normalize("NFKC", line.strip().strip("#")))', 'CASE_HEADER.search(line.strip().strip("#"))',
+     "全角の節の見出しもそろえて読む"),
     ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "巨大なセル"),
 ]
@@ -486,6 +534,10 @@ def main() -> int:
         check("本体に CASE_HEADER が見つからない", code_header is not None)
         if code_header:
             check("CASE_HEADER が references/spec-exit.md と違う", f"`{code_header.group(1)}`" in reference, code_header.group(1))
+        code_id = re.search(r'^ID_HEADER = re.compile\(r"(.*)", re.IGNORECASE\)$', source, flags=re.MULTILINE)
+        check("本体に ID_HEADER が見つからない", code_id is not None)
+        if code_id:
+            check("ID_HEADER が references/spec-exit.md と違う", f"`ID_HEADER`: `{code_id.group(1)}`" in reference, code_id.group(1))
         check("本体に CASE_NUMBER が見つからない", code_number is not None)
         check("references/spec-exit.md の「テストケースの番号の重複」に番号の形が見つからない", ref_number is not None)
         if code_number and ref_number:
