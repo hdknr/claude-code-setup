@@ -41,8 +41,10 @@ TARGET = "check-pptx-render.py"
 
 FAKE_SOFFICE = """#!/usr/bin/env python3
 import os, sys, pathlib
-if os.environ.get("FAKE_SOFFICE_FAIL2"):  # 2 行の標準エラー——本当の原因は 2 行目
+if os.environ.get("FAKE_SOFFICE_FAIL2"):  # 複数行の標準エラー——本当の原因は最後の行（前の警告で 200 字を超える）
     print("javaldx: Could not find a Java Runtime Environment!", file=sys.stderr)
+    for n in range(4):
+        print(f"Warning: fontconfig could not load a cache file, falling back (line number {n})", file=sys.stderr)
     print("Error: source file could not be loaded", file=sys.stderr); sys.exit(1)
 if os.environ.get("FAKE_SOFFICE_FAIL"):
     print("soffice が壊れている", file=sys.stderr); sys.exit(3)
@@ -211,12 +213,13 @@ REAL_TIMEOUT = 900  # 本体は soffice・pdftotext・pdftoppm にそれぞれ 3
 def why_unverified(stderr: str) -> str:
     """本体が確かめられなかった（2・3）ときの理由。本体の名指しの行から終わりまで（soffice の標準エラーは複数行で続く）。
 
-    名指しの行が無ければ最後の行。行は ` ⏎ ` でつなぎ、500 字で切る。
+    名指しの行が無ければ最後の行。行は ` ⏎ ` でつなぐ。長ければ頭（どの PPTX か）と終わり（原因は終わりに出ることが多い）を残して中を略す。
     """
     lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
     named = [i for i, ln in enumerate(lines) if "確かめられなかった" in ln or "描画の道具が無い" in ln or "想定外の例外" in ln]
     picked = lines[named[-1]:] if named else lines[-1:]
-    return (" ⏎ ".join(picked) or "（本体は理由を出さなかった）")[:500]
+    said = " ⏎ ".join(picked) or "（本体は理由を出さなかった）"
+    return said if len(said) <= 700 else said[:200] + " …（中略）… " + said[-450:]
 
 
 def real_tools_check(pp, work: Path, path: str | None = None, env_extra: dict[str, str] | None = None) -> tuple[str, str]:
@@ -231,7 +234,7 @@ def real_tools_check(pp, work: Path, path: str | None = None, env_extra: dict[st
     if missing:
         return "absent", f"走らせていない（{'・'.join(missing)} が無い）"
     script = SCRIPTS / TARGET
-    work.mkdir(parents=True, exist_ok=True)
+    (work / "home").mkdir(parents=True, exist_ok=True)  # 一時の HOME（道具がキャッシュを書けるように）
     clean = make_pptx(pp, work / "real-clean.pptx", "収まる文")
     # 枠の右半分がページの外に出る——外に出た文字は、枠の高さや行の割れ方に依らず必ず見つかる
     bad = make_pptx(pp, work / "real-bad.pptx", "はみ出す文" * 6, box=(pp.W - 1500000, 1000000, 3000000, 700000))
@@ -268,14 +271,15 @@ def real_stage_reading(pp, base: Path) -> dict[str, bool]:
     obs["soffice が落ちたら確かめられないと言い、理由を出す"] = (
         state == "unverified" and "本体の終了コード 2" in detail and "soffice が壊れている" in detail and "収まる枚 2・はみ出す枚 2" in detail)
     state, detail = real_tools_check(pp, base / "rs-fail2", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_FAIL2": "1"})
-    obs["soffice の標準エラーが複数行でも、後ろの行（本当の原因）まで出す"] = (
-        state == "unverified" and "source file could not be loaded" in detail and "javaldx" in detail)
+    obs["soffice の標準エラーが長くても、最後の行（本当の原因）まで出す"] = (
+        state == "unverified" and "source file could not be loaded" in detail and "（前略）" in detail)
     state, detail = real_tools_check(pp, base / "rs-nowrite", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_NOWRITE": "1"})
     obs["PDF を書かずに 0 で終わっても確かめられないと言う"] = state == "unverified" and "soffice の終了コード 0" in detail
     (boxes / "real-bad.xml").write_text(page((40, 25, 90, 40, "収まる文")), encoding="utf-8")
     state, detail = real_tools_check(pp, base / "rs-ng", fake, {"FAKE_BBOX_DIR": str(boxes)})
     obs["はみ出しを見つけられなければ NG（0 と 0）"] = state == "ng" and "収まる枚 0・はみ出す枚 0" in detail
     state, detail = real_tools_check(pp, base / "rs-absent", f"{base / 'bare'}:/usr/bin:/bin")
+    obs["実機の段の一時の HOME を作る"] = (base / "rs-ok" / "home").is_dir()
     obs["道具が無ければ走らせていない"] = state == "absent" and "soffice が無い" in detail
     return obs
 
