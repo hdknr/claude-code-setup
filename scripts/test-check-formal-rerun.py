@@ -49,9 +49,13 @@ os.makedirs("states", exist_ok=True)
 text = open(name, encoding="utf-8").read()
 print("TLC2 Version 2.19 of 08 August 2024 (偽物)")
 if "FAKE:PASS" in text:
+    print("Model checking completed. No error has been found.")
+    print("1,234,567 states generated, 456,789 distinct states found, 0 states left on queue."); sys.exit(0)
+if "FAKE:QUIETPASS" in text:  # 状態数の行を出さずに通る（ほかの版で形が違うとき）
     print("Model checking completed. No error has been found."); sys.exit(0)
 if "FAKE:VIOLATE" in text:
-    print("Error: Invariant Inv is violated."); sys.exit(12)
+    print("Error: Invariant Inv is violated.")
+    print("12 states generated, 9 distinct states found, 3 states left on queue."); sys.exit(12)
 if "FAKE:TEMPORAL" in text:
     print("Error: Temporal properties were violated."); sys.exit(13)
 if "FAKE:DEADLOCK" in text:
@@ -59,6 +63,11 @@ if "FAKE:DEADLOCK" in text:
 if "FAKE:SILENT" in text:
     sys.exit(0)
 if "FAKE:SLEEP" in text:
+    # 時間切れの前に出る進み具合の行（TLC 2.19 の形。#1339 で本物の TLC から取った）
+    print("Progress(2) at 2026-11-20 10:38:37: 9,989 states generated (9,989 s/min), 2,219 distinct states found (2,219 ds/min), "
+          "221 states left on queue.", flush=True)
+    print("Progress(3) at 2026-11-20 10:39:37: 178,284 states generated (168,295 s/min), 37,791 distinct states found (35,571 ds/min), "
+          "2,121 states left on queue.", flush=True)
     time.sleep(3)
     print("Model checking completed. No error has been found."); sys.exit(0)
 print("Error: Parsing or semantic analysis failed."); sys.exit(150)
@@ -116,6 +125,13 @@ CASES: dict[str, tuple] = {
     "一覧のファイルが無い": (f"TLC の呼び方: {CALL}\n", {T1: target(drop=("Broken0.cfg",))}, [], 4, "「Broken0.cfg」がこのディレクトリの通常のファイルとして無い"),
     "反例ありが判定できなかったより先": (f"TLC の呼び方: {CALL}\n", {T1: target(body="VIOLATE"), T2: target(controls=("PASS",))}, [], 1, "反例あり 1 件"),
     "時間切れ": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEP")}, ["--timeout", "1"], 4, "時間切れ"),
+    # 重さの注記（#1339）——判定には使わない
+    "状態数を出す（3 桁ごとの , を外す）": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "本体 Order.tla: 反例なし（状態数 456789・"),
+    "陽性対照の状態数も出す": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "反例が出た（空振りでない）（状態数 9・"),
+    "時間切れは進み具合の行の状態数": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEP")}, ["--timeout", "1"], 4, "（状態数 37791・"),
+    "状態数が読めなくても判定を変えない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="QUIETPASS", controls=("TEMPORAL",))}, [], 0,
+                            "本体 Order.tla: 反例なし（状態数は読めなかった・"),
+    "状態数の無い構文の誤りは読めなかったと言う": (f"TLC の呼び方: {CALL}\n", {T1: target(body="PARSE")}, [], 4, "（状態数は読めなかった・"),
     "判定しない: --timeout が 0": (f"TLC の呼び方: {CALL}\n", {T1: target()}, ["--timeout", "0"], 2, "--timeout は 1 以上"),
     "判定しない: 対象が無い": (f"TLC の呼び方: {CALL}\n", {}, [], 2, "usage"),
 }
@@ -126,8 +142,8 @@ POST = {"満たす": no_states}
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("違反の印を不変条件だけにする", 'VIOLATED = (tlc.BROKEN_MARK, "were violated", "Deadlock reached")', "VIOLATED = (tlc.BROKEN_MARK,)",
      "時相の性質と行き止まりの印を読む"),
-    ("陽性対照の空振りを通す", '空振りの疑い）: {tlc.tail(out)}")\n                if verdict == PASS:\n',
-     '空振りの疑い）: {tlc.tail(out)}")\n                if False:\n', "陽性対照で反例が出ない（受入基準 2）"),
+    ("陽性対照の空振りを通す", '空振りの疑い）{weight}: {tlc.tail(out)}")\n                if verdict == PASS:\n',
+     '空振りの疑い）{weight}: {tlc.tail(out)}")\n                if False:\n', "陽性対照で反例が出ない（受入基準 2）"),
     ("通った印を見ない", "            elif rc != 0 or tlc.GOOD_MARK not in out:\n", "            elif rc != 0:\n", "本体が通ったと言わない"),
     ("本体の反例を反例ありにしない", "                verdict = COUNTEREXAMPLE\n", "                verdict = verdict\n", "本体で反例"),
     ("陽性対照のファイルが無くても通す", "    if not broken:\n        return UNKNOWN", "    if False:\n        return UNKNOWN", "陽性対照のファイルが無い"),
@@ -139,6 +155,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("正本で走らせる", "        where = tmp ", "        where = str(directory) ", "満たす"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),
+    ("状態数の , を外さない", "found[-1].replace(',', '')", "found[-1]", "状態数を出す（3 桁ごとの , を外す）"),
+    ("最初の状態数を読む（時間切れの最後の進み具合でなく）", "found[-1].replace", "found[0].replace", "時間切れは進み具合の行の状態数"),
+    ("状態数が読めないと判定できなかったにする", "    return rc, out, measure(out, time.monotonic() - started)\n",
+     "    return (rc if DISTINCT.search(out or \"\") else None), out, measure(out, time.monotonic() - started)\n",
+     "状態数が読めなくても判定を変えない"),
+    ("陽性対照に重さの注記を付けない", "反例が出た（空振りでない）{weight}\")", "反例が出た（空振りでない）\")", "陽性対照の状態数も出す"),
     ("--timeout を使わない", "        verdict, lines = rerun(call, directory, int(args.timeout))\n", "        verdict, lines = rerun(call, directory, TIMEOUT)\n", "時間切れ"),
 ]
 
