@@ -7,6 +7,8 @@
 **偽の TLC**（モデルのファイルの中の印 `FAKE:<形>` を読んで、TLC 2.19 の出力の行の形を出すスクリプト）を絶対パスで呼び方の行に書き、
 **`PATH` には `command -v` で見つかる偽の `tlc`（呼ばれたら通す）を置く**——呼び方の行が無いときに `PATH` で探さないことを見るため。
 偽の TLC は走った場所に `states/` を作る——正本に残さないこと（一時ディレクトリで走らせること）を見るため。
+さらに本物の TLC 2.19 と同じく `states/` の下に時刻の名前のディレクトリ（偽物では固定の名前）を作り、時相の性質の違反・構文の誤りで終わった回はそれを残し、
+**既にあれば `util.FileUtil.makeMetaDir` の例外の行を出して検査の前に落ちる**（#1346。本物の TLC で同じ秒に起動した回が落ちた形を、秒に依らず再現する）。
 
 見るもの:
 
@@ -14,7 +16,7 @@
    本体が通らず違反も出さない（構文の誤り・`No error has been found` が無い・時間切れ）・一覧のファイルが無い・呼び方の行が無いも 4。
 2. **本体で反例が出たら 1**、**本体が通り陽性対照が反例を出せば 0**（違反の印は `is violated`・`were violated`・`Deadlock reached` のどれでも）。
    反例ありの対象と判定できなかった対象が並べば 1。
-3. **正本に `states/` を残さない**。
+3. **正本に `states/` を残さない**。**走らせる 1 回ごとに別のディレクトリで走らせ、前の回が残した `states/` に次の回がぶつからない**（#1346）。
 4. **引数の誤りは 2**。
 5. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 6. **CI の雛形（`references/tree.md` の「保存したモデルを CI で走らせ続ける」。#1178）の走らせるステップが、空振りのモデルで落ちる**——
@@ -46,24 +48,40 @@ FAKE_TLC = f"""#!{sys.executable}
 import os, sys, time
 name = sys.argv[-1]
 os.makedirs("states", exist_ok=True)
+# 本物の TLC は states/<yy-MM-dd-HH-mm-ss> を作る——同じ秒に起動した回を、秒に依らず固定の名前で再現する（#1346）
+meta = os.path.join("states", "26-11-21-00-38-41")
+if os.path.exists(meta):  # 本物の TLC 2.19 の出力（#1346 で手元で取った）
+    print('Exception in thread "main" util.Assert$TLCRuntimeException: TLC writes its files to a directory whose name is generated from the current time.')
+    print(f"This directory should be {{os.path.abspath(meta)}}, but that directory already exists.")
+    print("Trying to run TLC again will probably fix this problem.")
+    print("\tat util.Assert.check(Assert.java:91)")
+    print("\tat util.FileUtil.makeMetaDir(FileUtil.java:252)"); sys.exit(1)
+os.makedirs(meta)
+def clean():  # 本物の TLC 2.19 は通った回・不変条件の違反・行き止まりで消し、時相の性質の違反・構文の誤りでは残す（#1346 で確かめた）
+    os.rmdir(meta)
 text = open(name, encoding="utf-8").read()
 print("TLC2 Version 2.19 of 08 August 2024 (偽物)")
 if "FAKE:PASS" in text:
+    clean()
     print("Model checking completed. No error has been found.")
     # 最後の行は区切らない（TLC 2.19 はロケールに依らずこの形。#1339 で ドイツ語のロケールでも確かめた）
     print("1234567 states generated, 456789 distinct states found, 0 states left on queue."); sys.exit(0)
 if "FAKE:PRUNED" in text:  # CONSTRAINT と PROPERTY を一緒に検査した（TLC 2.19 の警告の行。#1339 で本物の TLC から取った）
+    clean()
     print("Warning: Declaring state or action constraints during liveness checking is dangerous: Please read section 14.3.5 on page 247 of Specifying Systems.")
     print("Model checking completed. No error has been found.")
     print("5 states generated, 4 distinct states found, 0 states left on queue."); sys.exit(0)
 if "FAKE:QUIETPASS" in text:  # 状態数の行を出さずに通る（ほかの版で形が違うとき）
+    clean()
     print("Model checking completed. No error has been found."); sys.exit(0)
 if "FAKE:VIOLATE" in text:
+    clean()
     print("Error: Invariant Inv is violated.")
     print("12 states generated, 9 distinct states found, 3 states left on queue."); sys.exit(12)
 if "FAKE:TEMPORAL" in text:
     print("Error: Temporal properties were violated."); sys.exit(13)
 if "FAKE:DEADLOCK" in text:
+    clean()
     print("Error: Deadlock reached."); sys.exit(11)
 if "FAKE:SILENT" in text:
     sys.exit(0)
@@ -129,6 +147,9 @@ CASES: dict[str, tuple] = {
     "本体が構文の誤り": (f"TLC の呼び方: {CALL}\n", {T1: target(body="PARSE")}, [], 4, "通らず、反例も出さなかった"),
     "本体が通ったと言わない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SILENT")}, [], 4, "通らず、反例も出さなかった"),
     "時相の性質と行き止まりの印を読む": (f"TLC の呼び方: {CALL}\n", {T1: target(controls=("TEMPORAL", "DEADLOCK"))}, [], 0, "満たす"),
+    # 時相の性質の違反で終わった回が states/ を残し、次の回が同じ秒に起動しても落ちない（#1346）
+    "前の回の states に次の回がぶつからない": (f"TLC の呼び方: {CALL}\n", {T1: target(controls=("TEMPORAL", "VIOLATE"))}, [], 0,
+                                "陽性対照 Broken1.tla: 反例が出た（空振りでない）"),
     # 陽性対照を両方の一覧に書いた記録（1 パス目の CR1）——陽性対照を本体の反例と読まない
     "両方の一覧に書いた陽性対照は本体に数えない": (f"TLC の呼び方: {CALL}\n", {T1: target(model_list="`Order.tla`・`Order.cfg`・`Broken0.tla`・`Broken0.cfg`")},
                                     [], 0, "満たす"),
@@ -171,7 +192,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    if call is None:\n        call = \"tlc\"\n        print(f\"注記: {note}\")\n", "呼び方の行が無い"),
     ("陽性対照を本体からも外さない", "    bodies = [n for n in entries(models) if n not in broken]\n", "    bodies = entries(models)\n",
      "両方の一覧に書いた陽性対照は本体に数えない"),
-    ("正本で走らせる", "        where = tmp ", "        where = str(directory) ", "満たす"),
+    ("正本で走らせる", "            return where\n", "            return str(directory)\n", "満たす"),
+    ("1 回ごとに分けない（1 つの一時ディレクトリで続けて走らせる）", "            where = tempfile.mkdtemp(dir=tmp)\n", "            where = tmp\n",
+     "前の回の states に次の回がぶつからない"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),
     ("桁区切りを外さない", "re.sub('[' + GROUP_SEPARATORS + ']', '', found[-1])", "found[-1]", "時間切れは進み具合の行の状態数"),
