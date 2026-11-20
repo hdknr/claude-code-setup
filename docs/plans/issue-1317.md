@@ -10,7 +10,9 @@
 
 - `plugins/spec-loop/scripts/scaffold.py` — `load` の `loaded.spec_texts` を、`check_source` と同じ解決（ファイルシステムに解決させる）で全体の鍵を決める関数 `spec_texts` にする
 - `scripts/test-scaffold.py` — 大文字小文字だけ違う `source` の試料（`spec/Order.md`）・区別するファイルシステムでの期待の差し替え（`FOLDING_CASES`）・変異 2 本（うち 1 本は `FOLDING_ONLY`）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版（0.127.1 → 0.127.2。不具合の修正なので patch）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.127.1 → 0.127.2。不具合の修正なので patch）
+- `.claude-plugin/marketplace.json` — 同じ版
+- `plugins/spec-loop/skills/*/SKILL.md` — 同じ版（2 行）
 - `docs/plans/issue-1317.md` — この計画
 
 触らない:
