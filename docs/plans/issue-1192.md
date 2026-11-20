@@ -200,6 +200,30 @@ observe は終了コード 0・記録に `would_stop`（理由 `missing`）、en
 
 ## 手順 8 の記録
 
-（周の終わりに書く）
+- 切り分けの層（親 Issue の書き方・まとめの基準・spec-loop の切り分け）を見た結果: 戻せる学びなし（規定とスクリプトの追加の周で、仕事の切り方を変えても消える失敗を見ていない）。
+- 焼き戻す学び: 「コマンドの文字列をそのまま読む判定は、連結・引用符・ヒアドキュメントの形ごとに偽陽性・偽陰性を作る」——この周で 1 パス目（`git commit-tree`・`&&` が続く形）・2 パス目（呼び出しごとの判定）・
+  狭いパス（ヒアドキュメント）・当て直し（引用符の中の `<<`）と、4 度形を変えて指摘された。コマンドの形は無数にあり、ここで収束していない。対処は原本（`references/verification-trailer.md`）の「守らない」に列挙し、
+  hook を「保証でなく入口の 1 段」と位置づけたこと。新しい恒久の規定は足さない。周の記録にだけ残す。
 
 - この周の起票: 2 件（確認の Issue。H1・H2。親が立てる。仕様の穴の起票で、手順 6 の 3 条件の対象外）
+
+## マージが起こす反映の照合（`マージの反映: ドキュメントとプラグインの配布`）
+
+- 読んだもの: `.claude/dev-loop.md` の宣言（既定ブランチのもの）・差分・`.github/workflows/`（`plugins.yml` にテストのステップを 1 つ足した）。
+- 見つかった反映: `.claude-plugin/marketplace.json` と `plugins/dev-loop/.claude-plugin/plugin.json` の変更は `version` の行だけ。**プラグインは hooks・MCP を足していない**（`commit-gate.py` は置くだけで、利用者が登録するまで何も起きない）。
+  `.claude/settings.json` の変更なし。宣言の外の反映は無い。
+
+```dev-loop-gates
+周の base: add33611b0f4dd626cf9871c3de2634218312dfd
+関門: Verifier 1 8a673503d8ce4bfa33a408f0f8fcbef23ce6d56f 反証=6
+関門: /code-review 1 8a673503d8ce4bfa33a408f0f8fcbef23ce6d56f 指摘=9
+関門: Verifier 2 59a9d62be9045698d09ea195a606a863c4f2b7f4 反証=7
+関門: /code-review 2 59a9d62be9045698d09ea195a606a863c4f2b7f4 指摘=10
+関門: 狭いパス 59a9d62be9045698d09ea195a606a863c4f2b7f4 651279d991d681236476b01b2d11dd6a3bc13a16 反証=9
+関門: 当て直し 4b3183fcf1bec1aa5f121c3fb79dee0a3d6cf9e6 b8fbc8f8a0a15fb84051e7ab30f7d75caf8d0217 反証=4
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
