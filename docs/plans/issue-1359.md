@@ -49,7 +49,9 @@ Issue 本文（外部入力）から読んだ要件: 実機の段が本物の道
 - `scripts/test-check-pptx-render.py` — 実機の段の結果を 4 つ（通る・NG・確かめられない・走らせていない）に読み分け、確かめられないときは本体の理由を出して 3 で終わる。時間切れも確かめられないに入れる。読み分けを偽の道具で当てる観測と、偽の `pdftotext` の PDF の名前ごとの語の枠・docstring
 - `CLAUDE.md` — `test-check-pptx-render.py` の要約の行（実機の段で描画できなければ 3）
 - `plugins/spec-loop/scripts/check-pptx-render.py` — 描画の失敗の理由に soffice の出力の終わりを残す（2 パス目の R2-1 で広げた。前は頭の 200 字だけで、警告の行が先に並ぶと原因が落ちた）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plans/issue-1359.md` — この計画ファイル
 
 触らない:
