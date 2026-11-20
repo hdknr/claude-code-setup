@@ -56,8 +56,17 @@ main へのマージ → GitHub Pages の再ビルド。`scripts/` と `CLAUDE.m
 
 - 周の在り処: ブランチ `issue/1361-parallel-test-scaffold`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1361`・起点 `b1ad57b4`・base は `origin/main`（refs/remotes/origin/HEAD）を解決した `b1ad57b4bbc582ed7b38d05cc9028f67b32f1038`
 - 直す線: 既定（出所: 手順 3 の回答 2026-11-20）
+- 実装: `48cf5396`。割り目（手順 4）は利用者の指示「一旦これですすめて」でこのまま続ける（2026-11-20）
+- PR: 利用者の指示「待たずに PR 作って」（2026-11-20）で、関門の前に PR を作る——CI の秒（A1）を PR 側で測るため。関門（Verifier・`/code-review`）はこの後に当てる
 - 関門: 未着手
-- 交絡を潰した手順: 未着手
+- 手元の実測（観測窓: 2026-11-20 の 1 回ずつ。load average 45 前後の負荷の中——ほかのセッションが動いていた。秒は交絡するので A1 の根拠にしない）:
+  - base（`b1ad57b4` の版）: `OK: 試料 646 件・変異 523 件`・real 374 秒・終了コード 0
+  - 新しい版の既定（作業者 4）: `OK: 試料 646 件・変異 523 件`・real 211 秒・終了コード 0
+  - `--pool-size`: `--jobs 99` → 4・`--jobs 1` → 1。`--jobs 0` → 終了コード 2
+  - `--jobs 1` の回・壊した写しの回（A4）: まだ（zsh で引数の渡し方を誤り、`--jobs 1` の 2 本は起動していない）
+- 交絡を潰した手順: 手元の秒は負荷で交絡するので主張に使わない（A1 は CI の秒で見る）
+
+- この周の起票: 0 件
 
 ## 既知の限界・決着済みの論点
 
