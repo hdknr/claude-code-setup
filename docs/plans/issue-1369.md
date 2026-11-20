@@ -64,7 +64,9 @@ main へのマージ → GitHub Pages の再ビルド（`docs/plans/` はサイ�
   - `check-all.py`（1 パス目の起点の版）: 99/99 本 緑（`test-qa-to-pptx.py` 29.3 秒）
   - 1 パス目の指摘対応: CR1・F1（同じ穴）を直した——待たない回は `time` の時計を `CLOCK_SHIFT`（4 秒）進めて作り直す（`shifted_clock`）。`CLOCK_MUTATIONS` に無いのに決定性の観測で割れた変異を赤にする（動的な入れ忘れの検査）
   - 指摘対応の実測: 素の起動が `すべて合格`・real 7.4 秒。陽性対照の写し（走らせた後に消した）——関門が挙げた 2 本（`writestr(name`・`__import__("time").localtime()`）を `MUTATIONS` に足した写しは 3 回とも 2 本が殺され、入れ忘れの検査が 2 本とも赤（結果が揺れない）。同じ写しで `CLOCK_SHIFT = 0` にすると 2 本とも生き残る。`CLOCK_MUTATIONS = set()` の写しは静的と動的の両方の入れ忘れの検査が赤
-  - 2 パス目: 未着手（手順 5 の当て直しと `/code-review` 2 パス目の両方が残る）
+  - 1 パス目の指摘対応の差分: `git diff 4bf7407e -- ':(top)' ':(top,exclude)docs/plans/issue-1369.md'` が `scripts/test-qa-to-pptx.py` の +34 −4（0 行ではない——2 パス目を回す）
+  - 割り目（2 パス目の前）: `AskUserQuestion` で「このまま続ける」（2026-11-20）
+  - 2 パス目: 当てている（Verifier の当て直しと `/code-review` 2 パス目。base は同じ `9fe42333`）。2 パス目の指摘対応の起点（狭いパスの起点）はこの計画を書いたコミット
 - 手元の実測（2026-11-20。load average 60 前後の負荷の中で 1 回ずつ）:
   - base: `observe` 1 回 2.3 秒のうち 2.1 秒が `time.sleep`（cProfile）。約 70 回で約 160 秒
   - 新しい版: `PPTX 生成のテスト: すべて合格`・real 13.5 秒（B1 の手元の目安。CI の秒は PR で見る）
