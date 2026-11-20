@@ -20,6 +20,13 @@ usage:
 - **本体**: 記録の `モデルのファイル` の一覧の `.tla` のうち、同じ名前の `.cfg` も一覧にあるもの（1 つ以上）。陽性対照の一覧にもある名前は本体に数えない。
 - **陽性対照**: 記録の `陽性対照のファイル` の一覧の同じ形のもの（1 つ以上）——わざと壊したモデルと到達の確かめ（反例が出ることを確かめたもの）。
 - 両方の一覧のファイルを 1 つの一時ディレクトリに写し、呼び方の後ろに `<名前>.tla` を足して、そのディレクトリで `sh` に渡す（`check-tlc.py` と同じ）。
+- **保存した `.cfg` のまま走らせる**——`PROPERTY`（時相の性質）を外して速くしない（外すと判定が弱くなる。`references/tree.md` の「保存したモデルを CI で走らせ続ける」）。
+
+## 重さの注記（#1339）
+
+走らせたモデルごとの行の終わりに `（状態数 <m>・<秒> 秒）` を付ける——状態数は TLC の出力の最後の `<m> distinct states found` の数（進み具合の行の 3 桁ごとの区切り `,`・`.`・U+00A0・U+202F は外す）、秒はこのスクリプトが測った経過時間。
+**時間切れ・重いモデルの切り分け**（状態数が多いのか、少ないのに遅いのか）の材料で、**判定と終了コードには使わない**。読めなければ `状態数は読めなかった` と言う。
+時間切れの回の状態数は、そこまでの進み具合の行の数（全体より少ない）。状態数を見た後に何を試すかは `agents/formal-checker.md` の「検査が重いとき」を正とする。
 
 ## 判定（対象ごと）
 
@@ -27,7 +34,7 @@ usage:
 | --- | --- |
 | `満たす` | 本体がどれも終了コード 0 で `No error has been found` を出し、陽性対照がどれも違反の印（下）を出した |
 | `反例あり` | 本体のどれかが違反の印を出した |
-| `判定できなかった` | 上のどれでもない——**陽性対照が違反の印を出さない（空振り）**・本体が通らず違反の印も出さない（構文の誤り・時間切れ）・TLC のモデルが一覧に無い・`陽性対照のファイル` が無いか TLC のモデルを含まない・一覧のファイルが無い・記録が読めない・呼び方の行が無い |
+| `判定できなかった` | 上のどれでもない——**陽性対照が違反の印を出さない（空振り）**・**本体が通ったが、制約（`CONSTRAINT`）で刈ったまま時相の性質を検査した（TLC の警告 `Declaring state or action constraints during liveness checking is dangerous` が出た。#1339）**・本体が通らず違反の印も出さない（構文の誤り・時間切れ）・TLC のモデルが一覧に無い・`陽性対照のファイル` が無いか TLC のモデルを含まない・一覧のファイルが無い・記録が読めない・呼び方の行が無い |
 
 **違反の印**: `is violated`（不変条件。`check-tlc.py` の陽性対照と同じ）・`were violated`（時相の性質）・`Deadlock reached`（行き止まり）。
 
@@ -50,9 +57,12 @@ usage:
 | 本体で反例が出たら 1 | 判定役が「反例なし」と書き写したモデルを通す |
 | 本体が通らず違反も出さない（構文の誤り・時間切れ）なら 4 | 走っていないモデルを反例なしと読む |
 | `陽性対照のファイル` が無い対象は 4 | 空振りでないことを確かめないまま 0 にする |
+| 制約で刈ったまま時相の性質を検査した本体の「反例なし」は 4（#1339） | `CONSTRAINT` で刈った先の時相の性質の違反を隠したまま 0 にする |
 | 呼び方の行が無ければ 4 | `PATH` の `tlc` で走らせる（探し方を `check-tlc.py` に揃える） |
 | 一時ディレクトリで走らせる | 正本に `states/` と出力が残り、`formal-baseline.py check` が落ちる |
 | 1 回の検査を `--timeout` 秒で止める（プロセスグループごと） | 大きいモデルで待ち続ける |
+| 走らせたモデルごとに状態数と経過時間を出し、状態数が読めなければそう言う（#1339） | 時間切れのとき、状態数が多すぎたのか遅いだけなのかが出力から分からない・読めない回に数を作る（知らない桁区切りの数の最後の 3 桁を数と読む） |
+| 状態数が読めなくても判定と終了コードを変えない | 診断の材料が無いことで、通るモデルを「判定できなかった」にする |
 
 守らない:
 
@@ -61,6 +71,7 @@ usage:
 | **TLC でないモデル**（Alloy・総当たり・Z3） | Issue の範囲の外（`check-tlc.py` の呼び方で走らせ直す）。渡されたら `判定できなかった`——spec-review は TLC の対象だけを渡し、ほかは判定役の判定を使う |
 | **モデルが仕様を正しく写しているか・陽性対照が意味のある壊し方か** | 判定役の仕事（記録の `陽性対照` に書く）。機械が見るのは、壊した形で反例が出ることだけ |
 | **TLC の版による出力の違い** | 判定の文字列は TLC 2.19 で確かめた——`is violated`・`No error has been found` は `check-tlc.py`（#912）、`Temporal properties were violated.`・`Deadlock reached.` はこの周（#1044）に、本体が通り陽性対照が反例を出す形と、本体が行き止まりで反例を出す形を走らせた。ほかの版は確かめていない。回帰テストは偽の TLC で当てる |
+| **状態数の行の形の違い** | `distinct states found` の形は TLC 2.19 で確かめた（#1339。手元で英語・ドイツ語・フランス語のロケールで走らせた）。ほかの版・ほかの区切りで形が違えば「読めなかった」になるだけで、判定は変わらない |
 | **呼び方の安全** | 正本の `CLAUDE.md` の文字列をそのまま `sh` で走らせる（`check-tlc.py` と同じ） |
 | **前の版の残りのファイル** | 一覧のファイルだけを写す（`tree.md` の「次の回が使うのは一覧のファイルだけ」） |
 
@@ -71,9 +82,11 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import re
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -92,9 +105,18 @@ baseline = _load("formal_baseline", "formal-baseline.py")
 MODEL_ITEM = "モデルのファイル"
 CONTROL_ITEM = "陽性対照のファイル"
 VIOLATED = (tlc.BROKEN_MARK, "were violated", "Deadlock reached")
+# 状態・行為の制約（`CONSTRAINT`・`ACTION_CONSTRAINT`）と時相の性質を一緒に検査したときに TLC 2.19 が出す警告（#1339 で本物の TLC で確かめた）。
+# 刈った先の状態が消えるので、時相の性質の「反例なし」は根拠にならない（`agents/formal-checker.md` の「検査が重いとき」）
+PRUNED_LIVENESS = "Declaring state or action constraints during liveness checking is dangerous"
 TIMEOUT = 600
 PASS, COUNTEREXAMPLE, UNKNOWN = "満たす", "反例あり", "判定できなかった"
 EXIT_OK, EXIT_COUNTEREXAMPLE, EXIT_USAGE, EXIT_UNKNOWN = 0, 1, 2, 4
+# TLC 2.19 の状態数の行（`<n> states generated, <m> distinct states found, <k> states left on queue.`。区切りなし）と、
+# 途中の進み具合の行（`Progress(…): … <m> distinct states found …`）。進み具合の行は JVM のロケールで 3 桁ごとに区切る——
+# `,`（英語）・`.`（ドイツ語）・U+202F（フランス語）を手元で見た（#1339）。U+00A0 も同じ扱いにする。
+# 数は空白・`:`・`(` か行頭の直後から始まるものだけ読む——知らない区切り（`'` など）の数の最後の 3 桁を、数として読まない
+GROUP_SEPARATORS = ",.\u00a0\u202f"
+DISTINCT = re.compile(r"(?<![^ \t:(\n])([0-9]{1,3}(?:[" + GROUP_SEPARATORS + r"][0-9]{3})+|[0-9]+) distinct states found")
 
 
 def entries(names: list[str]) -> list[str]:
@@ -104,6 +126,23 @@ def entries(names: list[str]) -> list[str]:
 
 def violated(out: str) -> bool:
     return any(mark in out for mark in VIOLATED)
+
+
+def measure(out: str, seconds: float) -> str:
+    """走らせた 1 回の重さ（状態数と経過時間）の注記。判定には使わない——時間切れ・重いモデルの切り分けの材料（#1339）。
+
+    状態数は出力の最後の `distinct states found` の数（時間切れなら、そこまでの進み具合の行の数で、全体より少ない）。読めなければそう言う。
+    """
+    found = DISTINCT.findall(out or "")
+    count = f"状態数 {re.sub('[' + GROUP_SEPARATORS + ']', '', found[-1])}" if found else "状態数は読めなかった"
+    return f"（{count}・{seconds:.1f} 秒）"
+
+
+def timed(call: str, where: str, name: str, timeout: int) -> tuple[int | None, str, str]:
+    """`tlc.run_model` を走らせ、(終了コード, 出力, 重さの注記)。"""
+    started = time.monotonic()
+    rc, out = tlc.run_model(call, where, name, timeout)
+    return rc, out, measure(out, time.monotonic() - started)
 
 
 def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[str]]:
@@ -139,22 +178,27 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
         where = tmp  # 写した先で走らせる——TLC の `states/` と出力を正本に残さない
         verdict = PASS
         for name in bodies:
-            rc, out = tlc.run_model(call, where, name, timeout)
+            rc, out, weight = timed(call, where, name, timeout)
             if violated(out):
-                lines.append(f"{directory}: 本体 {name}.tla で反例が出た: {tlc.tail(out)}")
+                lines.append(f"{directory}: 本体 {name}.tla で反例が出た{weight}: {tlc.tail(out)}")
                 verdict = COUNTEREXAMPLE
             elif rc != 0 or tlc.GOOD_MARK not in out:
-                lines.append(f"{directory}: 本体 {name}.tla が通らず、反例も出さなかった（終了コード {rc}）: {tlc.tail(out)}")
+                lines.append(f"{directory}: 本体 {name}.tla が通らず、反例も出さなかった（終了コード {rc}）{weight}: {tlc.tail(out)}")
+                if verdict == PASS:
+                    verdict = UNKNOWN
+            elif PRUNED_LIVENESS in out:
+                lines.append(f"{directory}: 本体 {name}.tla は反例なしだが、制約（CONSTRAINT）で刈ったまま時相の性質を検査している——"
+                             f"時相の性質の「反例なし」は根拠にならない{weight}")
                 if verdict == PASS:
                     verdict = UNKNOWN
             else:
-                lines.append(f"{directory}: 本体 {name}.tla: 反例なし")
+                lines.append(f"{directory}: 本体 {name}.tla: 反例なし{weight}")
         for name in broken:
-            rc, out = tlc.run_model(call, where, name, timeout)
+            rc, out, weight = timed(call, where, name, timeout)
             if violated(out):
-                lines.append(f"{directory}: 陽性対照 {name}.tla: 反例が出た（空振りでない）")
+                lines.append(f"{directory}: 陽性対照 {name}.tla: 反例が出た（空振りでない）{weight}")
             else:
-                lines.append(f"{directory}: 陽性対照 {name}.tla で反例が出ない（終了コード {rc}。空振りの疑い）: {tlc.tail(out)}")
+                lines.append(f"{directory}: 陽性対照 {name}.tla で反例が出ない（終了コード {rc}。空振りの疑い）{weight}: {tlc.tail(out)}")
                 if verdict == PASS:
                     verdict = UNKNOWN
     return verdict, lines

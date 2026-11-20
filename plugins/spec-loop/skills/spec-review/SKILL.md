@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.125.0 -->
-> **このスキルの版: 0.125.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.127.0 -->
+> **このスキルの版: 0.127.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -33,6 +33,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 - `../../references/writing-style.md` — 正本に書く文書の文章の記法（太字の見出し 1 行と一文ずつの箇条）と、前の書き方の正本を移す手順
 
 **始める前に `../../references/spec-exit.md` と `../../references/spec-scope.md` を読む。** このスキルの判定と振り分けはすべて、そこに照らして行う。
+
+**利用者に運用の決まり（質問の層・レビューの流れ・抜ける条件・回し直し・上限・暫定の回答）を説明するときは、`../../references/operations.md`（利用者向けの要約）から読む**——要約なので、決まりの原本は要約が指す先を正とする。
 
 ## 守ること
 
