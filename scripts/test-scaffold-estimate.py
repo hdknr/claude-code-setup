@@ -89,7 +89,7 @@ CASES = [
                                        "F1-9\tspec/order.md:10"), absent=("Q-001", "F8-1")),
     Case("list は重ね合わせた全体を数える", "list", 0, v2=True, out=("仕様のテストケース 5 件", "F2-1\tspec/more.md:5")),
     Case("list はケースの表が無ければ 3", "list", 3, spec=SPEC_NO_CASES, err=("テストケースの番号の表が無い",)),
-    Case("list はテストケースの節の ID の表も読む", "list", 0, spec=SPEC_ID, out=("仕様のテストケース 4 件", FIRST.replace("テストケース", "ID")),
+    Case("list はテストケースの節の ID の表も読む", "list", 0, spec=SPEC_ID, out=("仕様のテストケース 4 件", FIRST),
          absent=("Q-001",)),
     Case("list はテストケースの節の外の ID の表を読まない", "list", 3, spec=SPEC_ID_OUTSIDE, err=("テストケースの番号の表が無い",)),
     Case("docs が無ければ 2", "list", 2, docs=False, err=("ディレクトリが無い",)),
