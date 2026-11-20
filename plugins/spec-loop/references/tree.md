@@ -1123,6 +1123,8 @@ spec-review は抜けるたびに走らせ直す（`check-formal-rerun.py`。#10
   空振りのモデルが落ちるのは、「反例なし」が何も確かめていない形を通さないためである（`check-formal-rerun.py` の docstring の「判定」を正とする）。
 - **TLC の呼び方は正本の `CLAUDE.md` の `TLC の呼び方:` の行のまま**（`check-tlc.py` の docstring を正とする）。手元と CI で jar の場所が違うなら、行を環境変数で書いて CI で値を渡す
   ——例: `TLC の呼び方: java -XX:+UseParallelGC -cp "${TLA2TOOLS_JAR:-$HOME/.local/share/formal-tools/tla2tools.jar}" tlc2.TLC`（行は `sh` に渡るので、`${…:-…}` が効く）。
+- **保存した `.cfg` のまま走らせる——`PROPERTY`（時相の性質）を外して速くしない**（#1339）。外すと、時相の性質の反例が CI で見えなくなる。重いモデルは
+  `--timeout` か呼び方のオプション（`check-tlc.py` の docstring の「呼び方に足すオプション」）で受け、モデルを軽くするのは spec-review の回にする（`agents/formal-checker.md` の「検査が重いとき」）。
 - **TLC を CI に入れる**——Java（17 以上）を入れ、`tla2tools.jar` を版を固定して取る（下の雛形は GitHub の tlaplus のリリースから取る形）。**版を上げたら、手元の TLC と同じ版にそろえる**——判定の文字列は TLC 2.19 で確かめた（`check-formal-rerun.py` の「守らない」）。
 - **CI でプラグインのスクリプトをどこから取るかは、正本のリポジトリの `CLAUDE.md` に書く**（上の「Red テストを CI で走らせ続ける」と同じ。雛形はこのリポジトリを版を固定して取る形の例）。
 
