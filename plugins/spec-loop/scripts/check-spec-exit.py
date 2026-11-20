@@ -28,7 +28,8 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
   **`REFLECTED` に無い状態は数える側に倒れる**（決まりに状態が増えても、反映が残っている行を黙って落とさない）。
   暫定の行（判別は `check-qa-csv.py` の `is_provisional`）は件数を出す（要求確定のサインオフの前に確認が要る。`references/signoff-tags.md`）。
   Q&A 表の列検査（`check-qa-csv.py`）も `read_rows` で掛かる。
-- **テストケースの番号が重複していたら 1**（#1297）——**同じ重ねた全体の仕様（`spec/`）の `.md` の中で**、見出しの先頭のセルが `CASE_HEADER`（`テストケース`・`test case`・`ケース番号`・`TC` など。正規表現は `references/spec-exit.md`）に当たる表の、データ行の先頭のセルが
+- **テストケースの番号が重複していたら 1**（#1297）——**同じ重ねた全体の仕様（`spec/`）の `.md` の中で**、見出しの先頭のセルが `CASE_HEADER`（`テストケース`・`test case`・`ケース番号`・`TC` など。正規表現は `references/spec-exit.md`）に当たる表
+  （**と、テストケースの節（`#` の見出しの末尾がテストケースの語の節。小見出しの下を含む）の、見出しの先頭のセルが `ID_HEADER`（`ID`・`No`・`項番`）の表**。#1333）の、データ行の先頭のセルが
   番号（`CASE_NUMBER` の形）である行が、同じファイルでも別のファイルでも 2 つ以上あれば、番号と出た場所（`ファイル:行`）を全部名指しする。
   **中間表現のケースの `ref` の照合（`scaffold.py` の `check_ref`。#465）は番号が原文に在るかだけを見る**ので、重複は通り、どちらの行を写したのかが決まらない。
   **数えるのは重ねた後の全体**——後の版が同じファイルを置き換えたなら、置き換えられた前の版の行は全体に無いので重複に数えない
@@ -63,7 +64,7 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
 | **図（`FIGURE_SUFFIXES`）の中の印** | 図を置くことがあるので落とさない。**見なかったファイルは件数と名前を出す**。図以外の読めないファイルは 2 にする |
 | **印を使わずに書いた未決定**（「あとで決める」「検討中」） | 言い回しは列挙しきれない。判定役（Red Team）が条件 2・3 で見る |
 | **ドット始まりのファイル・ディレクトリの中** | `.git` などを見ないため |
-| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの表でも読まない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
+| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（本文の行の直後の `===`・`---`）は見出しと読まず、テストケースの節を閉じる。空行の後の `---` は区切りの線で、閉じない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
 | **番号の形に当たらない行の識別子**（`1`・`あ`・`No.3` など） | 表ごとに 1 から振り直す連番は、表が違えば重複でも誤りでない。形に当たる番号だけを全体で一意とみなす |
 | **全角・半角の違い以外の表記ゆれ**（`F1-5B` と `F1-5b`・`F1‐5b`（別のハイフン）） | 別の番号として数える。NFKC で畳むのは全角の英数字とハイフンだけ |
 | **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
@@ -121,6 +122,15 @@ CASE_NUMBER = r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+"
 CASE_NUMBER_RE = re.compile(CASE_NUMBER)
 # テストケースの表の見出し（先頭のセル）。`references/spec-exit.md` の「テストケースの番号の重複」の写し
 CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)
+# テストケースの節の表の見出し（先頭のセル）。テストケースの節（`SECTION_HEADER`）の中でだけ、テストケースの表と読む（#1333）。
+# `references/spec-exit.md` の「テストケースの番号の重複」の写し
+ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)
+# テストケースの節の見出し（`#` の見出しの文）。**末尾が**テストケースの語（後ろに `一覧` と括弧書きを許す）。同じ写し
+SECTION_HEADER = re.compile(r"(?:テストケース|\btest ?cases?|\btc)(?:\s*一覧)?\s*(?:[(（][^()（）]*[)）])?$", re.IGNORECASE)
+HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")
+# 下線の見出しの下線（`===`・`---`）。本文の行の直後にあるときだけ下線の見出しで、節の見出しと読まず、テストケースの節を閉じる
+# （#1333。下線の見出しの下の表をテストケースに数えない。空行の後の `---`・`***` は区切りの線で、節を閉じない）
+UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
 SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
@@ -145,11 +155,15 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
     """(行番号, 番号, 行の原文) の一覧。**見出しの先頭のセルがテストケースの表（`CASE_HEADER`）の、データ行の先頭のセル**だけを見る。
     行の原文は前後の空白を落とした 1 行（`scaffold.py` の `acceptance` が、中間表現に並べた原文から番号を引くのに使う。#1301）。
     見出し行そのもの・区切りの行・見出しが `CASE_HEADER` に当たらない表（Q&A・NFR・決定表の行の番号を並べた表など）は見ない。
+    **ただしテストケースの節（`#` の見出しの文の末尾が `SECTION_HEADER` に当たる。その節の小見出しの下も、同じか浅い見出しが来るまで節の中）では、
+    表の見出しの先頭のセルが `ID_HEADER`（`ID`・`No`・`項番`）の表もテストケースの表と読む**（#1333）。
     コードブロックの中は見ない。セルは NFKC で正規化し、前後の空白・バッククォート・`*`・`_`（強調と等幅の飾り）を外してから番号の形に当てる。"""
     found = []
     fence = None
     previous = None  # 直前の行が表の行なら、その先頭のセル（次の行が区切りの行なら見出し）
     counting = False  # いまの表の見出しがテストケースの表か
+    prose = False  # 直前の行が本文の行（空でなく、表・見出し・コードブロックでない）か——次の下線で下線の見出しになる
+    section = None  # いまの見出しがテストケースの節の中なら、その節の見出しの深さ（#1333。小見出しは節を引き継ぐ）
     for number, line in enumerate(text.splitlines(), 1):
         opened = FENCE.match(line)
         if fence is not None:
@@ -158,15 +172,30 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
             continue
         if opened:
             fence = opened.group(1)
-            previous, counting = None, False
+            previous, counting, prose = None, False, False
+            continue
+        heading = HEADING.match(line)
+        if heading:
+            level = len(heading.group(1))
+            if section is None or level <= section:
+                title = unicodedata.normalize("NFKC", line.strip().strip("#")).strip(" `*_").rstrip(":：").strip(" `*_")
+                section = level if SECTION_HEADER.search(title) else None
+            previous, counting, prose = None, False, False
+            continue
+        if UNDERLINE.match(line) and prose:
+            section = None
+            previous, counting, prose = None, False, False
             continue
         stripped = line.strip()
         if not stripped.startswith("|"):
             previous, counting = None, False
+            prose = bool(stripped)
             continue
+        prose = False
         cell = unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip().strip("`*_ ")
         if SEPARATOR.fullmatch(stripped):
-            counting = previous is not None and CASE_HEADER.search(previous) is not None
+            counting = previous is not None and (CASE_HEADER.search(previous) is not None
+                                                 or (section is not None and ID_HEADER.fullmatch(previous) is not None))
             previous = None
             continue
         if counting and CASE_NUMBER_RE.fullmatch(cell) and any(ch.isdigit() for ch in cell):
