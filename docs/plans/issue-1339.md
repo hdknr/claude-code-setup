@@ -92,6 +92,8 @@ Issue 本文（外部入力。起票したのはこのセッション）から�
 - 周の在り処: ブランチ `issue/1339-tlc-heavy-checks`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1339`・起点 `3003d6c3`・base 参照 `origin/main`（`refs/remotes/origin/HEAD`）= `3003d6c31499d041ef76ae7b1b6fccf5234ad616`
 - 割り目（手順 4）: `AskUserQuestion` で訊いた（実装のコミット `7839384a` の後）——300 秒応答なし。続けた
 - 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet。起動を確かめた）反証 2 件・`/code-review`（high）指摘 8 件。どちらも終点 `2153a66d`。1 パス目の指摘対応の起点 = `2153a66dc2f55735d5f7326208bf93b577381f6c`。直す 9 件（V1・V2・CR1〜5・CR7・CR8）・残課題 1 件（CR6）→ 2 パス目を回す
+- 1 パス目の指摘対応: コミット `ea0f72d0`（直す 9 件）。2 パス目の起点（= 2 パス目の指摘対応を始める直前の HEAD）は 2 パス目の関門の後に書く。残り: 手順 5 の当て直し（Verifier 2）と `/code-review` 2 の両方
+- 割り目（2 パス目の前）: `AskUserQuestion` で訊いた——300 秒応答なし。続けた
 - 実験: 上の「決めた値」（`-workers` の比較）。交絡: 反例が 1 つしか無いモデルでは揺れが出ないので、最短の反例が多数あるモデルを選んだ。`-workers 1` の 8 回が 1 種類であることが、比べ方（トレースの抜き出し）が時刻などで揺れていないことの対照。dump の比較は判別しない（`-workers 1` でも揺れる）ので主張に使わない。観測窓: 1 つのモデル・各 8 回・28 コアのこの機械。
 
 ## 既知の限界・決着済みの論点
