@@ -63,7 +63,8 @@ main へのマージでプラグインの配布（カタログ・link-skills の
 - 実装のコミット: `66660e79`（`check-all.py`: 98 本のうち 97 本 OK。落ちた `test-check-pptx-render.py` は実機の LibreOffice の 300 秒の時間切れで、
   同時に別の worktree（issue-1361）のテストが走っていた。この周は PPTX に触れていない。単独で回し直して `OK: 観測 30 件・変異 20 件`）
 - 割り目（手順 4 の後）: 利用者の選択「ここで割る」（2026-11-20）——再開は worktree の中で `/clear` してから `/dev-loop:dev-loop 1317`、手順 5 から
-- 関門: 未着手（次は 1 パス目。起点（1 パス目の関門に渡す時点の HEAD）は渡すときに書く）
+- 関門: 1 パス目を起動（Verifier（sonnet・`dev-loop:dev-loop-verifier`）と `/code-review` を同時に）。
+  1 パス目の指摘対応の起点: `6717b893`（関門に渡した時点の HEAD。成果物は全部コミット済み）
 
 ## 既知の限界・決着済みの論点
 
