@@ -9,6 +9,8 @@ usage: python3 schedule-to-gantt.py <schedule.csv> <出力先.svg>
 - **決まりの検査（`check-feasibility-csv.py` の `check_schedule`）を通った表しか描かない。**
 - **同じ表から同じバイトを作る**——時刻・乱数・環境（フォントの寸法など）を使わない。
   工程は表の行の順に上から並べ、横軸は最も早い開始日から最も遅い終了日まで 1 日 = 一定の幅。
+- **工程名の列は、いちばん長い工程名が棒の領域に入り込まない幅にし、月の見出しは、その月の幅に収まるときだけ書く**（#1289。
+  1〜2 日の工程の名前と棒・短い月の見出しどうしが重なっていた）。幅は文字の寸法の見積り（全角 1 em・半角 0.6 em）で、環境のフォントは使わない。
 - 標準ライブラリだけを使う。
 
 終了コード:
@@ -49,10 +51,12 @@ from __future__ import annotations
 
 import errno
 import importlib.util
+import math
 import os
 import re
 import stat
 import sys
+import unicodedata
 from datetime import date, timedelta
 from pathlib import Path
 from xml.sax.saxutils import escape, quoteattr
@@ -85,17 +89,27 @@ def text_of(value: str) -> str:
     return escape(INVALID_XML.sub("", value))
 
 
+FONT_PX = 12  # `font-size="12"`
+
+
+def text_px(value: str) -> int:
+    """文字列の幅の見積り（px）。全角を 1 em、半角を 0.6 em とする——環境のフォントで測らず、同じ表から同じバイトを作るため。"""
+    return math.ceil(sum(FONT_PX if unicodedata.east_asian_width(c) in "WFA" else FONT_PX * 0.6 for c in value))
+
+
 def render(rows: list[dict[str, str]]) -> str:
     """検査を通った行から SVG の文字列を作る。"""
     spans = [(date.fromisoformat(r["開始"]), date.fromisoformat(r["終了"])) for r in rows]
     first = min(start for start, _ in spans)
     last = max(end for _, end in spans)
     days = (last - first).days + 1
-    width = LABEL_W + days * DAY_W + PAD
+    # 工程名の列は、いちばん長い工程名が棒の領域に入り込まない幅にする（#1289。短い工程の名前と棒が重なっていた）
+    label_w = max(LABEL_W, max(text_px(f'{r["No"]} {r["工程"]}') for r in rows) + 2 * PAD)
+    width = label_w + days * DAY_W + PAD
     height = HEADER_H + len(rows) * ROW_H + PAD
 
     def x_of(day: date) -> int:
-        return LABEL_W + (day - first).days * DAY_W
+        return label_w + (day - first).days * DAY_W
 
     out = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -104,14 +118,15 @@ def render(rows: list[dict[str, str]]) -> str:
         f'<title>ガントチャート（{first.isoformat()} 〜 {last.isoformat()}）</title>',
         f'<rect x="0" y="0" width="{width}" height="{height}" fill="{COLORS["bg"]}"/>',
     ]
-    # 月の境目（最初の日と、各月の 1 日）
-    day = first
-    while day <= last:
-        if day == first or day.day == 1:
-            x = x_of(day)
-            out.append(f'<line x1="{x}" y1="{PAD}" x2="{x}" y2="{height - PAD}" stroke="{COLORS["grid"]}"/>')
-            out.append(f'<text x="{x + 3}" y="{PAD + 14}" fill="{COLORS["text"]}">{day.strftime("%Y-%m")}</text>')
-        day += timedelta(days=1)
+    # 月の境目（最初の日と、各月の 1 日）。月の見出しは、その月の幅に収まるときだけ書く（短い月どうしの見出しが重ならないように。#1289）
+    starts = [d for d in (first + timedelta(days=i) for i in range(days)) if d == first or d.day == 1]
+    for index, day in enumerate(starts):
+        x = x_of(day)
+        out.append(f'<line x1="{x}" y1="{PAD}" x2="{x}" y2="{height - PAD}" stroke="{COLORS["grid"]}"/>')
+        end_x = x_of(starts[index + 1]) if index + 1 < len(starts) else x_of(last) + DAY_W
+        text = day.strftime("%Y-%m")
+        if len(starts) == 1 or end_x - x >= text_px(text) + 6:
+            out.append(f'<text x="{x + 3}" y="{PAD + 14}" fill="{COLORS["text"]}">{text}</text>')
     out.append(f'<line x1="{PAD}" y1="{HEADER_H - 8}" x2="{width - PAD}" y2="{HEADER_H - 8}" stroke="{COLORS["grid"]}"/>')
 
     for index, (row, (start, end)) in enumerate(zip(rows, spans)):
