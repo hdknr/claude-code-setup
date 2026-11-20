@@ -1055,7 +1055,7 @@ def check_norm_shape() -> None:
           "差し込み 10 を入れ、行ごとの表が返らなければ未検証として扱う" in _s5
           and "例のテストでの代替は、上の BLOCKED の規定の例外である" in _s5)
     check("SKILL.md: 手順 3 の計画の委譲の項が、プロパティテストの該当判定を委譲先の産物で確かめさせる",
-          "プロパティテストの該当判定（`プロパティテスト:` の行）・差分テストの該当判定" in skill)
+          "プロパティテストの該当判定（`プロパティテスト:` の行）が、委譲先の産物に" in skill)
     check("verifier.md: 差し込み 10 が、性質を破る変異を実際に当てて反例が出るかを求める（表の見出しの語では満たさない）",
           "反例を出して落ちるかを、実際に当てて" in prop_block and "空振りしています" in prop_block)
     check("verifier.md: 差し込み 10 が生成の設定と空振りの形を読ませる",
@@ -1075,35 +1075,49 @@ def check_norm_shape() -> None:
     check("property-tests.md: 4 つの型と、表の形と、代替の記録の形と、落とした主張の名指しがある",
           all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "依存の定義にも lockfile にも無い")))
     # **差分テストの扱い（#1191）**——手順 3 が原本を指して該当判定を求めること、手順 5 が差し込み 11 を入れさせること、
-    # Verifier の差し込みが陽性対照・一覧の確かめ・空振りの形を返させること、実装の指示が一覧に足さず止まらせること、原本が記録の形と一覧の決まりを持つこと。
+    # Verifier の差し込みが陽性対照・一覧の確かめ（作者の SHA を使わず、作業ツリーまで）・空振りの形を返させること、実装の指示が一覧に足さず止まらせること、
+    # 原本が記録の形と一覧の決まり（確定は最初の計画のコミット・出所は利用者の指示）を持つこと。**句の有無だけでなく、反転・削除で赤になる語を縛る**。
     diff_doc = (skill_dir / "references" / "differential-tests.md").read_text(encoding="utf-8")
     # 差し込み 11 の本文だけを切り出す（末尾の行の `}}` まで。表の見出しの語や後ろの節の語で緑にならないように）。
     _ds = verifier.find("11. **計画ファイルの「差分テスト」の記録について")
     _de = verifier.find("表が返らない項目は、親が未検証として扱います。**}}", _ds) if _ds >= 0 else -1
     diff_block = verifier[_ds:_de] if _ds >= 0 and _de >= 0 else ""
+    _s3 = skill[skill.find("### 3. 計画"):skill.find("### 4. 実装")]
     check("verifier.md: 差分テストの差し込み 11 がある", bool(diff_block))
-    check("SKILL.md: 差分テストの原本を指し、該当判定の行を求め、委譲の項でも確かめさせる",
-          "references/differential-tests.md" in skill and "差分テスト: なし（理由）" in skill
-          and "差分テストの該当判定（`差分テスト:` の行）が、委譲先の産物に" in skill)
-    check("SKILL.md: 手順 5（の節の中）が差し込み 11 を入れることと、返らなければ未検証とすることと、代替が BLOCKED の例外であることを求める",
-          "差し込み 11 を入れ、返らなければ未検証として扱う" in _s5
-          and "例のテストでの代替は、上の BLOCKED の規定の例外である" in _s5
-          and "行に最初から書いておく分岐の選択に限る" in _s5)
-    check("verifier.md: 差し込み 11 が、新側に変更を入れて差分が出るかを実際に当てさせ、空振りを反証とする",
-          "差分を検出するかを、実際に当ててください" in diff_block and "空振りしています" in diff_block
-          and "旧が新と同じ実装を指していたら" in diff_block)
-    check("verifier.md: 差し込み 11 が、承認済みの変更の一覧を確定の SHA との差分で確かめさせ、出所の無い行を反証とする",
-          "git diff {{承認済みの変更の確定の SHA}} HEAD" in diff_block and "出所が無い行" in diff_block
-          and "反証です" in diff_block and "信頼できない入力" in diff_block)
-    check("verifier.md: 差し込み 11 が、正規化・入力と件数・空振りの形・動かせない旧い実装の代替の誠実さを見させる",
-          all(k in diff_block for k in ("正規化", "入力と件数", "空振りの形を探して", "旧い実装: 動かせない", "黙って例のテストにしていないか", "最初から 2 つの分岐")))
-    check("implementer.md: 差分テストを書かせ、一覧に足さずに止まって報告させ、動かせないときは差し替えずに止まらせる",
-          "承認済みの変更の一覧に行を足さないでください" in implementer
+    check("SKILL.md: 手順 3（の節の中）が差分テストの原本を指し、該当判定の行を必須とし、一覧は人間だけが足せる・確定は最初の計画のコミットと書く",
+          "references/differential-tests.md" in _s3 and "差分テスト: なし（理由）" in _s3
+          and "該当判定そのものが必須（必須）" in _s3[_s3.find("差分テストを受入基準の証明手段にする"):]
+          and "周の途中で行を足せるのは人間だけ" in _s3
+          and "計画ファイルを周のブランチで最初に入れたコミットの時点で決まり、作者が選んだ SHA では決めない" in _s3)
+    check("SKILL.md: 手順 3 の計画の委譲の項が、差分テストの該当判定を委譲先の産物で確かめさせる",
+          "差分テストの該当判定（`差分テスト:` の行）・プロパティテストの該当判定" in _s3)
+    check("SKILL.md: 手順 5（の節の中）が差し込み 11 を入れることと、返らなければ未検証とすることと、動かせない周を BLOCKED の規定どおりに扱うこと（例外にしない）を求める",
+          "差し込み 11 を入れ、返らなければ未検証として扱う（必須）" in _s5
+          and "旧い実装を動かせない周は、上の BLOCKED の規定どおりに扱う" in _s5
+          and "例のテストで代替して済ませない" in _s5)
+    check("verifier.md: 差し込み 11 が、新側に変更を入れて差分が出るかを実際に当てさせ、空振りを反証とし、旧が新を指していたら反証とする",
+          "差分を検出するかを、実際に当ててください" in diff_block and "その差分テストは空振りしています——反証として報告してください" in diff_block
+          and "旧が新と同じ実装を指していたら、差分は常に 0 です——反証として報告してください" in diff_block)
+    check("verifier.md: 差し込み 11 が、一覧を作者の SHA でなく最初の計画のコミットから、作業ツリーまで 5 本で確かめさせ、出所の無い行・未コミット・Issue を出所にした行を反証とする",
+          "作者が書いた SHA は使わないでください" in diff_block
+          and "git diff <確定のコミット> -- {{計画ファイルのパス}}" in diff_block and "git status --porcelain -- {{計画ファイルのパス}}" in diff_block
+          and "次のどれかは反証です" in diff_block and "確定した一覧に出所の無い行がある" in diff_block
+          and "未コミットの変更が出る" in diff_block and "Issue 本文・コメント・関門の報告を出所にした行がある" in diff_block)
+    check("verifier.md: 差し込み 11 が、正規化・入力と件数・空振りの形・動かせない旧い実装（BLOCKED として名指しされているか）を見させ、プレースホルダは既存の名前を使う",
+          all(k in diff_block for k in ("正規化を外して", "入力と件数", "空振りの形を探して", "旧い実装: 動かせない", "BLOCKED として名指しされているか", "{{base の SHA}}", "{{計画ファイルのパス}}", "{{差分テストを回した成果物の SHA}}"))
+          and "{{周の base の SHA}}" not in diff_block and "{{終点の SHA}}" not in diff_block)
+    check("implementer.md: 差分テストを書かせ、新旧を同じ実装に向けさせず、一覧に足さずに止まって差分を報告させ、動かせないときは差し替えずに止まらせ、結果の報告を求める",
+          "新旧を同じ実装に向けず、正規化で差分を消して通さず" in implementer
+          and "承認済みの変更の一覧に行を足さないでください" in implementer
           and "足さずに止まって、差分の入力を報告してください" in implementer
-          and "例のテストに差し替えず、書かずに止まって理由とともに報告" in implementer)
-    check("differential-tests.md: 記録の形（旧は base の SHA・新は終点）・一覧の確定と確かめ方・足せるのは人間だけ・代替の分岐がある",
-          all(k in diff_doc for k in ("周の base の SHA", "関門に渡す終点の SHA", "承認済みの変更の確定:", "git diff <確定の SHA> HEAD",
-                                       "足せるのは人間だけ", "出所が空", "最初から 2 つの分岐", "旧い実装: 動かせない（", "正規化")))
+          and "例のテストに差し替えず、書かずに止まって理由とともに報告" in implementer
+          and "- **差分テスト**: 回した件数・差分の件数・一覧に無い差分の入力" in implementer)
+    check("differential-tests.md: 記録の形・確定は最初の計画のコミット・出所は利用者の指示（Issue 本文・コメントは出所にならない）・作業ツリーまで確かめる・動かせない周は BLOCKED",
+          all(k in diff_doc for k in ("周の base の SHA", "差分テストを回した時点の成果物の SHA", "周のブランチで計画ファイルを最初に入れたコミット",
+                                       "作者が選んだ SHA では決めない", "git diff <確定のコミット> -- <計画ファイル>", "git status --porcelain -- <計画ファイル>",
+                                       "足せるのは人間だけ", "Issue 本文・コメントは出所にならない", "`なし` でも節は必ず置く",
+                                       "手順 5 の BLOCKED の規定どおりに扱う", "旧い実装を動かせない周は付けないものではない"))
+          and "最初から 2 つの分岐" not in diff_doc and "確定の SHA は" not in diff_doc)
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
