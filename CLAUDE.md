@@ -78,8 +78,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       proposal の判別の実測（git が動く形で回した結果）は `docs/plans/issue-832.md`）
     - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
-    - `references/operations.md` - **利用者向けの運用の決まりの要約**（#1249。Q&A 表の 2 層・仕様レビューの流れ・抜ける条件・回し直し・上限・暫定の回答。**要約であって原本ではなく、細部は下の `references/` の各ファイルを正とする**）
-    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件・
+    - `references/` - **データの決まりの原本**（**ただし `operations.md` だけは利用者向けの運用の決まりの要約（#1249）で、原本ではない**——決まりの写しを持ち、細部は各原本を正とする）（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件・
       **仕様に書く範囲の線と振り分けの区分**（`spec-scope.md`。#329））。
       **スキルの中ではなくプラグイン直下にある**——スキルからは `../../references/…` で指し、
       `check-skill-pointers.py` が**プラグインの中に収まること**まで見る（#216）

@@ -72,7 +72,9 @@
 **データの決まりは `references/` だけに書きます。** このファイルも、スキルも、公開ページも、
 そこを指すだけで決まりを写しません。写しがあると、直すときに一部だけ直し漏れます。
 
-**例外はスクリプトの定数**で、機械で検査する以上、写しが要ります。
+**例外は 2 つあります。** 1 つは `references/operations.md`（利用者向けの要約）で、要約なので決まりの写しを持ち、各節の原本が正です（写しの鮮度は機械では見ていません）。
+
+**もう 1 つはスクリプトの定数**で、機械で検査する以上、写しが要ります。
 写しがずれていないかは、このリポジトリのテストが `references/` の表と突き合わせて確かめます
 （`scripts/test-check-qa-csv.py`・`scripts/test-check-spec-exit.py`・`scripts/test-check-feasibility-csv.py`・
 `scripts/test-check-signoff.py`・`scripts/test-scaffold.py`・`scripts/test-merge-versions.py`・`scripts/test-check-frozen.py`）。
