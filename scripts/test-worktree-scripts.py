@@ -1066,11 +1066,14 @@ def check_norm_shape() -> None:
     check("implementer.md: プロパティテストをライブラリで書かせ、無いときは差し替えずに止まって「無い」と報告させる",
           all(k in implementer for k in ("Hypothesis", "fast-check", "proptest"))
           and "足さず、例のテストにも差し替えず、その行は書かずに止まって「無い」と報告" in implementer)
-    check("property-tests.md・verifier.md: 代替への切り替えの扱いが 1 つ（手順 3 に戻して決める。「緩める操作ではない」と呼び変えない）",
-          "手順 3 に戻して" in prop_doc and "緩める操作ではない" not in prop_doc
-          and "手順 3 に戻して切り替えた" in prop_block)
+    check("property-tests.md・verifier.md: 代替の扱いが 1 つ（行に最初から書いておく分岐の選択。禁止は目的を限定せず、「緩める操作ではない」と呼び変えない）",
+          "最初から書いておく分岐" in prop_doc and "分岐を選んだ" in prop_doc
+          and "実装の途中で受入基準の行を書き換えない" in prop_doc
+          and "通すために書き換えない" not in prop_doc and "緩める操作ではない" not in prop_doc
+          and "決定の場所を移すだけ" not in prop_doc
+          and "分岐を選んだ" in prop_block and "最初から" in prop_block)
     check("property-tests.md: 4 つの型と、表の形と、代替の記録の形と、落とした主張の名指しがある",
-          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "手順 3 で決めるときだけ", "依存の定義にも lockfile にも無い")))
+          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "依存の定義にも lockfile にも無い")))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
