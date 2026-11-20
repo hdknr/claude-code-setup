@@ -1101,7 +1101,7 @@ def check_norm_shape() -> None:
     check("verifier.md: 差し込み 11 が、一覧を作者の SHA でなく最初の計画のコミットから、作業ツリーまで 6 本の git で確かめさせ、順序・出所の無い行・書き換え・未コミット・Issue を出所にした行を反証とする",
           all(k in diff_block for k in ("作者が書いた SHA は使わないでください", "git log --follow --format=%H {{base の SHA}}..HEAD -- {{計画ファイルのパス}}",
                                          "git show --stat <確定のコミット>", "git log --format=%H {{base の SHA}}..HEAD -- ':(top)' ':(top,exclude){{計画ファイルのパス}}'", "確定のコミットがその全部の祖先か", "git diff <確定のコミット> -- {{計画ファイルのパス}}",
-                                         "git status --porcelain -- {{計画ファイルのパス}}", "git status --porcelain -- ':(top)' ':(top,exclude){{計画ファイルのパス}}'", "git merge-base <参照名> HEAD", "取り直さずその値を使ってください", "1 本目の最後の行", "次のどれかは反証です", "確定した一覧に出所の無い行がある",
+                                         "git status --porcelain -- {{計画ファイルのパス}}", "git status --porcelain -- ':(top)' ':(top,exclude){{計画ファイルのパス}}'", "git merge-base <参照名> HEAD", "取り直さず、親が渡した", "をそのまま使ってください", "1 本目の最後の行", "次のどれかは反証です", "確定した一覧に出所の無い行がある",
                                          "確定のコミットに成果物の変更が混ざる", "確定のコミットより前に計画以外のコミットがある",
                                          "出所を残したままの書き換え）に利用者の指示の引用と日時が無い", "未コミットの変更が出る",
                                          "Issue 本文・コメント・関門の報告を出所にした行がある")))
