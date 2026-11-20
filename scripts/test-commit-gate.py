@@ -172,6 +172,7 @@ def suite(script: Path) -> list[str]:
     for name, text in (
         ("コードフェンスの中", "```\n検証の関門: enforce\n```\n"),
         ("HTML コメントの中", "<!--\n検証の関門: enforce\n-->\n"),
+        ("~~~ のフェンスの中", "~~~\n検証の関門: enforce\n~~~\n"),
         ("2 本", "検証の関門: enforce\n検証の関門: observe\n"),
         ("値違い", "検証の関門: strict\n"),
     ):
@@ -258,6 +259,36 @@ def suite(script: Path) -> list[str]:
     check("メッセージを渡さない --no-edit は見ない", c.hook("git commit --no-edit").returncode == 0)
     c.close()
 
+    # 2 パス目の指摘: 後ろにリダイレクト・pathspec・連結・前置・引用符・行継続
+    c = Case(script, cfg("enforce"))
+    for tail in (" 2>&1", " file.py", " -- file.py", ' > /dev/null', ""):
+        check(f"印の後ろが「{tail.strip()}」の形でも読む", c.hook('git commit -m "feat: x" -m "Verified: verify"' + tail).returncode == 0)
+    check("印の直後の閉じ引用符に > が続く形", c.hook('git commit -m "x\n\nVerified: tests">/dev/null').returncode == 0)
+    check("1 本目に印が無い連結は止める", c.hook('git commit -m "a" && git commit -m "b" -m "Verified: verify"').returncode == 2)
+    check("2 本目に印が無い連結は止める", c.hook('git commit -m "a\n\nVerified: tests" && git commit -m b').returncode == 2)
+    check("2 本とも印のある連結は通す", c.hook('git commit -m "a\n\nVerified: tests" && git commit -m "b\n\nVerified: gates"').returncode == 0)
+    check("別コマンドの Verified: に引きずられない（前）", c.hook('echo "Verified: verify" && git commit -m "feat: x"').returncode == 2)
+    check("別コマンドの Verified: に引きずられない（後）",
+          c.hook('git commit -m "x\n\nVerified: tests" && gh pr create --body "a\nVerified: foo"').returncode == 0)
+    check("--no-edit でも -m を渡せば見る", c.hook('git commit --no-edit -m "feat: x"').returncode == 2)
+    check("単一引用符の中の \" に崩されない", c.hook("echo 'a\"b' && git commit -m x && echo 'c\"d'").returncode == 2)
+    check("if の後ろの git commit も見る", c.hook("if git commit -m x; then echo ok; fi").returncode == 2)
+    check("{ } の中の git commit も見る", c.hook("{ git commit -m x; }").returncode == 2)
+    check("環境変数の前置の git commit も見る", c.hook("FOO=1 git commit -m x").returncode == 2)
+    check("( ) の中の git commit も見る", c.hook("(git commit -m x)").returncode == 2)
+    check("後ろにリダイレクトが続く印なしは止める", c.hook("git commit -m x > out.txt").returncode == 2)
+    check("行継続の後ろの --dry-run を読む", c.hook("git commit \\\n --dry-run -m x").returncode == 0)
+    check("$'…' の中の \\n 以降を値に含めない",
+          c.hook("git commit -m $'x\\n\\nVerified: tests\\nCo-Authored-By: a <b>'").returncode == 0)
+    check("ヒアドキュメントの本体の git commit は見ない",
+          c.hook("cat > notes.md <<'EOF'\nnote\ngit commit -m later\nEOF").returncode == 0)
+    check("単一引用符の中の git commit は見ない", c.hook("gh pr create --body 'steps: add; git commit -m x'").returncode == 0)
+    check("&& の後ろの --dry-run は別のコマンドのもの", c.hook("git commit -m x && git push --dry-run").returncode == 2)
+    (c.repo / "msg.txt").write_text("x\n\nVerified: gates\n")
+    check("--file= のファイルを読む", c.hook("git commit --file=msg.txt").returncode == 0)
+    check("-F は commit の部分だけで読む（別コマンドの -F を拾わない）", c.hook("git log -F msg.txt && git commit -m x").returncode == 2)
+    c.close()
+
     # 判定できないとき・記録が書けないとき
     c = Case(script, cfg("enforce"))
     env = {**os.environ, "DEV_LOOP_GATE_LOG": str(c.log), "HOME": str(c.tmp), "GIT_CONFIG_GLOBAL": "/dev/null", "PATH": "/nonexistent"}
@@ -290,6 +321,13 @@ def suite(script: Path) -> list[str]:
     check("status が読めなかった行を名指しする", "行頭から" in s.stdout and "off" in s.stdout, s.stdout)
     check("読めない行は off", c.hook(plain).returncode == 0)
     c.close()
+
+    # status: 別の鍵・散文の行を誤りと名指ししない
+    for name, text in (("逃げ道の行だけ", "検証の関門の逃げ道: なし\n"), ("散文の行", "検証の関門は後で入れる予定。\n")):
+        c = Case(script, text)
+        s = sh(sys.executable, str(script), "status", "--project", str(c.repo), cwd=c.repo)
+        check(f"status は {name} を誤りと名指ししない", "設定の誤り" not in s.stdout, s.stdout)
+        c.close()
 
     # report --since
     c = Case(script, None)
@@ -327,16 +365,17 @@ MUTATIONS = [
     ("語彙の外を通す", '    return "malformed"', "    return None"),
     ("off でも判定する", '    if mode == "off":\n        return 0', "    if False:\n        return 0"),
     ("コードフェンスを設定に読む", "clean = strip_noise(text)", "clean = text"),
-    ("--dry-run を見る", 'if "--dry-run" not in s]', "if True]"),
-    ("amend の直前メッセージを読まない", 'and (not has_msg or "--no-edit" in segment)', "and False"),
+    ("--dry-run を見る", 'if "--dry-run" not in skel[a:b]]', "if True]"),
+    ("amend の直前メッセージを読まない", 'and (not has_message_flag(segment) or "--no-edit" in segment)', "and False"),
     ("2 本の行の最初の値を採る", 'return default, f"`{key}:` の行が', 'return values[0], f"`{key}:` の行が'),
     ("値違いをそのまま採る", 'return default, f"`{key}:` の値', 'return values[0], f"`{key}:` の値'),
     ("worktree の写しを読む", 'path = Path(common).parent / ".claude" / "dev-loop.md"', 'path = Path(cwd) / ".claude" / "dev-loop.md"'),
     ("最初の印を採る", "value = clean_value(found[-1])", "value = clean_value(found[0])"),
-    ("--amend -m でも直前を読む", '(not has_msg or "--no-edit" in segment)', "(True)"),
+    ("--amend -m でも直前を読む", '(not has_message_flag(segment) or "--no-edit" in segment)', "(True)"),
     ("非 UTF-8 の -F で落ちる", "        except (OSError, ValueError):\n            pass\n", "        except OSError:\n            pass\n"),
     ("マージの締めも判定する", "merge_in_progress(cwd) or (", "False or ("),
-    ("--no-edit も判定する", 'or ("--no-edit" in segment and "--amend" not in segment)', ""),
+    ("--no-edit も判定する", 'or ("--no-edit" in segment and "--amend" not in segment and not has_message_flag(segment))', ""),
+    ("--no-edit の -m を見ない", ' and not has_message_flag(segment)):\n            continue', "):\n            continue"),
     ("git commit-tree に当たる", "commit(?=[ \\t\\n;&|)]|$)", "commit"),
     ("引用符の中の git commit に当たる", "    skel = skeleton(command)\n", "    skel = command\n"),
     ("引用符の閉じ以降を値に含める", "return (value[:m.start()] if m else value).strip()", "return value.strip()"),
@@ -347,6 +386,21 @@ MUTATIONS = [
     ("語彙を足しても止まらない", 'METHODS = ("tests", "gates", "verify", "code-review")', 'METHODS = ("tests", "gates", "verify", "code-review", "lint")'),
     (".git でない共通ディレクトリでも設定を読む", 'if not common or Path(common).name != ".git":', "if not common:"),
     ("読めない行を名指ししない", "        if loose:\n", "        if False:\n"),
+    ("単一引用符の中を消さない", """|'[^']*'")""", '")'),
+    ("ヒアドキュメントの本体を消さない", "out = HEREDOC.sub(heredoc, out)", "out = out"),
+    ("値の文字のままの \\n を切らない", 'value = value.split("\\\\n")[0]', "value = value"),
+    ("行継続を畳まない", 'out = command.replace("\\\\\\n", "  ")', "out = command"),
+    ("区切りが && を知らない", 'SEGMENT_END = re.compile(r"&&|\\|\\||;|\\||\\n")', 'SEGMENT_END = re.compile(r"\\n")'),
+    ("環境変数の前置を見ない", 'r"(?:\\w+=\\S*[ \\t]+)*(?:\\S*/)?git"', 'r"(?:\\S*/)?git"'),
+    ("( と { の直後を見ない", r'(?:^|[;&|(\n{])[ \t]*(?:(?:if', r'(?:^|[;&|\n])[ \t]*(?:(?:if'),
+    ("if などの前置を見ない", "(?:(?:if|then|else|elif|while|until|do|time|sudo|nohup|command|exec|env|!)[ \\t]+)*", ""),
+    ("値の終わりがリダイレクトを知らない", "|[;&|)<>])", "|[;&|)])"),
+    ("値の終わりが空白を知らない", "(?=\\s|$|[", "(?=$|["),
+    ("判定を全体の文面で行う", "commit_message_text(command[a:b], segment, cwd)", "commit_message_text(command, segment, cwd)"),
+    ("1 本でも満たさなければ止める、をやめる", "        if reason:\n            break\n", "        if False:\n            break\n"),
+    ("~~~ のフェンスを読む", "(```|~~~)", "(```)"),
+    ("--file= を読まない", '(?:-F|--file)(?:=|\\s+)(\\S+)', '(?:-F)(?:=|\\s+)(\\S+)'),
+    ("鍵の接頭辞に当たる", "[ \\t]*[:：]\")", "\")"),
     ("-F を読まない", 'text += "\\n" + p.read_text(encoding="utf-8")', "pass"),
     ("記録に全文を書く", "command[:HEAD_LEN]", "command"),
 ]

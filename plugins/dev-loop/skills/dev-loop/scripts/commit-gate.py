@@ -43,9 +43,12 @@
 - **hook が動かない環境では何も止まらない**（python3 が無い・hook が登録されていない・Claude Code が hook を読まない）。
   **このスクリプトは、本物の Claude Code に登録して発火させた検証をしていない**——テストは hook の stdin を
   真似て呼ぶ（`scripts/test-commit-gate.py`）。stdin の鍵と終了コード 2 の意味は公式の説明に従った。
-- **`git commit` を直接呼ばない形**（`git` の別名・スクリプトの中のコミット・IDE のコミット）は見ない。
+- **`git commit` を直接呼ばない形**（`git` の別名・スクリプトの中のコミット・IDE のコミット・`bash -c "…"`・`git --git-dir <パス> commit`）は見ない。
+  `if`・`then`・`{ … }`・`env`・`sudo`・`time`・`command`・環境変数の前置の後ろの `git commit` は見る。**`cd <dir> && git commit -F <相対パス>` は、hook の cwd からの相対で読むので外れる。**
+- **値の読み方**: 閉じの引用符（後ろが空白・行末・区切り）か文字のままの `\\n` で値が終わる。理由の中の「引用符＋空白」で値が切れる。`Verified:` は行頭か引用符の直後に無いと読まない（`-m x -m Verified:tests` は読めない）。
 - `-C`／`-c`（メッセージの再利用）と、エディタを開くコミットはメッセージを読めず、`missing` になる。
-- **マージの締め（`MERGE_HEAD` がある・`--no-edit`）は見ない**（通す。記録もしない）。
+- **マージの締め（`MERGE_HEAD` がある）と、メッセージを渡さない `--no-edit` は見ない**（通す。記録もしない）。`--no-edit` でも `-m` を渡すコミットは見る。
+- **連結したコマンドは、`git commit` の呼び出しごとに、その呼び出しの部分だけを読む**（別のコミットや別のコマンドの `Verified:` の行を拾わない）。1 本でも満たさなければ止める。
 - `--amend` でメッセージを渡さないときは、直前のコミットのメッセージを読む。
 - **同じセッションで 2 回止めたら次は通す、という逃げ道は採っていない**（セッションの状態を持つ必要がある）。
 
@@ -70,15 +73,18 @@ METHODS = ("tests", "gates", "verify", "code-review")
 
 # 引用符の中とヒアドキュメントの本体を消した「骨組み」に当てる（`gh ... --body "git commit"`・`git commit-tree` に当てないため）
 GIT_COMMIT = re.compile(
-    r"(?:^|[;&|(\n])[ \t]*(?:\w+=\S*[ \t]+)*(?:\S*/)?git"
+    r"(?:^|[;&|(\n{])[ \t]*(?:(?:if|then|else|elif|while|until|do|time|sudo|nohup|command|exec|env|!)[ \t]+)*"
+    r"(?:\w+=\S*[ \t]+)*(?:\S*/)?git"
     r"(?:[ \t]+(?:-C[ \t]+\S+|-c[ \t]+\S+|--[\w-]+(?:=\S+)?))*[ \t]+commit(?=[ \t\n;&|)]|$)"
 )
 HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.DOTALL)
 SEGMENT_END = re.compile(r"&&|\|\||;|\||\n")
 # 行頭・引用符の直後・文字のままの `\n` の直後の `Verified:`（-m を 2 本渡す形・$'…' の形も読む）
 TRAILER = re.compile(r"(?:^|[\"']|\\n)[ \t]*Verified:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
-# 値の終わり: 閉じの引用符（後ろが行末・&&・;・|・リダイレクト・次のオプション）と、文字のままの `\n`
-VALUE_END = re.compile(r"""["'](?=[ \t]*(?:$|&&|\|\||[;|)<>]|-{1,2}[A-Za-z]))""")
+# 値の終わり: 閉じの引用符（後ろが空白・行末・区切り・リダイレクト）と、文字のままの `\n`。
+# 理由の中に「引用符＋空白」を書くと、そこで値が切れる（`none (skip "a" b)` は malformed）
+VALUE_END = re.compile(r"""["'](?=\s|$|[;&|)<>])""")
+QUOTED = re.compile(r"\"(?:\\.|[^\"\\])*\"|'[^']*'")
 NONE_FORM = re.compile(r"^none(?:[ \t]*[(（](.*)[)）])?$")
 FENCE = re.compile(r"^[ \t]*(```|~~~)")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -110,7 +116,8 @@ def read_setting(text: str, key: str, allowed: tuple[str, ...], default: str) ->
     clean = strip_noise(text)
     values = pat.findall(clean)
     if not values:
-        loose = [ln for ln in clean.splitlines() if key in ln]
+        keyed = re.compile(rf"^[ \t>*+`\-]*{re.escape(key)}[ \t]*[:：]")
+        loose = [ln for ln in clean.splitlines() if keyed.match(ln)]
         if loose:
             return default, f"`{key}` を含む行が行頭から `{key}: <値>` の形でない（{loose[0].strip()[:40]!r}）ので読まなかった"
         return default, None
@@ -133,7 +140,8 @@ def load_config(cwd: str) -> tuple[str, str, list[str]]:
     """(モード, 逃げ道, 誤りの一覧)。.claude/dev-loop.md が無ければ既定。"""
     common = git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
     if not common or Path(common).name != ".git":
-        return DEFAULT_MODE, DEFAULT_ESCAPE, ["メインの作業ツリーが決まらない（.git でない共通ディレクトリ）ので設定を読まない"]
+        return DEFAULT_MODE, DEFAULT_ESCAPE, ["メインの作業ツリーが決まらない（.git でない共通ディレクトリ・submodule・bare・"
+                                              "`--path-format=absolute` を持たない git 2.31 未満）ので設定を読まない"]
     path = Path(common).parent / ".claude" / "dev-loop.md"
     try:
         text = path.read_text(encoding="utf-8")
@@ -146,16 +154,25 @@ def load_config(cwd: str) -> tuple[str, str, list[str]]:
 
 
 def skeleton(command: str) -> str:
-    """ヒアドキュメントの本体と引用符の中を消す（コマンドの形だけを残す）。"""
-    out = HEREDOC.sub("<<heredoc", command)
-    out = re.sub(r'"(?:\\.|[^"\\])*"', '""', out)
-    return re.sub(r"'[^']*'", "''", out)
+    """ヒアドキュメントの本体と引用符の中を、**同じ長さで**消す（コマンドの形だけを残す。位置は元の文字列と同じ）。"""
+    out = command.replace("\\\n", "  ")  # 行継続は空白に畳む
+
+    def heredoc(m: re.Match) -> str:
+        first, _, rest = m.group(0).partition("\n")
+        return first + "\x01" + "_" * len(rest)
+
+    out = HEREDOC.sub(heredoc, out)
+    return QUOTED.sub(lambda m: m.group(0)[0] + "_" * (len(m.group(0)) - 2) + m.group(0)[-1], out)
 
 
-def find_commits(command: str) -> list[str]:
-    """`git commit` の呼び出しごとの、続くオプションの並び（次の `&&`・`;`・`|` まで）。"""
+def find_commits(command: str) -> tuple[str, list[tuple[int, int]]]:
+    """(骨組み, `git commit` の呼び出しごとの、続く部分の範囲（次の `&&`・`;`・`|`・改行まで）)。範囲は元の文字列にも当たる。"""
     skel = skeleton(command)
-    return [SEGMENT_END.split(skel[m.end():], maxsplit=1)[0] for m in GIT_COMMIT.finditer(skel)]
+    spans = []
+    for m in GIT_COMMIT.finditer(skel):
+        end = SEGMENT_END.search(skel, m.end())
+        spans.append((m.end(), end.start() if end else len(skel)))
+    return skel, spans
 
 
 def merge_in_progress(cwd: str) -> bool:
@@ -169,8 +186,12 @@ def clean_value(value: str) -> str:
     return (value[:m.start()] if m else value).strip()
 
 
+def has_message_flag(segment: str) -> bool:
+    return bool(re.search(r"(?:^|\s)(?:-[a-zA-Z]*m(?=[\s=\"']|$)|--message\b|-F\b|--file\b)", segment)) or "<<" in segment
+
+
 def commit_message_text(command: str, segment: str, cwd: str) -> str:
-    """判定に使うメッセージの文面。コマンド全体（-m・ヒアドキュメント）＋ -F のファイル＋ amend の直前のメッセージ。"""
+    """判定に使うメッセージの文面。**その 1 回の commit の部分**（-m・ヒアドキュメント）＋ -F のファイル＋ amend の直前のメッセージ。"""
     text = command
     for m in re.finditer(r"(?:-F|--file)(?:=|\s+)(\S+)", command):
         p = Path(m.group(1).strip("'\""))
@@ -179,8 +200,7 @@ def commit_message_text(command: str, segment: str, cwd: str) -> str:
             text += "\n" + p.read_text(encoding="utf-8")
         except (OSError, ValueError):
             pass
-    has_msg = re.search(r"(?:^|\s)(?:-[a-zA-Z]*m(?=[\s=\"']|$)|--message\b|-F\b|--file\b)", segment) or "<<" in segment
-    if re.search(r"--amend\b", segment) and (not has_msg or "--no-edit" in segment):
+    if re.search(r"--amend\b", segment) and (not has_message_flag(segment) or "--no-edit" in segment):
         prev = git(cwd, "log", "-1", "--format=%B")
         if prev:
             text += "\n" + prev
@@ -233,16 +253,24 @@ def hook() -> int:
         return 0  # 判定できないときは通す
     if tool != "Bash" or not isinstance(command, str):
         return 0
-    segments = [s for s in find_commits(command) if "--dry-run" not in s]
-    if not segments:
+    skel, spans = find_commits(command)
+    spans = [(a, b) for a, b in spans if "--dry-run" not in skel[a:b]]
+    if not spans:
         return 0
     mode, escape, errors = load_config(cwd)
     if mode == "off":
         return 0
-    segment = segments[0]
-    if merge_in_progress(cwd) or ("--no-edit" in segment and "--amend" not in segment):
-        return 0  # マージの締め・メッセージを渡さずに済ませる形は、メッセージを読めない（見ない）
-    reason = judge(commit_message_text(command, segment, cwd), escape)
+    judged, reason = False, None
+    for a, b in spans:  # 1 回ずつ、その commit の部分だけを見る（1 本でも満たさなければ止める）
+        segment = skel[a:b]
+        if merge_in_progress(cwd) or ("--no-edit" in segment and "--amend" not in segment and not has_message_flag(segment)):
+            continue  # マージの締め・メッセージを渡さない --no-edit は、メッセージを読めない（見ない）
+        judged = True
+        reason = judge(commit_message_text(command[a:b], segment, cwd), escape)
+        if reason:
+            break
+    if not judged:
+        return 0
     action = "pass" if reason is None else ("would_stop" if mode == "observe" else "stopped")
     write_log(cwd, {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "mode": mode, "action": action,
