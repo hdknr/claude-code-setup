@@ -1499,6 +1499,43 @@ class Loaded:
         self.docs = docs
 
 
+def spec_texts(rendered: dict[str, bytes], ir: dict) -> dict[str, bytes]:
+    """機能の `source` の綴り → 重ね合わせた全体のその原文（`acceptance_section` が表の見出しを引く。#1301・#1317）。
+
+    **`check_source` と同じ解決で全体の鍵を決める**——全体の `spec/` を一時ディレクトリに置き、`source` の綴りを
+    ファイルシステムに解決させ、同じファイル（デバイスと inode）を指す全体の鍵を引く。だから `check_source` が通す綴りは
+    どれも原文に届く——`spec/./order.md`（正規化）も、大文字小文字を区別しないファイルシステムでの `spec/Order.md` も。
+    文字列で比べると、後者は検査を通るのに原文が引けず、本文に表の見出しの無い裸の行が写る（#1317）。
+    解決できない綴り・`spec/` の外を指す綴りは載せない（`check_source` が止める）。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        whole = Path(tmp)
+        keys = {}
+        for rel, data in rendered.items():
+            if rel.startswith(f"{SPEC_DIR}/"):
+                versions.put(whole / rel, data)
+        for rel in rendered:
+            if rel.startswith(f"{SPEC_DIR}/"):
+                found = (whole / rel).stat()
+                keys[(found.st_dev, found.st_ino)] = rel
+        spec_root = (whole / SPEC_DIR).resolve()
+        texts: dict[str, bytes] = {}
+        for feature in features_of(ir):
+            for rel in feature.get("source", []):
+                if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
+                    continue
+                path = (whole / rel).resolve()
+                if not path.is_relative_to(spec_root):
+                    continue
+                try:
+                    found = path.stat()
+                except OSError:
+                    continue
+                key = keys.get((found.st_dev, found.st_ino))
+                if key is not None:
+                    texts[rel] = rendered[key]
+        return texts
+
+
 def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tuple[int, list[str], Loaded | None]:
     """(終了コード, 出力する行, 読んだもの) を返す。
 
@@ -1548,9 +1585,7 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     loaded = Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
     loaded.provisional = provisional
     loaded.notes = notes
-    # 綴りが `spec/./order.md` でも `check_source` は通す（解決して見る）——全体の鍵は正規化した綴りなので、正規化して引く
-    loaded.spec_texts = {rel: rendered[os.path.normpath(rel)] for feature in features_of(ir)
-                         for rel in feature.get("source", []) if os.path.normpath(rel) in rendered}
+    loaded.spec_texts = spec_texts(rendered, ir)
     loaded.coverage = coverage_lines(rendered, ir)
     loaded.infra = settled
     # 検査（`check_refs`）を通った後なので、指したパスは重ね合わせた全体に在る
