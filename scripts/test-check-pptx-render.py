@@ -13,9 +13,15 @@ PPTX の試料は `proposal-pptx.py` の部品で一時ディレクトリに作�
 4. **はみ出し**: ページの外の語・重なる語・文字を持つ枠の下の辺をまたぐ語は 1。
 5. **確かめられない**: 描画の道具が無ければ 3（PPTX の本文だけ見た結果は出し、終わりは 3 のまま。緑にしない）。描画に失敗・PPTX が読めない・引数の誤りは 2。
 6. **PPTX に書き込まない**（実行の前後でバイトが同じ）。
-7. （手元に道具があれば）**実機**: 本物の LibreOffice で、収まる枚は 0・はみ出す枚は 1。無ければ「走らせていない」と言う。
+7. （手元に道具があれば）**実機**: 本物の LibreOffice で、収まる枚は 0・はみ出す枚は 1。無ければ「走らせていない」と言う（0 のまま）。
+   **道具があっても描画できなければ（本体が 2・3 で終わった・時間切れ）、本体の出力から理由を出して「確かめられない」と言い、テストは 3 で終わる（緑にしない）**——
+   「はみ出しを見つけた」（1）と取り違えて NG と言わない（#1359）。ほかの観測が落ちていれば 1 が先に効く。
+8. **実機の段の読み分け**: 7 の読み分けを偽の道具で当てる——0 と 1 なら通る・描画に失敗（偽の `soffice` が非 0 で終わる・0 で終わって PDF を書かない）なら
+   「確かめられない」で理由を出す・どちらでもない組（0 と 0）なら NG。
 
 **守らないもの**: 偽の道具の出力が本物の poppler・LibreOffice と同じ形であること（本物の `pdftotext -bbox` の形に合わせてあるが、版による違いは見ない。実機の確認が別にある）。
+**描画が失敗する原因そのもの**（道具の状態・サンドボックス・負荷による時間切れ）は直さない——理由を出して「確かめられない」と言うまで。
+#1359 の周では、同じ版の道具で手元の実機の段が 0 と 1 になり、元の失敗（2 と 2）の原因は特定していない。
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、名指しした試料が期待どおりでなくなることを確かめる。
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 """
@@ -35,6 +41,11 @@ TARGET = "check-pptx-render.py"
 
 FAKE_SOFFICE = """#!/usr/bin/env python3
 import os, sys, pathlib
+if os.environ.get("FAKE_SOFFICE_FAIL2"):  # 複数行の標準エラー——本当の原因は最後の行（前の警告で 200 字を超える）
+    print("javaldx: Could not find a Java Runtime Environment!", file=sys.stderr)
+    for n in range(4):
+        print(f"Warning: fontconfig could not load a cache file, falling back (line number {n})", file=sys.stderr)
+    print("Error: source file could not be loaded", file=sys.stderr); sys.exit(1)
 if os.environ.get("FAKE_SOFFICE_FAIL"):
     print("soffice が壊れている", file=sys.stderr); sys.exit(3)
 if os.environ.get("FAKE_SOFFICE_NOWRITE"):
@@ -45,7 +56,9 @@ out = pathlib.Path(args[args.index("--outdir") + 1]); src = pathlib.Path(args[-1
 """
 FAKE_PDFTOTEXT = """#!/usr/bin/env python3
 import os, sys, pathlib
-sys.stdout.write(pathlib.Path(os.environ["FAKE_BBOX"]).read_text(encoding="utf-8"))
+per_file = os.environ.get("FAKE_BBOX_DIR")  # 実機の段の読み分け: PDF の名前ごとに語の枠を変える
+src = pathlib.Path(per_file) / (pathlib.Path(sys.argv[-2]).stem + ".xml") if per_file else pathlib.Path(os.environ["FAKE_BBOX"])
+sys.stdout.write(src.read_text(encoding="utf-8"))
 """
 FAKE_PDFTOPPM = """#!/usr/bin/env python3
 import sys, pathlib
@@ -194,22 +207,81 @@ def cases(script: Path, work: Path, pp, bin_dir: Path, bare_dir: Path) -> dict[s
     return obs
 
 
-def real_tools_check(pp, work: Path) -> tuple[bool | None, str]:
-    """本物の道具があれば実機で確かめる。道具が無ければ (None, 理由)。"""
-    missing = [n for n in ("soffice", "pdftotext", "pdftoppm") if shutil.which(n) is None]
+REAL_TIMEOUT = 900  # 本体は soffice・pdftotext・pdftoppm にそれぞれ 300 秒まで待つ。本体の時間切れ（2）が先に出るように長くとる
+
+
+def why_unverified(stderr: str) -> str:
+    """本体が確かめられなかった（2・3）ときの理由。本体の名指しの行から終わりまで（soffice の標準エラーは複数行で続く）。
+
+    名指しの行が無ければ最後の行。行は ` ⏎ ` でつなぐ。長ければ頭（どの PPTX か）と終わり（原因は終わりに出ることが多い）を残して中を略す。
+    """
+    lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
+    named = [i for i, ln in enumerate(lines) if "確かめられなかった" in ln or "描画の道具が無い" in ln or "想定外の例外" in ln]
+    picked = lines[named[-1]:] if named else lines[-1:]
+    said = " ⏎ ".join(picked) or "（本体は理由を出さなかった）"
+    return said if len(said) <= 700 else said[:200] + " …（中略）… " + said[-450:]
+
+
+def real_tools_check(pp, work: Path, path: str | None = None, env_extra: dict[str, str] | None = None) -> tuple[str, str]:
+    """本物の道具（`path` の上の道具）で実機の段を回す。返すのは (状態, 説明)。
+
+    状態は `ok`（収まる枚 0・はみ出す枚 1）・`ng`（それ以外の組——本体の判定が違う）・
+    `unverified`（どちらかが 2・3 で終わったか時間切れ——描画して確かめられなかった。説明に本体の理由を入れる）・
+    `absent`（道具が無い——走らせていない）。
+    """
+    path = os.environ["PATH"] if path is None else path
+    missing = [n for n in ("soffice", "pdftotext", "pdftoppm") if shutil.which(n, path=path) is None]
     if missing:
-        return None, f"走らせていない（{'・'.join(missing)} が無い）"
+        return "absent", f"走らせていない（{'・'.join(missing)} が無い）"
     script = SCRIPTS / TARGET
+    (work / "home").mkdir(parents=True, exist_ok=True)  # 一時の HOME（道具がキャッシュを書けるように）
     clean = make_pptx(pp, work / "real-clean.pptx", "収まる文")
     # 枠の右半分がページの外に出る——外に出た文字は、枠の高さや行の割れ方に依らず必ず見つかる
     bad = make_pptx(pp, work / "real-bad.pptx", "はみ出す文" * 6, box=(pp.W - 1500000, 1000000, 3000000, 700000))
-    env = {"PATH": os.environ["PATH"], "HOME": str(work / "home"), "LANG": "C.UTF-8"}
-    results = []
-    for pptx in (clean, bad):
-        proc = subprocess.run([sys.executable, "-I", str(script), str(pptx), "--out", str(work / f"real-{pptx.stem}")],
-                              capture_output=True, text=True, env=env, cwd=work, timeout=300)
+    env = {"PATH": path, "HOME": str(work / "home"), "LANG": "C.UTF-8", **(env_extra or {})}
+    results, reasons = [], []
+    for name, pptx in (("収まる枚", clean), ("はみ出す枚", bad)):
+        try:
+            proc = subprocess.run([sys.executable, "-I", str(script), str(pptx), "--out", str(work / f"real-{pptx.stem}")],
+                                  capture_output=True, text=True, env=env, cwd=work, timeout=REAL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            results.append(None)
+            reasons.append(f"{name}: 本体が {REAL_TIMEOUT} 秒で終わらなかった（時間切れ）")
+            continue
         results.append(proc.returncode)
-    return results == [0, 1], f"収まる枚 {results[0]}・はみ出す枚 {results[1]}（期待は 0 と 1）"
+        if proc.returncode in (2, 3):
+            reasons.append(f"{name}: 本体の終了コード {proc.returncode}——{why_unverified(proc.stderr)}")
+    shown = "・".join(f"{n} {'時間切れ' if r is None else r}" for n, r in zip(("収まる枚", "はみ出す枚"), results))
+    if reasons:
+        return "unverified", f"{shown}——描画して確かめられなかった: " + " / ".join(reasons)
+    return ("ok" if results == [0, 1] else "ng"), f"{shown}（期待は 0 と 1）"
+
+
+def real_stage_reading(pp, base: Path) -> dict[str, bool]:
+    """実機の段の読み分けを、偽の道具で当てる（観測。名前 → 期待どおりか）。"""
+    fake = f"{base / 'bin'}:/usr/bin:/bin"
+    boxes = base / "real-boxes"
+    boxes.mkdir(exist_ok=True)
+    (boxes / "real-clean.xml").write_text(page((40, 25, 90, 40, "収まる文")), encoding="utf-8")
+    (boxes / "real-bad.xml").write_text(page((900, 25, 1100, 40, "はみ出す文")), encoding="utf-8")
+    obs: dict[str, bool] = {}
+    state, detail = real_tools_check(pp, base / "rs-ok", fake, {"FAKE_BBOX_DIR": str(boxes)})
+    obs["0 と 1 なら通る（陽性対照）"] = state == "ok"
+    state, detail = real_tools_check(pp, base / "rs-fail", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_FAIL": "1"})
+    obs["soffice が落ちたら確かめられないと言い、理由を出す"] = (
+        state == "unverified" and "本体の終了コード 2" in detail and "soffice が壊れている" in detail and "収まる枚 2・はみ出す枚 2" in detail)
+    state, detail = real_tools_check(pp, base / "rs-fail2", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_FAIL2": "1"})
+    obs["soffice の標準エラーが長くても、最後の行（本当の原因）まで出す"] = (
+        state == "unverified" and "source file could not be loaded" in detail and "（前略）" in detail)
+    state, detail = real_tools_check(pp, base / "rs-nowrite", fake, {"FAKE_BBOX_DIR": str(boxes), "FAKE_SOFFICE_NOWRITE": "1"})
+    obs["PDF を書かずに 0 で終わっても確かめられないと言う"] = state == "unverified" and "soffice の終了コード 0" in detail
+    (boxes / "real-bad.xml").write_text(page((40, 25, 90, 40, "収まる文")), encoding="utf-8")
+    state, detail = real_tools_check(pp, base / "rs-ng", fake, {"FAKE_BBOX_DIR": str(boxes)})
+    obs["はみ出しを見つけられなければ NG（0 と 0）"] = state == "ng" and "収まる枚 0・はみ出す枚 0" in detail
+    state, detail = real_tools_check(pp, base / "rs-absent", f"{base / 'bare'}:/usr/bin:/bin")
+    obs["実機の段の一時の HOME を作る"] = (base / "rs-ok" / "home").is_dir()
+    obs["道具が無ければ走らせていない"] = state == "absent" and "soffice が無い" in detail
+    return obs
 
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -292,15 +364,26 @@ def main() -> int:
                 observed = {victim: False, "例外": type(e).__name__}
             check(f"変異を殺せる: {name}（殺すはずの観測: {victim}）", victim in observed and not observed[victim])
 
+        print("\n実機の段の読み分け（偽の道具で）")
+        for label, ok in real_stage_reading(pp, base).items():
+            check(label, ok)
+
         print("\n実機（道具があれば）")
-        ok, detail = real_tools_check(pp, base / "alone-work")
-        if ok is None:
+        state, detail = real_tools_check(pp, base / "real-tools")
+        unverified = None
+        if state == "absent":
             print(f"  実機の確認は{detail}。手元で回す")
+        elif state == "unverified":
+            unverified = detail
+            print(f"  ??  本物の LibreOffice・poppler で確かめられない（{detail}）")
         else:
-            check(f"本物の LibreOffice・poppler で、収まる枚は 0・はみ出す枚は 1（{detail}）", bool(ok))
+            check(f"本物の LibreOffice・poppler で、収まる枚は 0・はみ出す枚は 1（{detail}）", state == "ok")
     if failures:
         print(f"\n{len(failures)} 件の失敗:\n" + "\n".join(f"  - {f}" for f in failures))
         return 1
+    if unverified is not None:
+        print(f"\n確かめられない: 実機の段（{unverified}）。ほかの観測 {len(real)} 件・変異 {len(MUTATIONS)} 件は通った。緑にしない（3）")
+        return 3
     print(f"\nOK: 観測 {len(real)} 件・変異 {len(MUTATIONS)} 件")
     return 0
 

@@ -171,7 +171,8 @@ def render(pptx: Path, out: Path, soffice: str, pdftoppm: str, dpi: int) -> Path
                               capture_output=True, text=True, timeout=TIMEOUT)
     pdf = out / f"{pptx.stem}.pdf"
     if done.returncode != 0 or not pdf.is_file():
-        raise RuntimeError(f"描画に失敗した（soffice の終了コード {done.returncode}）: {(done.stderr or done.stdout).strip()[:200]}")
+        said = (done.stderr or done.stdout).strip()  # 原因は終わりに出ることが多い（先に警告の行が並ぶ）——終わりを残して切る
+        raise RuntimeError(f"描画に失敗した（soffice の終了コード {done.returncode}）: {said if len(said) <= 400 else '（前略）' + said[-400:]}")
     for old in out.glob(f"{pptx.stem}-*.png"):
         old.unlink()
     done = subprocess.run([pdftoppm, "-r", str(dpi), "-png", str(pdf), str(out / pptx.stem)], capture_output=True, text=True, timeout=TIMEOUT)
