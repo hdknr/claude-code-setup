@@ -131,6 +131,7 @@ Issue の「決めたいこと（未決定）」の 4 つ。確認の Issue は�
 - 2 パス目: Verifier（sonnet・`dev-loop:dev-loop-verifier`。HEAD `d7b5746`。反証 0（観察 2——R2-1 当て直しの行がどの直しかを照合は見ない・R2-2 公開ページ 203 行の読みにくさ）。verifier.md 251 行と報告）と `/code-review`（high。HEAD `d7b5746`。指摘 10 件——CR2-1〜CR2-10）。
   ローカルの `check-all.py`（run-serial 越し。HEAD `d7b5746`）: 36/101 本を回し失敗 0（65 本は CACHED）。
   2 パス目の指摘対応の起点（狭いパスの起点）: `d7b574696f6024a101781c03ee837e62641bf176`。
+  終点（指摘対応の最後のコミット）: `2663bea2d563675107ad0af0af5898ffa9d252e6`。
 
 ```dev-loop-gates
 周の base: ea0b06fd3cb3e447346dfb1319fa94b6fe5cda94
