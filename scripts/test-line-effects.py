@@ -35,7 +35,7 @@ REPO = Path(__file__).resolve().parent.parent
 SKILL_REL = "plugins/dev-loop/skills/dev-loop"
 EFFECTS_SRC = REPO / SKILL_REL / "scripts" / "line-effects.py"
 GUARD_SRC = REPO / "scripts" / "check-prompt-lines.py"
-HEADER = ["ID", "ファイル", "引き", "元の事故", "登録日", "同趣旨", "統合元"]
+HEADER = ["ID", "ファイル", "引き", "元の事故", "登録日", "同趣旨", "統合元", "測り方"]
 
 PROMPT = """# 試料
 
@@ -65,9 +65,9 @@ def registry_text(rows: list[list[str]]) -> str:
 
 
 ROWS = [
-    ["V-01", "prompts/verifier.md", "**AAA ひとつめ", "#10", "2026-01-01", "t", ""],
-    ["V-02", "prompts/verifier.md", "**BBB ふたつめ", "-", "2026-01-01", "t", ""],
-    ["V-03", "prompts/verifier.md", "**CCC みっつめ", "#30;#31", "2026-01-01", "", ""],
+    ["V-01", "prompts/verifier.md", "**AAA ひとつめ", "#10", "2026-01-01", "t", "", "指摘"],
+    ["V-02", "prompts/verifier.md", "**BBB ふたつめ", "-", "2026-01-01", "t", "", "指摘"],
+    ["V-03", "prompts/verifier.md", "**CCC みっつめ", "#30;#31", "2026-01-01", "", "", "不可"],
 ]
 
 
@@ -133,6 +133,12 @@ def case_check(effects_text: str | None = None) -> list[str]:
         bad_rows = ROWS + [["V-01"] + ROWS[0][1:]]
         (tr.skill / "references" / "line-registry.csv").write_text(registry_text(bad_rows))
         expect("C9 ID の重複は 2", tr, 2, "重複")
+        expect("C10 1 つの項に台帳の行が 2 つ当たれば 1",
+               tree("c10", rows=ROWS + [["V-04", "prompts/verifier.md", "**AAA ひ", "-", "2026-01-01", "", "", "指摘"]]), 1, "1 項に 1 行")
+        expect("C11 統合元の ID が台帳に残っていれば 1",
+               tree("c11", rows=[ROWS[0][:6] + ["V-02", "指摘"]] + ROWS[1:]), 1, "台帳に残っている")
+        expect("C12 統合元が ID の形でなければ 1", tree("c12", rows=[ROWS[0][:6] + ["zz", "指摘"]] + ROWS[1:]), 1, "ID の形でない")
+        expect("C13 測り方が違えば 2", tree("c13", rows=[ROWS[0][:7] + ["何か"]] + ROWS[1:]), 2, "測り方")
     return bad
 
 
@@ -183,9 +189,27 @@ def case_report(effects_text: str | None = None) -> list[str]:
         # R4 登録日より前の周は分母に入れない
         d = t / "late"
         d.mkdir()
-        late = Tree(d, effects_text, rows=[["V-02"] + ROWS[1][1:4] + ["2026-02-03", "", ""]] + [ROWS[0], ROWS[2]])
+        late = Tree(d, effects_text, rows=[["V-02"] + ROWS[1][1:4] + ["2026-02-03", "", "", "指摘"]] + [ROWS[0], ROWS[2]])
         r = late.run("report", str(plans), "--window", "1")
         expect("R4 登録日 2026-02-03 より前の周を数えない（V-02 は b.md の 1 周だけ）", r, 0, "V-02\t0\t-\t1\t")
+        # R10 測れない行（不可）は候補に出さない
+        r = tr.run("report", str(plans), "--window", "1")
+        expect("R10 測り方 = 不可の V-03 は候補でなく、測れない行に並ぶ", r, 0, "測れない行（測り方 = 不可。候補に出さない）: 1 件", absent=("V-03（",))
+        # R11 履歴に無い計画ファイルは最新として数える
+        (plans / "u.md").write_text(rec("なし"))
+        r = tr.run("report", str(plans), "--window", "1")
+        expect("R11 履歴に無い計画ファイルは最新（V-01 の効いていない周数が 2）", r, 0, "V-01\t2\ta.md\t2\t")
+        (plans / "u.md").unlink()
+        # R12 登録日の比べはローカルの日付（JST 02-03 01:00 の周は登録日 02-03 の行に数える）
+        plans4 = make_plans(t / "r12", [("j.md", "2026-02-02T16:00:00Z", rec("なし"))])
+        d = t / "tz"
+        d.mkdir()
+        tz = Tree(d, effects_text, rows=[["V-02"] + ROWS[1][1:4] + ["2026-02-03", "", "", "指摘"]] + [ROWS[0], ROWS[2]])
+        r = tz.run("report", str(plans4), "--window", "1", env={**os.environ, "TZ": "Asia/Tokyo"})
+        expect("R12 ローカルの日付で登録日と比べる", r, 0, "V-02\t0\t-\t1\t")
+        # R13 1 行に 2 つの ID
+        plans5 = make_plans(t / "r13", [("m.md", "2026-02-01T00:00:00Z", "- 効いた行: V-01 V-02\n")])
+        expect("R13 1 行に 2 つの ID は名指しして 1", tr.run("report", str(plans5)), 1, "1 行に 1 つの ID")
         # R5 台帳に無い ID
         plans2 = make_plans(t / "r5", [("p.md", "2026-02-01T00:00:00Z", rec("V-01", "X-99"))])
         r = tr.run("report", str(plans2))
@@ -248,7 +272,7 @@ def remove_v02(skill: Path):
 
 def case_guard(guard_text: str | None = None, effects_text: str | None = None) -> list[str]:
     bad: list[str] = []
-    def scenario(label, rc, word, setup, base_ref="main", pre_base=None):
+    def scenario(label, rc, word, setup, base_ref="main", pre_base=None, advance=None):
         with tempfile.TemporaryDirectory(prefix="line-guard-") as t:
             root, skill, g, env = guard_repo(Path(t), guard_text, effects_text)
             if pre_base:
@@ -257,6 +281,11 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
             g("checkout", "-q", "-b", "feat")
             setup(root, skill)
             g("add", "-A"), g("commit", "-q", "--allow-empty", "-m", "feat")
+            if advance:
+                g("checkout", "-q", "main")
+                advance(root, skill)
+                g("add", "-A"), g("commit", "-q", "-m", "main advances")
+                g("checkout", "-q", "feat")
             r = run([sys.executable, "-I", str(root / "scripts" / "check-prompt-lines.py"), base_ref], cwd=root, env=env)
             out = r.stdout + r.stderr
             if r.returncode != rc or (word and word not in out):
@@ -299,13 +328,13 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
     def s_merge(root, skill):
         remove_v02(skill)
         rows = [r for r in ROWS if r[0] != "V-02"]
-        rows[0] = rows[0][:6] + ["V-02"]
+        rows[0] = rows[0][:6] + ["V-02", rows[0][7]]
         (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
     scenario("G8 同趣旨の行への統合は eval を求めない", 0, "V-02 は V-01 に統合", s_merge)
     def s_merge_diff_tag(root, skill):
         remove_v02(skill)
         rows = [r for r in ROWS if r[0] != "V-02"]
-        rows[1] = rows[1][:6] + ["V-02"]  # V-03（同趣旨が空）に統合したことにする
+        rows[1] = rows[1][:6] + ["V-02", rows[1][7]]  # V-03（同趣旨が空）に統合したことにする
         (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
     scenario("G9 統合先の同趣旨が違えば 1（空の同趣旨も統合と認めない）", 1, "同趣旨が base で", s_merge_diff_tag)
     def s_dangling(root, skill):
@@ -321,6 +350,36 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
     def s_intro(root, skill):
         (skill / "references" / "line-registry.csv").write_text(registry_text(ROWS))
     scenario("G13 base に台帳が無い（導入の PR）なら外した行の検査を飛ばして 0", 0, "導入の PR", s_intro, pre_base=pre_nolist)
+    def add_impl(root, skill):
+        (skill / "prompts" / "implementer.md").write_text("---\n1. **ZZZ いち**\n")
+        (skill / "references" / "line-registry.csv").write_text(registry_text(ROWS + [["I-01", "prompts/implementer.md", "**ZZZ いち", "-", "2026-01-01", "t", "", "不可"]]))
+    def s_merge_other_file(root, skill):
+        remove_v02(skill)
+        rows = [r for r in ROWS if r[0] != "V-02"] + [["I-01", "prompts/implementer.md", "**ZZZ いち", "-", "2026-01-01", "t", "V-02", "不可"]]
+        (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
+    scenario("G14 別のファイルの同趣旨の行への統合は 1", 1, "別のファイル", s_merge_other_file, pre_base=add_impl)
+    def add_v04(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT + "- **DDD よっつめの行です**\n")
+        (skill / "references" / "line-registry.csv").write_text(registry_text(ROWS + [["V-04", "prompts/verifier.md", "**DDD よっつめ", "-", "2026-01-01", "", "", "指摘"]]))
+    def s_merge_empty(root, skill):
+        (skill / "prompts" / "verifier.md").write_text((PROMPT + "- **DDD よっつめの行です**\n").replace("- **CCC みっつめの行です**\n", ""))
+        rows = [r for r in ROWS if r[0] != "V-03"] + [["V-04", "prompts/verifier.md", "**DDD よっつめ", "-", "2026-01-01", "", "V-03", "指摘"]]
+        (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
+    scenario("G15 同趣旨が空の行どうしの統合は 1", 1, "eval が付いていない", s_merge_empty, pre_base=add_v04)
+    def s_reassign(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("- **CCC みっつめの行です**\n", ""))
+        rows = [r[:2] + ["**AAA ひとつめの"] + r[3:] if r[0] == "V-03" else r for r in ROWS]
+        (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
+    scenario("G16 ID を base に既にある別の項に付け替えたら 1", 1, "付け替えた", s_reassign)
+    def s_prefix(root, skill):
+        remove_v02(skill)
+        add_eval(root, eval_case("V-021", "x"))
+    scenario("G17 `外した行: V-021` では V-02 を外せない（前方一致で受けない）", 1, "外した行: V-02", s_prefix)
+    def s_graders_empty(root, skill):
+        remove_v02(skill)
+        add_eval(root, "# 外した行: V-02\n# 元の事故: x\ngraders: []\nprompt: |\n  - name: z\n")
+    scenario("G18 graders が空で別の場所に `- name:` があっても 1", 1, "graders", s_graders_empty)
+    scenario("G19 base の先端が進んでも、周が分かれた時点の台帳と比べる（先端に足された行を外したと見ない）", 0, "外した行 0 件", s_none, advance=add_v04)
     return bad
 
 
@@ -361,15 +420,27 @@ MUTATIONS = [
     ("`{{` の穴を項に数える", "effects", 'if m and not line[m.end():].startswith("{{"):', "if m:", "check"),
     ("コードブロックを読まない処理を外す", "effects", "                fence = m.group(1)\n                continue", "                fence = None\n                continue", "check"),
     ("周の順を名前順にする", "effects", "cycles.sort(key=lambda c: (c[0], c[1]))", "cycles.sort(key=lambda c: (c[1], c[0]))", "report"),
-    ("候補の線を超えたときだけにする", "effects", "if s[3] >= window]", "if s[3] > window]", "report"),
+    ("候補の線を超えたときだけにする", "effects", 'if s[3] >= window and s[0]["測り方"] == "指摘"]', 'if s[3] > window and s[0]["測り方"] == "指摘"]', "report"),
     ("登録日より前の周を数える", "effects", '>= r["登録日"]', '< r["登録日"]', "report"),
     ("なしと ID の混在を見ない", "effects", "if none and ids:", "if False and ids:", "report"),
     ("形に合わない行を拾わない", "effects", "elif LABEL_RE.match(line):", "elif False and LABEL_RE.match(line):", "report"),
     ("外した行を見ない", "guard", 'if r["ID"] not in head_ids]', 'if r["ID"] in head_ids]', "guard"),
     ("差分でなく全部の eval を見る", "guard", 'changed.stdout.split("\\n")', 'git(root, "ls-files").stdout.split("\\n")', "guard"),
     ("元の事故の番号を見ない", "guard", "if want and not want <= have:", "if False and want and not want <= have:", "guard"),
-    ("graders を見ない", "guard", 'if not re.search(r"^\\s+-\\s+name:", text, re.M) or not re.search(r"^graders:", text, re.M):', "if False:", "guard"),
+    ("graders のブロックを見ない", "guard", 'if not block or not re.search(r"^[ \\t]*-[ \\t]+name:",', 'if not block or False and not re.search(r"^[ \\t]*-[ \\t]+name:",', "guard"),
     ("統合の同趣旨を見ない", "guard", 'base_target["同趣旨"] == r["同趣旨"]', "True", "guard"),
+    ("1 項に複数の行を許す", "effects", "if len(hit) > 1:", "if len(hit) > 99:", "check"),
+    ("統合元が台帳に残っても許す", "effects", 'elif any(x["ID"] == src for x in rows):', "elif False:", "check"),
+    ("統合元の形を見ない", "effects", "if not ID_RE.match(src):", "if False:", "check"),
+    ("測れない行を候補に出す", "effects", 'if s[3] >= window and s[0]["測り方"] == "指摘"]', "if s[3] >= window]", "report"),
+    ("1 行に 2 つの ID を見ない", "effects", 'if m and re.match(r"^[ ,、]+[A-Z]', 'if False and m and re.match(r"^[ ,、]+[A-Z]', "report"),
+    ("登録日を UTC の日付で比べる", "effects", "fromtimestamp(c[3])", "fromtimestamp(c[3], datetime.timezone.utc)", "report"),
+    ("履歴に無い計画ファイルを最古にする", "effects", 'else float("inf")', 'else float("-inf")', "report"),
+    ("外した行の名指しを前方一致にする", "guard", '{re.escape(line_id)}\\s*$"', '{re.escape(line_id)}"', "guard"),
+    ("統合先が別のファイルでも許す", "guard", 'and base_target["ファイル"] == r["ファイル"]:', ":", "guard"),
+    ("同趣旨が空でも統合と認める", "guard", 'target is not None and r["同趣旨"] and target["ID"]', 'target is not None and target["ID"]', "guard"),
+    ("付け替えを見ない", "guard", 'if old_text.returncode == 0 and h["引き"] in old_text.stdout:', "if False:", "guard"),
+    ("base の先端と比べる", "guard", "base = mb.stdout.strip()", "pass", "guard"),
 ]
 
 

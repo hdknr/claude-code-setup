@@ -13,7 +13,7 @@
 
 1 行 1 項。ヘッダは次の順:
 
-    ID,ファイル,引き,元の事故,登録日,同趣旨,統合元
+    ID,ファイル,引き,元の事故,登録日,同趣旨,統合元,測り方
 
 - **ID**: `V-01` の形（英大文字 1〜3 字・`-`・数字 2 桁以上）。**再利用しない**（外した行の ID は計画ファイルの記録に残る）。
 - **ファイル**: このスキルのディレクトリからの相対パス（`prompts/verifier.md` など）。
@@ -21,10 +21,13 @@
 - **元の事故**: 行ができた事故の Issue 番号（`#233;#96`）。分からなければ `-`。**初期値は項の本文に現れた番号を機械で写したもので、事故の番号とは限らない**。
 - **登録日**: `YYYY-MM-DD`。この日以降の周だけを「効いていない周」に数える。
 - **同趣旨**: 同じ趣旨の行に共通の短い語（空でよい）。2 行以上が共有すれば、まとめる候補に出す。
-- **統合元**: この行に統合して台帳から外した行の ID（`;` 区切り。空でよい）。
+- **統合元**: この行に統合して台帳から外した行の ID（`;` 区切り。空でよい）。**統合できるのは同じファイルの行だけ**（別の受け手の文面に移さない）。
+- **測り方**: `指摘`（関門の指摘で効きが測れる行）か `不可`（実環境を壊さない禁止・報告の形・実装役への指示など、指摘にならず効きを測れない行）。
+  **`不可` の行は外す候補に出さない**（効いた記録が無いことが不要の根拠にならないため）。別の表に「測れない行」として並べる。
 
 **項**とは、`prompts/*.md` の最初の `---` 以降の、行頭が `数字. ` か `- ` の行（コードブロックの外。`{{` で始まる差し込みの穴は数えない）。
-**`prompts/` の項はすべて台帳に載っていなければならない**（`check` が見る）。`SKILL.md` の行は載せたいものだけ載せる。
+**`prompts/` の項はすべて台帳に載っていなければならず、1 つの項には台帳の行がちょうど 1 つ当たる**（`check` が見る）。`SKILL.md` の行は載せたいものだけ載せる。
+**守られているのは項の頭だけ**——項の本文・入れ子の行・字下げした行・段落で足した規則・差し込みの穴の中への移動は見ない（下の「守らないもの」）。
 
 ## 記録（計画ファイル）
 
@@ -47,6 +50,8 @@
 
 - **申告の漏れ**——周が書き忘れた「効いた」は数えられない（記録のある周だけが分母）。
 - **どの行が効いたかの判断**——周の著者が採否の表から書く。機械は照合しない。
+- **項の本文の弱め方・入れ子の行・字下げした行・段落の規則**——項の頭（引き）だけを見る。本文を消す・弱める変更は人間のレビューが見る。
+- **周の順の書き換え**——計画ファイルを最初に追加したコミットの committer time で並べるので、rebase・squash で時刻が変わると順が変わる。登録日との比べはローカルの日付。
 - **既存の計画ファイル**——この台帳より前の周には行が無い。効いていない周数は、記録が貯まってからしか出ない。
 - **eval の結果**——外す PR に eval を付ける決まりは `check-prompt-lines.py` が「在ること」を見るだけで、通ったかは見ない（課金する）。
 """
@@ -61,7 +66,8 @@ from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
 DEFAULT_REGISTRY = SKILL / "references" / "line-registry.csv"
-HEADER = ["ID", "ファイル", "引き", "元の事故", "登録日", "同趣旨", "統合元"]
+HEADER = ["ID", "ファイル", "引き", "元の事故", "登録日", "同趣旨", "統合元", "測り方"]
+MEASURES = ("指摘", "不可")
 ID_RE = re.compile(r"^[A-Z]{1,3}-[0-9]{2,}$")
 ITEM_RE = re.compile(r"^(?:[0-9]+\. |- )")
 RECORD_RE = re.compile(r"^- 効いた行: (?:(?P<none>なし)|(?P<id>[A-Z]{1,3}-[0-9]{2,}))(?P<rest>$|[ （(].*$)")
@@ -120,6 +126,8 @@ def load_registry(path: Path) -> list[dict]:
             datetime.date.fromisoformat(d["登録日"])
         except ValueError:
             raise Fail(f"{path}:{n} 登録日 `{d['登録日']}` が YYYY-MM-DD でない")
+        if d["測り方"] not in MEASURES:
+            raise Fail(f"{path}:{n} 測り方 `{d['測り方']}` が {'・'.join(MEASURES)} でない")
         if not d["ファイル"] or not d["引き"]:
             raise Fail(f"{path}:{n} ファイルか引きが空")
         if d["ファイル"].startswith("/") or ".." in Path(d["ファイル"]).parts:
@@ -170,6 +178,10 @@ def check(registry: Path) -> list[str]:
             for r in rs:
                 if not any(first.startswith(r["引き"]) for _, first, _ in its):
                     problems.append(f"{r['ID']}: 引き「{r['引き']}」が {rel} の項の頭に当たらない")
+            for n, first, _ in its:
+                hit = [r["ID"] for r in rs if first.startswith(r["引き"])]
+                if len(hit) > 1:
+                    problems.append(f"{rel}:{n} 項「{first[:30]}」に台帳の行が {len(hit)} 個当たる（{' '.join(hit)}）——1 項に 1 行")
     for p in sorted((SKILL / "prompts").glob("*.md")):
         rel = f"prompts/{p.name}"
         for n, first, _ in items_of(read(p)):
@@ -204,7 +216,7 @@ def suggest(registry: Path) -> list[list[str]]:
             while length <= len(first) and text.count(first[:length]) != 1:
                 length += 4
             nums = sorted({int(x) for x in re.findall(r"#([0-9]+)", block)})
-            out.append([new_id, rel, first[:length], ";".join(f"#{x}" for x in nums) or "-", today, "", ""])
+            out.append([new_id, rel, first[:length], ";".join(f"#{x}" for x in nums) or "-", today, "", "", "指摘"])
     return out
 
 
@@ -247,7 +259,9 @@ def parse_plan(path: Path):
     bad = []
     for n, line in outside_fences(read(path)):
         m = RECORD_RE.match(line)
-        if m:
+        if m and re.match(r"^[ ,、]+[A-Z]{1,3}-[0-9]{2,}", m.group("rest")):
+            bad.append(f"{path}:{n} 1 行に 1 つの ID（2 つ目以降は読まれない）「{line[:40]}」")
+        elif m:
             if m.group("none"):
                 none = True
             else:
@@ -283,7 +297,7 @@ def report(files: list[Path], registry: Path, window: int) -> int:
         eff = [c for c in cycles if r["ID"] in c[2]]
         last = eff[-1] if eff else None
         def eligible(c):
-            return c[3] is None or datetime.datetime.fromtimestamp(c[3], datetime.timezone.utc).date().isoformat() >= r["登録日"]
+            return c[3] is None or datetime.datetime.fromtimestamp(c[3]).date().isoformat() >= r["登録日"]
         el = [c for c in cycles if eligible(c)]
         if last is None:
             since = len(el)
@@ -293,12 +307,16 @@ def report(files: list[Path], registry: Path, window: int) -> int:
     print("\nID\t効いた周数\t最後に効いた周\t効いていない周数\t元の事故\tファイル\t引き")
     for r, n, last, since in stats:
         print(f"{r['ID']}\t{n}\t{last[1] if last else '-'}\t{since}\t{r['元の事故']}\t{r['ファイル']}\t{r['引き']}")
-    cand = [s for s in stats if s[3] >= window]
+    cand = [s for s in stats if s[3] >= window and s[0]["測り方"] == "指摘"]
     print(f"\n外す候補（効いていない周数 >= {window}。削る判断は人間——手順は references/prune.md）: {len(cand)} 件")
     for r, n, last, since in cand:
         basis = (f"最後に効いた周 {last[1]} の後、記録のある {since} 周で効いていない" if last
                  else f"登録日 {r['登録日']} 以降の記録のある {since} 周で 0 回")
         print(f"  {r['ID']}（{r['ファイル']}「{r['引き']}」）元の事故 {r['元の事故']} — {basis}")
+    blind = [r["ID"] for r in rows if r["測り方"] == "不可"]
+    print(f"\n測れない行（測り方 = 不可。候補に出さない）: {len(blind)} 件")
+    if blind:
+        print(f"  {' '.join(blind)}")
     groups: dict[str, list[str]] = {}
     for r in rows:
         if r["同趣旨"]:

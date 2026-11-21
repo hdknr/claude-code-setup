@@ -13,9 +13,11 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
    `base...HEAD` の差分に含まれる `plugins/dev-loop/evals/*/case.yaml` のうち、次を満たすものが 1 つ要る:
    - コメント行 `# 外した行: <ID>`（そのケースが再現する行）と `# 元の事故: <番号>`（base の台帳の `元の事故` が `-` でなければ、その番号が全部入っていること。
      `-` なら何か書いてあればよい）がある
-   - `graders:` に 1 つ以上の `- name:` がある
-   **ただし、HEAD の台帳の別の行の `統合元` に挙がり、かつその行が base で同じ `同趣旨`（空でない）を持っていた行は、統合なので eval を求めない**
-   （同じ趣旨の行がほかに残るため）。
+   - **`graders:` のブロック（次の最上位のキーまで）の中に** `- name:` が 1 つ以上ある
+   **ただし、HEAD の台帳の別の行の `統合元` に挙がり、その行が base にも在って、同じファイルで、同じ `同趣旨`（空でない）を持っていた行は、統合なので eval を求めない**
+   （同じ受け手の文面に同じ趣旨の行が残るため）。
+3. **生き残る行の ID を別の既存の項に付け替えない**——base と HEAD の両方にある ID の引きが変わり、新しい引きが base のそのファイルに既にある文面なら 1
+   （言い換えは新しい文面なので通る。付け替えは元の項を外したのに ID が残る形）。
 
 ## 守らないもの
 
@@ -79,8 +81,9 @@ def case_ok(text: str, line_id: str, base_incident: str) -> str | None:
         return f"`# 元の事故:` に {' '.join(sorted(want - have))} が無い（base の台帳の元の事故）"
     if not want and inc.group(1).strip() in ("", "-"):
         return "`# 元の事故:` が空（台帳が `-` なら、なぜ入れた行かを書く）"
-    if not re.search(r"^\s+-\s+name:", text, re.M) or not re.search(r"^graders:", text, re.M):
-        return "`graders:` に `- name:` が 1 つも無い"
+    block = re.search(r"^graders:[^\n]*\n((?:[ \t]+[^\n]*\n|[ \t]*\n)*)", text + "\n", re.M)
+    if not block or not re.search(r"^[ \t]*-[ \t]+name:", "\n".join(l for l in block.group(1).split("\n") if not l.lstrip().startswith("#")), re.M):
+        return "`graders:` のブロックの中に `- name:` が 1 つも無い"
     return None
 
 
@@ -101,6 +104,9 @@ def main(argv: list[str]) -> int:
     for p in problems:
         print(f"NG: {p}")
 
+    mb = git(root, "merge-base", base, "HEAD")
+    if mb.returncode == 0 and mb.stdout.strip():
+        base = mb.stdout.strip()  # base の先端が進んでいても、周が分かれた時点の台帳と比べる
     shown = git(root, "show", f"{base}:{REGISTRY_REL}")
     removed_note = ""
     if shown.returncode != 0:
@@ -121,6 +127,17 @@ def main(argv: list[str]) -> int:
         for src in filter(None, r["統合元"].split(";")):
             merged_from[src] = r
     removed = [r for r in base_rows if r["ID"] not in head_ids]
+    head_by_id = {r["ID"]: r for r in head_rows}
+    for b in base_rows:
+        h = head_by_id.get(b["ID"])
+        if h is None or (h["引き"] == b["引き"] and h["ファイル"] == b["ファイル"]):
+            continue
+        if h["ファイル"] == b["ファイル"] and (h["引き"].startswith(b["引き"]) or b["引き"].startswith(h["引き"])):
+            continue  # 同じ項の頭を縮めた・伸ばした
+        old_text = git(root, "show", f"{base}:{SKILL_REL}/{h['ファイル']}")
+        if old_text.returncode == 0 and h["引き"] in old_text.stdout:
+            problems.append(f"{b['ID']}: 引きを base に既にある別の文面「{h['引き']}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")
+            print(f"NG: {problems[-1]}")
     changed = git(root, "diff", "--name-only", f"{base}...HEAD")
     if changed.returncode != 0:
         print(f"check-prompt-lines.py: git diff が失敗: {changed.stderr.strip()}", file=sys.stderr)
@@ -131,10 +148,13 @@ def main(argv: list[str]) -> int:
         target = merged_from.get(r["ID"])
         if target is not None and r["同趣旨"] and target["ID"] != r["ID"]:
             base_target = next((b for b in base_rows if b["ID"] == target["ID"]), None)
-            if base_target is not None and base_target["同趣旨"] == r["同趣旨"]:
+            if base_target is not None and base_target["同趣旨"] == r["同趣旨"] and base_target["ファイル"] == r["ファイル"]:
                 print(f"OK: {r['ID']} は {target['ID']} に統合（同趣旨 {r['同趣旨']}）——eval は求めない")
                 continue
-            problems.append(f"{r['ID']}: 統合先 {target['ID']} の同趣旨が base で `{r['同趣旨']}` と同じでない")
+            why = ("統合先が base に無い（新しい行）" if base_target is None
+                   else f"統合先 {target['ID']} の同趣旨が base で `{r['同趣旨']}` と同じでない" if base_target["同趣旨"] != r["同趣旨"]
+                   else f"統合先 {target['ID']} が別のファイル（{base_target['ファイル']}）")
+            problems.append(f"{r['ID']}: {why}")
             print(f"NG: {problems[-1]}")
             continue
         reasons = []
