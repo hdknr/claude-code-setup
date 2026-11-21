@@ -15,6 +15,9 @@
 3. **行を外す PR（`check-prompt-lines.py`）**——外した行に eval が無ければ 1、`外した行`・`元の事故`・`graders` が揃う eval が**差分に**あれば 0、
    元の事故の番号が欠ける・eval が base に既にあって差分に無い・graders が無い、は 1。同趣旨の行への統合は eval を求めず、同趣旨が違えば 1。
    台帳の無い base は飛ばし、解決できない base は 2。**陽性対照**: 同じ試料で eval を足すと 0 になる（0 は 1 の試料の差だけで決まる）。
+   付け替え（G16・G27〜G29。付け替え先を同じ PR で言い換えても 1——#1423 の S1・S2）・言い換えと縮め（G20〜G22・G30。外した項の頭に縮めた引きが当たっても 0——S5）・
+   統合と言い換えの組み合わせ（G31・G35。統合元の除外は言い換えない付け替えに掛けない——G40）・外した項の文面を入れ子に残す（G36）・段落にした項への付け替え（G37・G38）・
+   本文が別の項の頭を引く項の言い換え（G41）・改名（G32〜G34・G39。改名だけなら 0——R1。コミット前でも 0）。
 4. **原本との突き合わせ**——本物の台帳が 0 で通る・`references/prune.md` の記録の例が本体の正規表現に当たる・「削らない」が「黙って削らない」に置き換わっている。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、名指しした試料が期待から外れることを確かめる。変異ごとに、壊す箇所が本体にちょうど 1 回現れること・変異の前は期待どおりであることを先に確かめる。
@@ -277,7 +280,7 @@ def remove_v02(skill: Path):
 
 def case_guard(guard_text: str | None = None, effects_text: str | None = None) -> list[str]:
     bad: list[str] = []
-    def scenario(label, rc, word, setup, base_ref="main", pre_base=None, advance=None):
+    def scenario(label, rc, word, setup, base_ref="main", pre_base=None, advance=None, commit=True):
         with tempfile.TemporaryDirectory(prefix="line-guard-") as t:
             root, skill, g, env = guard_repo(Path(t), guard_text, effects_text)
             if pre_base:
@@ -285,7 +288,9 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
             g("add", "."), g("commit", "-q", "-m", "base")
             g("checkout", "-q", "-b", "feat")
             setup(root, skill)
-            g("add", "-A"), g("commit", "-q", "--allow-empty", "-m", "feat")
+            g("add", "-A")
+            if commit:
+                g("commit", "-q", "--allow-empty", "-m", "feat")
             if advance:
                 g("checkout", "-q", "main")
                 advance(root, skill)
@@ -416,6 +421,84 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
         add_eval(root, "# 外した行: V-02\n# 元の事故: x\ngraders: []\nprompt: |\n  - name: z\n")
     scenario("G18 graders が空で別の場所に `- name:` があっても 1", 1, "graders", s_graders_empty)
     scenario("G19 base の先端が進んでも、周が分かれた時点の台帳と比べる（先端に足された行を外したと見ない）", 0, "外した行 0 件", s_none, advance=add_v04)
+    # #1423: #1194 の当て直しと狭いパスが示した後退（S1・S2・S5・R1）。直す前の版では S1・S2・S5・R1 が期待から外れる（陽性対照は計画ファイル）
+    def drop_v01_with_eval(root, skill, prompt, v02_hiki):
+        (skill / "prompts" / "verifier.md").write_text(prompt.replace("2. **BBB ふたつめの行です**\n", ""))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-02", "prompts/verifier.md", v02_hiki] + ROWS[1][3:], ROWS[2]]))
+        add_eval(root, eval_case("V-01", "#10"))
+    def s_reassign_destar(root, skill):
+        drop_v01_with_eval(root, skill, PROMPT.replace("1. **AAA ひとつめの行です**", "1. AAA ひとつめの行です"), "AAA ひとつめ")
+    scenario("G27 付け替え先の項の頭の飾りを同じ PR で外しても、付け替えは 1（S1）", 1, "付け替えた", s_reassign_destar)
+    def s_reassign_raise(root, skill):
+        drop_v01_with_eval(root, skill, PROMPT.replace("1. **AAA ひとつめの行です**\n   - 入れ子は数えない",
+                                                       "1. 入れ子は数えない（旧本文）\n   - **AAA ひとつめの行です**"), "入れ子は数えない")
+    scenario("G28 付け替え先の項の本文の文を同じ PR で頭に上げても、付け替えは 1（S2）", 1, "付け替えた", s_reassign_raise)
+    def s_reassign_plain(root, skill):
+        drop_v01_with_eval(root, skill, PROMPT, "**AAA ひとつめ")
+    scenario("G29 言い換えない付け替え（陽性対照。G27・G28 と台帳の差だけ）は 1", 1, "付け替えた", s_reassign_plain)
+    def add_v04_near(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT + "- **AAA ひとつおいた行です**\n")
+        (skill / "references" / "line-registry.csv").write_text(registry_text(ROWS + [["V-04", "prompts/verifier.md", "**AAA ひとつおいた", "-", "2026-01-01", "", "", "指摘"]]))
+    def s_shorten_over_removed(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT)
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA ひと"] + ROWS[0][3:]] + ROWS[1:]))
+        add_eval(root, eval_case("V-04", "x"))
+    scenario("G30 縮めた引きが、同じ PR で外した別の項の base の頭に前方一致しても 0（S5）", 0, "問題 0 件", s_shorten_over_removed, pre_base=add_v04_near)
+    def s_merge_rephrase(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("2. **BBB ふたつめの行です**\n", "").replace(
+            "1. **AAA ひとつめの行です**\n   - 入れ子は数えない", "1. AAA ひとつめの行です（BBB を統合）\n   - 入れ子は数えない\n   - **BBB ふたつめの行です**"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "AAA ひとつめ", "#10", "2026-01-01", "t", "V-02", "指摘"], ROWS[2]]))
+    scenario("G31 統合（同趣旨 t）と言い換えを同じ PR でしても 0（取り込んだ別の項の頭が本文にあっても、元の項の頭が残る）", 0, "V-02 は V-01 に統合", s_merge_rephrase)
+    def s_rename(root, skill):
+        (skill / "prompts" / "verifier.md").rename(skill / "prompts" / "verifier-x.md")
+        (skill / "references" / "line-registry.csv").write_text(registry_text([r[:1] + ["prompts/verifier-x.md"] + r[2:] for r in ROWS]))
+    scenario("G32 prompts のファイルを改名しただけなら 0（R1）", 0, "問題 0 件", s_rename)
+    def s_rename_reassign(root, skill):
+        text = PROMPT.replace("2. **BBB ふたつめの行です**\n", "")
+        (skill / "prompts" / "verifier.md").unlink()
+        (skill / "prompts" / "verifier-x.md").write_text(text)
+        rows = [["V-02", "prompts/verifier-x.md", "**AAA ひとつめ"] + ROWS[1][3:], ROWS[2][:1] + ["prompts/verifier-x.md"] + ROWS[2][2:]]
+        (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
+        add_eval(root, eval_case("V-01", "#10"))
+    scenario("G33 改名しても、別の項へ付け替えれば 1", 1, "付け替えた", s_rename_reassign)
+    def s_rename_rewrite(root, skill):
+        (skill / "prompts" / "verifier.md").unlink()
+        (skill / "prompts" / "verifier-x.md").write_text("# 別物\n\n---\n\n1. **AAA ひとつめの行です**\n2. **BBB ふたつめの行です**\n- **CCC みっつめの行です**\n"
+                                                        + "".join(f"\n段落 {i}: 改名と見られないほど中身を変えた。\n" for i in range(40)))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([r[:1] + ["prompts/verifier-x.md"] + r[2:] for r in ROWS]))
+    scenario("G34 改名と見られないほど中身を変えたファイルへ移せば、今までどおり 1（止まる向き）", 1, "ファイルを", s_rename_rewrite)
+    scenario("G39 改名をコミットする前（索引に載せただけ）に回しても 0（台帳と原文と同じく作業ツリーまで見る）", 0, "問題 0 件", s_rename, commit=False)
+    # #1423 の 1 パス目の /code-review（CR1・CR2）
+    def s_merge_reword(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("2. **BBB ふたつめの行です**\n", "").replace(
+            "1. **AAA ひとつめの行です**\n   - 入れ子は数えない", "1. **AAA と BBB をまとめた行**\n   - 入れ子は数えない\n   - **BBB ふたつめの行です**"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA と BBB", "#10", "2026-01-01", "t", "V-02", "指摘"], ROWS[2]]))
+    scenario("G35 統合して頭の文面も変えた（元の頭が残らない）ときも 0——取り込んだ統合元の項の頭は付け替え先と見ない", 0, "V-02 は V-01 に統合", s_merge_reword)
+    def s_keep_removed_text(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("2. **BBB ふたつめの行です**\n", "").replace(
+            "   - 入れ子は数えない", "   - 入れ子は数えない\n   - **BBB ふたつめの行です**（外した項の文面を残す）"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA ひ"] + ROWS[0][3:], ROWS[2]]))
+        add_eval(root, eval_case("V-02", "x"))
+    scenario("G36 外した項の文面を別の項の入れ子に残し、その項の引きを縮めても 0（元の項の頭が残る）", 0, "問題 0 件", s_keep_removed_text)
+    def s_demote_reassign(root, skill):
+        drop_v01_with_eval(root, skill, PROMPT.replace("2. **BBB ふたつめの行です**\n", "**BBB ふたつめの行です**（項でなくした）\n2. **BBB ふたつめの行です**\n"), "**AAA ひとつめ")
+    scenario("G37 元の項を段落にして、すぐ上の項へ付け替えれば 1", 1, "付け替えた", s_demote_reassign)
+    def s_demote_reassign_destar(root, skill):
+        drop_v01_with_eval(root, skill, PROMPT.replace("1. **AAA ひとつめの行です**", "1. AAA ひとつめの行です").replace(
+            "2. **BBB ふたつめの行です**\n", "**BBB ふたつめの行です**（項でなくした）\n2. **BBB ふたつめの行です**\n"), "AAA ひとつめ")
+    scenario("G38 元の項を段落にし、すぐ上の付け替え先の頭の飾りも外して付け替えれば 1（項は字下げの無い行で切る）", 1, "付け替えた", s_demote_reassign_destar)
+    # #1423 の 2 パス目（Verifier の F1・/code-review の 2）
+    def s_merge_swap(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("1. **AAA ひとつめの行です**\n   - 入れ子は数えない\n", ""))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**BBB ふたつめ", "#10", "2026-01-01", "t", "V-02", "指摘"], ROWS[2]]))
+    scenario("G40 元の項を消し、ID を同趣旨の別の項へ付け替えて、その項の ID を統合元にしても 1（統合元の除外は言い換えない付け替えに掛けない）", 1, "付け替えた", s_merge_swap)
+    def pre_quote_ccc(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("   - 入れ子は数えない", "   - 入れ子は数えない（下の「CCC みっつめの行です」と同じ）"))
+    def s_reword_quoting(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("   - 入れ子は数えない", "   - 入れ子は数えない（下の「CCC みっつめの行です」と同じ）").replace(
+            "**AAA ひとつめの行です**", "**AAA 一つめの行です**"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA 一つめ"] + ROWS[0][3:]] + ROWS[1:]))
+    scenario("G41 本文が base の時点から別の項の頭を引いている項の頭を言い換えても 0", 0, "問題 0 件", s_reword_quoting, pre_base=pre_quote_ccc)
     return bad
 
 
@@ -483,6 +566,16 @@ MUTATIONS = [
     ("付け替えを見ない", "guard", "        if clash:\n", "        if False:\n", "guard"),
     ("言い換えも付け替えと見る（部分文字列で照合）", "guard", "        if clash:\n", '        if h["引き"] in old_text.stdout:\n', "guard"),
     ("base の先端と比べる", "guard", "base = mb.stdout.strip()", "pass", "guard"),
+    # #1423
+    ("改名を追わない", "guard", 'moved = renamed.get(b["ファイル"]) == h["ファイル"]', "moved = False", "guard"),
+    ("付け替え先を言い換えた付け替えを見ない（前方一致だけで照らす）", "guard", "            clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash\n", "            clash += [f for f in [] if flat(f) and flat(f) in cur and f not in clash\n", "guard"),
+    ("元の項の頭が残っていても別の項の頭を付け替えと見る", "guard", "        if not (prev is not None and flat(prev) in cur):", "        if True:", "guard"),
+    ("HEAD に残った項に限らない（外した項の頭も照らす）", "guard", "and f in new_heads]", "]", "guard"),
+    ("統合した項の頭も照らす", "guard", "and not any(f.startswith(m) for m in merged) and flat(f) not in prev_own]", "and flat(f) not in prev_own]", "guard"),
+    ("統合元の除外を言い換えない付け替えにも掛ける", "guard", "others = [f for _, f, _ in base_items if f != prev]", "others = [f for _, f, _ in base_items if f != prev and not any(f.startswith(m) for m in merged)]", "guard"),
+    ("元の項が base で本文に引いていた頭も照らす", "guard", "and not any(f.startswith(m) for m in merged) and flat(f) not in prev_own]", "and not any(f.startswith(m) for m in merged)]", "guard"),
+    ("項の続きの段落まで項に含める", "guard", "if line.strip() and not line[:1].isspace():", "if False:", "guard"),
+    ("改名をコミットした履歴でだけ見る", "guard", '"-M", base, "--"', '"-M", f"{base}...HEAD", "--"', "guard"),
 ]
 
 
