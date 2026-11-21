@@ -418,14 +418,20 @@ CALLER_LINK = re.compile(rf"\[{CALLER_DECOR}{CALLER_LABEL}{CALLER_DECOR}\](?:\(|
 CALLER_POINTER_WORDS = re.compile(
     r"(?<![一-龥々])節(?![一-龥々])|(?<![一-龥々])参照(?![元先す])|(?<![一-龥々])[後前]述"
     r"|(?<![一-龥々])[上下](?:記|に|の(?:節|表|項|見出し|行|「|『))|次の(?:節|表|項|見出し|行)|見よ(?!う)|見て(?!から|い)|[」』]の(?:とおり|通り)")
+# 一覧に無い言い回しの案内（#1415）——部分がこの形だけのときに限る。語の前の矢印（`→ 呼ぶ側の分岐`・`→「呼ぶ側の分岐」`）と、
+# 語の直後で部分が終わる `を見る`・`に記載`（`呼ぶ側の分岐を見る`・`「呼ぶ側の分岐」に記載`。後ろの句読点は許す）。
+# 後ろに文が続く（`呼ぶ側の分岐を見るのは後で`・`→ 呼ぶ側の分岐は後で書く`）・語の後ろに別の語が挟まる（`呼ぶ側の分岐は後で見る`）は書きかけとして名指す
+CALLER_POINTER_FORM = re.compile(
+    rf"{CALLER_EDGE}→{CALLER_EDGE}{CALLER_LABEL}{CALLER_EDGE}"
+    rf"|{CALLER_EDGE}{CALLER_LABEL}{CALLER_EDGE}(?:を見る|に記載){CALLER_EDGE}")
 
 
 def _caller_pointer(part: str) -> bool:
-    """表の行の中身の 1 つの部分が、ほかの行を指す案内か（#1389）。"""
+    """表の行の中身の 1 つの部分が、ほかの行を指す案内か（#1389・#1415）。"""
     if CALLER_LABEL not in part:
         return False
     return (CALLER_NAMED.fullmatch(part) is not None or CALLER_LINK.search(part) is not None
-            or CALLER_POINTER_WORDS.search(part) is not None)
+            or CALLER_POINTER_WORDS.search(part) is not None or CALLER_POINTER_FORM.fullmatch(part) is not None)
 
 
 def _bare(text: str) -> str:
@@ -601,7 +607,8 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
         whole_none = whole_none and not labelled
         missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
         # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、セル（`<br>` で分けた部分）の中で「呼ぶ側の分岐」を鉤括弧の名指しだけ・リンクで名指すか、
-        # 案内の言い回し（`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、
+        # 案内の言い回し（`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）か、
+        # 一覧に無い言い回しの形（`CALLER_POINTER_FORM`。`| 呼ぶ側の分岐 | → 呼ぶ側の分岐 |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐を見る |`。#1415）だけのものは、
         # ほかの行を指す案内——ほかに行があれば行に数えない
         # （書きかけの行（`| 呼ぶ側の分岐 | 後で書く |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く |`・`| 呼ぶ側の分岐 | 「呼ぶ側の分岐」は後で書く |`）は案内でない。#1389）
         pointer = kind == "表" and not labelled and not whole_none and not refers and pointed
