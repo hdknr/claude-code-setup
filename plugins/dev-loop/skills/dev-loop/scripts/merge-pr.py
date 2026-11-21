@@ -636,6 +636,8 @@ def main(argv: list[str]) -> int:
         if grc != 0:
             raise Undetermined(f"関門の照合が判定できなかった（rc={grc}）: {gout}")
         print(f"関門の照合を通った: {plan}")
+        for line in gout.splitlines()[1:]:  # 照合の補足（判断の記録で通した基準・照らしていない記録など。#1365）
+            print(line)
 
         holds = ledger_holds(a.number)  # マージの直前に読む——待つ間に判断待ちにした行も止める
         if holds:
