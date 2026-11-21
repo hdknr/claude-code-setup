@@ -374,6 +374,17 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
     def s_prefix(root, skill):
         remove_v02(skill)
         add_eval(root, eval_case("V-021", "x"))
+    def s_rephrase_a(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("1. **AAA ひとつめの行です**", "1. AAA ひとつめの行です"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "AAA ひとつめ"] + ROWS[0][3:]] + ROWS[1:]))
+    scenario("G20 頭の飾りを外した言い換え（同じ項）は 0（偽の赤にしない）", 0, "問題 0 件", s_rephrase_a)
+    def s_rephrase_b(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("1. **AAA ひとつめの行です**\n   - 入れ子は数えない", "1. 入れ子は数えない（旧本文）\n   - **AAA ひとつめの行です**"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "入れ子は数えない"] + ROWS[0][3:]] + ROWS[1:]))
+    scenario("G21 本文の文を頭に上げた言い換え（同じ項）は 0", 0, "問題 0 件", s_rephrase_b)
+    def s_shorten(root, skill):
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA ひ"] + ROWS[0][3:]] + ROWS[1:]))
+    scenario("G22 引きを縮めるだけなら 0", 0, "問題 0 件", s_shorten)
     scenario("G17 `外した行: V-021` では V-02 を外せない（前方一致で受けない）", 1, "外した行: V-02", s_prefix)
     def s_graders_empty(root, skill):
         remove_v02(skill)
@@ -439,7 +450,8 @@ MUTATIONS = [
     ("外した行の名指しを前方一致にする", "guard", '{re.escape(line_id)}\\s*$"', '{re.escape(line_id)}"', "guard"),
     ("統合先が別のファイルでも許す", "guard", 'and base_target["ファイル"] == r["ファイル"]:', ":", "guard"),
     ("同趣旨が空でも統合と認める", "guard", 'target is not None and r["同趣旨"] and target["ID"]', 'target is not None and target["ID"]', "guard"),
-    ("付け替えを見ない", "guard", 'if old_text.returncode == 0 and h["引き"] in old_text.stdout:', "if False:", "guard"),
+    ("付け替えを見ない", "guard", "        if clash:\n", "        if False:\n", "guard"),
+    ("言い換えも付け替えと見る（部分文字列で照合）", "guard", "        if clash:\n", '        if h["引き"] in old_text.stdout:\n', "guard"),
     ("base の先端と比べる", "guard", "base = mb.stdout.strip()", "pass", "guard"),
 ]
 

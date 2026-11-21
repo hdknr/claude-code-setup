@@ -16,8 +16,8 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
    - **`graders:` のブロック（次の最上位のキーまで）の中に** `- name:` が 1 つ以上ある
    **ただし、HEAD の台帳の別の行の `統合元` に挙がり、その行が base にも在って、同じファイルで、同じ `同趣旨`（空でない）を持っていた行は、統合なので eval を求めない**
    （同じ受け手の文面に同じ趣旨の行が残るため）。
-3. **生き残る行の ID を別の既存の項に付け替えない**——base と HEAD の両方にある ID の引きが変わり、新しい引きが base のそのファイルに既にある文面なら 1
-   （言い換えは新しい文面なので通る。付け替えは元の項を外したのに ID が残る形）。
+3. **生き残る行の ID を別の既存の項に付け替えない**——base と HEAD の両方にある ID の引きが変わり、新しい引きが base のそのファイルの**元の項とは別の項の頭**に当たれば 1
+   （同じ項の言い換え——頭の飾りを外す・本文の文を頭に上げる・頭を縮める——は通る。項を本文ごと別の新しい文面に差し替えて ID を付け替える形は見ない）。
 
 ## 守らないもの
 
@@ -132,11 +132,15 @@ def main(argv: list[str]) -> int:
         h = head_by_id.get(b["ID"])
         if h is None or (h["引き"] == b["引き"] and h["ファイル"] == b["ファイル"]):
             continue
-        if h["ファイル"] == b["ファイル"] and (h["引き"].startswith(b["引き"]) or b["引き"].startswith(h["引き"])):
-            continue  # 同じ項の頭を縮めた・伸ばした
         old_text = git(root, "show", f"{base}:{SKILL_REL}/{h['ファイル']}")
-        if old_text.returncode == 0 and h["引き"] in old_text.stdout:
-            problems.append(f"{b['ID']}: 引きを base に既にある別の文面「{h['引き']}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")
+        if old_text.returncode != 0:
+            continue
+        # 別の項の頭に付け替えた形だけを見る。同じ項の言い換え（頭の飾りを外す・本文の文を頭に上げる・頭を縮める）は項の頭に当たらないか、元の項の頭に当たる
+        heads = [first for _, first, _ in effects.items_of(old_text.stdout)]
+        prev = next((f for f in heads if f.startswith(b["引き"])), None)
+        clash = [f for f in heads if f.startswith(h["引き"]) and f != prev]
+        if clash:
+            problems.append(f"{b['ID']}: 引きを base に既にある別の項の頭「{clash[0][:30]}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")
             print(f"NG: {problems[-1]}")
     changed = git(root, "diff", "--name-only", f"{base}...HEAD")
     if changed.returncode != 0:
