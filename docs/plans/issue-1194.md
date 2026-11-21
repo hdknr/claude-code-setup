@@ -7,7 +7,7 @@ spec-loop から来た Issue ではない（本文の先頭に `<!-- spec-loop-h
 周の途中の課題 = 外に出す / マージ前の判断 = 推奨で決めて起票（後退・未達を含む）。`.claude/dev-loop.md`（main）の宣言: `マージの反映: ドキュメントとプラグインの配布`。
 直す線: `既定`（出所: cruise の確かめた線）。
 
-版の上げ方: **dev-loop を minor**（2.17.0 → 2.18.0。手順・スクリプト・台帳の新設）。
+版の上げ方: **dev-loop を minor**（base は 2.17.1 → 2.18.0。手順・スクリプト・台帳の新設）。
 
 ## 変更範囲
 
@@ -17,6 +17,7 @@ spec-loop から来た Issue ではない（本文の先頭に `<!-- spec-loop-h
 - `plugins/dev-loop/skills/dev-loop/references/line-registry.csv` — 新設。`prompts/*.md` の全項の台帳
 - `plugins/dev-loop/skills/dev-loop/references/prune.md` — 新設。記録の書き方・見直しの段・行を外す手順（原本）
 - `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — 「削らない」を「黙って削らない」に置き換え。報告に「反証ごとの番号」を足す
+- `plugins/dev-loop/skills/dev-loop/prompts/review-handoff.md` — 項 7（`/code-review` に項の番号を返させる）を足す
 - `plugins/dev-loop/skills/dev-loop/prompts/implementer.md` — 同趣旨の「削らない」の置き換え
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 5 の「削らない」の置き換え・手順 8 に効いた行の記録・版の行
 - `plugins/dev-loop/skills/cruise/SKILL.md` — 版の行
@@ -32,7 +33,6 @@ spec-loop から来た Issue ではない（本文の先頭に `<!-- spec-loop-h
 
 触らない:
 
-- `plugins/dev-loop/skills/dev-loop/prompts/review-handoff.md` — 本文は変えない（台帳に載せるだけ。「削らない」の記述が無い）
 - `plugins/dev-loop/evals/` — eval ケースは足さない（外す行が 1 つも無い周。外す PR が足す）
 - `plugins/spec-loop/` — spec-loop の見直しの規定（`spec-exit.md`）には触れない
 - 既存の計画ファイル（`docs/plans/issue-*.md`）への `効いた行` の後付け——記録は周が書くもので、遡って埋めない（既知の限界）
@@ -42,7 +42,7 @@ spec-loop から来た Issue ではない（本文の先頭に `<!-- spec-loop-h
 ## 周の大きさ（同じことを述べている箇所の数）
 
 - 記録の行の形: `line-effects.py` の docstring と正規表現（原本）・`references/prune.md` の例（写し。テストが正規表現に当てる）。**2 箇所**。
-- 「黙って削らない」の置き換え: `prompts/verifier.md`・`prompts/implementer.md`・`SKILL.md` 手順 5 の 3 箇所（テストが verifier.md と SKILL.md を見る）。
+- 「黙って削らない」の置き換え: `prompts/verifier.md`・`prompts/implementer.md`・`SKILL.md` 手順 5（約 1057 行）と手順 4 の委譲文の項（約 772 行）の 4 箇所（テストが verifier.md と SKILL.md を見る）。
 - スクリプトの一覧: `CLAUDE.md`（1 箇所）。
 
 ## 決めたこと（仕様の穴——不在の線で推奨により決めた）
@@ -76,14 +76,14 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 | A5 | 「削らない」が「黙って削らない」に置き換わり、外し方（人間の承認・見直しの段・eval）を指す。`verifier.md`・`implementer.md`・`SKILL.md` 手順 5 の 3 箇所 | `test-line-effects.py`（原本の突き合わせ）・`check-skill-pointers.py`・`check-norm-markers.py` |
 | A6 | 記録の書式・見直しの段・外す手順が `references/prune.md` にあり、`SKILL.md` 手順 8 が指す。Verifier が反証ごとの番号を返す | 読む＋`check-skill-pointers.py`。例の行を本体の正規表現に当てる（テスト） |
 | A7 | 測るだけ——集計は読むだけで、削る判断・ファイルの書き込みをしない | 読む（`line-effects.py` は `check`・`report`・`items` のいずれもファイルを書かない） |
-| A8 | 版が 3 箇所で揃って上がり（2.17.0 → 2.18.0）、§8.2 の生成ブロックが新しく、テストと歯止めが `check-all.py` と CI に収録され、`CLAUDE.md` に載る | `check-plugin-versions.py`・`skill-metrics.py --check`・`test-check-all.py`・`check-all.py` |
+| A8 | 版が 3 箇所で揃って上がり（2.17.1 → 2.18.0）、§8.2 の生成ブロックが新しく、テストと歯止めが `check-all.py` と CI に収録され、`CLAUDE.md` に載る | `check-plugin-versions.py`・`skill-metrics.py --check`・`test-check-all.py`・`check-all.py` |
 
 必須要件の掛け算: 受入基準を 2 つの関門 × 2 パスに渡す。
 
 ### この環境では証明できないもの
 
-- **A4 の後半「外した後も eval が通る」**——`claude plugin eval` は課金し、worktree 隔離セッションから起動できない（ガードが shell の `eval` と読んで拒否する）。**外す行が 1 つも無い周なので、通す eval も実在しない。**
-  **BLOCKED の分類は、手段が無いからではなく、見る対象（外す PR）がまだ存在しないから**——代替は置かず、見られる範囲（eval が差分に在って名指しが揃うこと）だけを `check-prompt-lines.py` で見る。外す最初の PR は `references/prune.md` のとおり `run-dev-loop-evals.py` の要約を貼って人間が見る。
+- **「外した後も eval が通る」（Issue の受入基準 3 の後半）**——**この周の主張ではない**（BLOCKED に分類しない。Verifier の反証 10 を採った）。この周は行を 1 つも外さないので、通す eval が実在しない。
+  eval の実行は別の端末で worktree の絶対パスを渡して回せば可能だが、外す PR が現れてから行うものである。この周が主張するのは、**外す PR に eval が差分に在って名指しが揃うこと**（`check-prompt-lines.py`）と、**外す最初の PR が `references/prune.md` のとおり `run-dev-loop-evals.py` の要約を貼る決まり**まで。
 - **周が実際に `効いた行` を書くか・実データで候補が出るか**——既存の計画ファイルに記録が無い（登録日は今日）。記録は周が貯めるもので、窓 30 周分が貯まるまで候補は出ない。試験は合成の計画ファイルで行った（A1・A2）。PR コメントで人間に回す。
 
 生成物: `docs/plugins/dev-loop-design.md` §8.2 の生成ブロック（`skill-metrics.py --check`）。図の書き出しは触らない。
@@ -98,5 +98,17 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
   起点 `5484e228`・base 参照 `origin/main`・base SHA `5484e2285a7ac5827a9aa2e5f5626332ff4ebd3a`
 - 割り目（手順 4・6）: **割らない（cruise の周）**。
 - 交絡: 実験なし（試料は一時ディレクトリの合成）
+
+- 周の記録（関門）:
+  1 パス目の対象 HEAD `cee250a70796e2a9949f8ec17c79616e57bf43a8`（main 取り込み後の merge-base `1dfd6847b236fc81c4da344c757b060d42b6f02f` からの差分）。
+  Verifier（opus・`dev-loop:dev-loop-verifier`）**反証 11 件**／`/code-review`（high）**指摘 8 件**（重なりあり）。
+  採否: 直す = 台帳の行が 1 項に複数当たる（V1・CR1）・付け替え（V1）・統合を同じファイルに限る（V2・CR4）・graders のブロック（V5・CR3）・ローカルの日付（V6）・
+  テストを素通りした変異 7 件（V7）・SKILL.md 772 行の絶対の「削らない」（V8）・prune.md の陽性対照の向き（V9）・BLOCKED の分類と版の誤り（V10）・
+  base の先端でなく merge-base と比べる（V11）・verifier.md の「最後に効いた周」の言い方（CR5）・prune.md の誤った指摘を数えない（CR6）・
+  測れない行を候補に出さず `/code-review` にも番号を返させる（CR2。台帳に `測り方` の列を足した）。
+  残課題 = 項の本文の弱め方・入れ子の行・字下げした行・段落の規則・穴への移動（V3・V4・CR8。定義どおりで、docstring と prune.md の「守らないもの」に書いた）・
+  同趣旨の自己申告を別 PR で書き換える抜け道（V2 の後半。人間のレビュー）・committer time が rebase で変わる（CR7。docstring に書いた）。
+  2 パス目の指摘対応の起点（狭いパスの起点）: `cee250a70796e2a9949f8ec17c79616e57bf43a8`（指摘対応に入る前に書いた）。
+  `test-line-effects.py` は試料に加えて変異 25 件（13 + 12）すべて赤。
 
 - この周の起票: 0 件（確認の Issue は親が立てる。この周では起票しない）
