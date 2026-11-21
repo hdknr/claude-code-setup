@@ -45,6 +45,12 @@
    **ある回の Verifier と `/code-review` の両方の終点に含まれる**か、**狭いパス・当て直しの範囲（起点の後から終点まで）にある**か、
    **関門が見なくてよい形**（計画ファイルだけ・版の行だけ（下の「守らない」の形）を変えたコミット・既定ブランチの親を取り込んだ merge commit）かのどれか。
    **どれでもないコミットがあれば通さない**——2 パス目を回さずに直した・狭いパスの後に直した・最後の関門の後に足した、の形がここに出る。
+   **マージ済みの周の計画ファイルだけを直す差分（#1365）は、記録の SHA を履歴と照らさない**——squash でマージした周の記録の SHA は既定ブランチから辿れないので、
+   マージの後に件数の行を直す PR（`SKILL.md` 手順 8 の「マージの後で起票が増えたら」）が必ず「祖先でない」で止まっていた。見分ける条件は 3 つで、全部そろったときだけ:
+   (a) 既定ブランチに同じパスの計画ファイルがあり、その記録が照合する計画の記録とも head のコミットの中の計画の記録とも行ごとに同じ、
+   (b) 既定ブランチとの分岐点から head までの差分のファイルが計画ファイルだけ、
+   (c) 分岐点から head までの周の線（`--first-parent`）の、既定ブランチに入っていないコミットが、どれも関門が見なくてよい形。
+   この形では 2 の照合（記録の SHA と周の線のコミット）をせず、そう出力する。1・3・4・5 は今までどおり当てる。
 3. **受入基準の判定**——表の番号ごとに判定があるか。`BLOCKED`・`満たさない` は判断の出所があるか（下の表）。
 4. **マージの反映**——記録の値が、既定ブランチの `.claude/dev-loop.md` の宣言と同じか。宣言はコードブロックと HTML コメントの外の行だけを読み
    （`check-unattended-env.py` の `visible_lines`）、読める値（`ドキュメントのみ`・`ドキュメントとプラグインの配布`）がちょうど 1 本のときだけ宣言がある（`references/absent-lines.md` の「行が無い・値が違う・2 本以上ある」）。
@@ -84,6 +90,10 @@
 - **関門が見ていないコミットを通さない**——ある回の 2 つの関門の両方の終点に含まれるか、狭いパス・当て直しの範囲にあるものだけを、見たとみなす。
 - **狭いパス・当て直しの起点そのものを、その範囲に数えない**——範囲は起点の後から終点まで。
 - **計画ファイルと版の行だけのコミットは、関門が見ていなくても通す**——関門の後に再開点を書く・main を取り込んで版を上げ直す（cruise の `references/parallel.md`）。
+- **マージ済みの周の計画ファイルだけを直す差分は、記録の SHA を履歴と照らさずに通す**（#1365）——squash で消えた関門の SHA で、件数の行を直す PR を止めない。
+- **計画ファイルのほかも変える差分は、マージ済みの周の計画でも今までどおり照合する**（#1365 の (b)）。
+- **既定ブランチの記録と違う記録（記録を書き換えた差分）は、今までどおり照合する**（#1365 の (a)）——読んだ計画と head のコミットの中の計画の両方で見る。直す PR が記録を書き換えて通ることはない（`--plan` で別の作業ツリーの計画を渡しても）。
+- **途中のコミットが計画のほかを変えていれば、差分で打ち消していても今までどおり照合する**（#1365 の (c)）——関門の見ていないコミットを線に残さない。
 - **既定ブランチ以外を取り込んだ merge commit は通さない**——既定ブランチに入っていない親は、関門の見ていないコミットを連れてくる。
 - **受入基準の表の番号に判定が無ければ通さない。**
 - **`BLOCKED`・`満たさない` は、判断の出所が無ければ通さない。**
@@ -150,6 +160,9 @@
   **期間で区切らない**——何年前に戻した範囲でも止まる。止めたくなければ利用者が居る周でマージする。
   **マージの後に見つかった欠陥**（revert していないもの）は、利用者が `不在で止める範囲:` の行を足して止める（`references/absent-lines.md` の「影響範囲で止める」）。
 - **戻されたコミットの範囲は、その最初の親からの差分のファイルである**——merge commit を戻したなら、取り込んだ側の変更すべて。
+- **マージ済みの周の計画ファイルだけを直す差分では、記録の SHA が関門の見たコミットか（squash の前の履歴にあるか）を見ない**（#1365）——既定ブランチに入った記録をそのまま信じる。
+  記録の外の行（件数の行など）の書き換えの中身も見ない（計画だけのコミットに関門を求めないのと同じ）。既定ブランチの記録が元のマージで照合を通ったかも見ない——記録の揃いと受入基準の判定は当てる。
+  既定ブランチに同じパスの計画ファイルがあれば「マージ済みの周」と読む——同じ番号で別の周を始め、前の周の記録をそのままにして計画だけを変えた差分も、この形で通る（記録を書き換えれば今までどおり照合する）。
 
 ## 判定を足すとき（#1047 など）
 
@@ -239,6 +252,7 @@ class Record:
     criteria: dict[str, tuple[str, str | None]] = field(default_factory=dict)  # 番号 → (判定, 判断)
     reflection: str | None = None
     table_ids: list[str] = field(default_factory=list)
+    block: list[str] = field(default_factory=list)  # 記録の行（マージ済みの周の計画と比べる。#1365）
 
 
 def gate_block(text: str) -> list[str]:
@@ -304,8 +318,8 @@ def table_ids(text: str) -> list[str]:
 
 
 def parse(text: str) -> Record:
-    rec = Record()
-    for line in gate_block(text):
+    rec = Record(block=gate_block(text))
+    for line in rec.block:
         s = line.strip()
         if not s or s.startswith("#"):
             continue
@@ -361,6 +375,7 @@ class Context:
     absent: bool
     _sha: dict = field(default_factory=dict)
     _default: str | None = None
+    merged: bool | None = None  # マージ済みの周の計画ファイルだけを直す差分か（#1365。merged_plan_only が決める）
 
     def git(self, *args: str, ok: tuple[int, ...] = (0,)) -> subprocess.CompletedProcess:
         try:
@@ -455,8 +470,45 @@ def exempt(ctx: Context, commit: str, parents: list[str]) -> bool:
     return True
 
 
+def merged_plan_only(rec: Record, ctx: Context) -> bool:
+    """マージ済みの周の計画ファイルだけを直す差分か（#1365。docstring の「何を照合するか」の 2 の (a)〜(c)）。"""
+    if ctx.merged is None:
+        ctx.merged = _merged_plan_only(rec, ctx)
+    return ctx.merged
+
+
+def _merged_plan_only(rec: Record, ctx: Context) -> bool:
+    default = ctx.default_ref()
+    shown = ctx.git("show", f"{default}:{ctx.plan_rel}", ok=(0, 128))
+    if shown.returncode != 0:
+        return False  # 既定ブランチに計画が無い——マージされていない周
+    at_head = ctx.git("show", f"{ctx.head}:{ctx.plan_rel}", ok=(0, 128))
+    if at_head.returncode != 0:
+        return False  # head に計画が無い
+    try:
+        merged = gate_block(shown.stdout)
+        if merged != rec.block:
+            return False  # (a) 記録を書き換えた（読んだ計画）
+        if gate_block(at_head.stdout) != merged:
+            return False  # (a) 記録を書き換えた（head のコミットの中の計画——読んだ計画が別の作業ツリーのとき）
+    except Malformed:
+        return False
+    split = ctx.git("merge-base", default, ctx.head).stdout.strip()  # 既定ブランチとの分岐点
+    files = [f for f in ctx.git("diff", "--name-only", "--no-renames", split, ctx.head).stdout.splitlines() if f]
+    if files != [ctx.plan_rel]:
+        return False  # (b) 計画のほかも変える
+    out = ctx.git("rev-list", "--first-parent", "--parents", f"{split}..{ctx.head}").stdout
+    for line in out.splitlines():
+        commit, *parents = line.split()
+        if not ctx.is_ancestor(commit, default) and not exempt(ctx, commit, parents):
+            return False  # (c) 途中で計画のほかを変えた
+    return True
+
+
 def check_coverage(rec: Record, ctx: Context) -> list[str]:
     """周の線のコミットを 1 つずつ、それを見た関門があるかで見る。"""
+    if merged_plan_only(rec, ctx):
+        return []  # マージ済みの周の計画ファイルだけを直す差分——記録の SHA を照らさない（#1365）
     reasons = []
     base = known(ctx, rec.base, "周の base", reasons)
     ends: dict[tuple[str, int], list[str]] = {}
@@ -729,6 +781,8 @@ def main(argv: list[str]) -> int:
     blocked = [f"{i}（{v}・判断={j}）" for i, (v, j) in rec.criteria.items() if v in ("BLOCKED", "満たさない")]
     unproven = [i for i, (v, _) in rec.criteria.items() if v == "未証明"]
     print(f"照合を通った（head {ctx.head[:12]}・受入基準 {len(rec.criteria)} 件）。")
+    if ctx.merged:
+        print("  マージ済みの周の計画ファイルだけを直す差分——記録の SHA と周の線のコミットは履歴と照らしていない（#1365）")
     if blocked:
         print(f"  判断の記録で通した受入基準: {'、'.join(blocked)}")
     if unproven:
