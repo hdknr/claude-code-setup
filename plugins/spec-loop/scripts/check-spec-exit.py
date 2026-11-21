@@ -406,15 +406,23 @@ BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?")  # タスク�
 BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 # 別の節を指す書き方（「[価格照会書を出力する] と同じ」）——文の末尾が「と同じ」
 REFERS = re.compile(r"(?:\]\([^)]*\)|[\]」』])\s*と同じ\s*(?:[。.]|[（(][^）)]*[）)])?$")  # 角括弧・鉤括弧・リンクで名指した先と「同じ」で文が終わる（後ろの句点・括弧書きは許す）
-# ほかの行を指す案内の表の行（#1389）——セル・`<br>` で分けた 1 つの部分の中に、`呼ぶ側の分岐` の語と、リンクの名指し（`[呼ぶ側の分岐](…)`）か案内の言い回しの両方があるもの。
-# 鉤括弧は問わない（`「**呼ぶ側の分岐**」を見よ` も案内）。鉤括弧だけ・単漢字だけ（`下さい`・`下限`・`節目`）は案内でない
-CALLER_LINK = re.compile(rf"\[{CALLER_LABEL}\]\(")
-CALLER_POINTER_WORDS = re.compile(r"節(?!目)|参照|後述|前述|下の|下記|下に|上の|次の|見よ|見て|のとおり|の通り")
+# ほかの行を指す案内の表の行（#1389）——セル・`<br>` で分けた 1 つの部分の中に `呼ぶ側の分岐` の語があり、部分が鉤括弧の名指しだけ（`『呼ぶ側の分岐』`）か、
+# リンクの名指し（`[呼ぶ側の分岐](…)`・`[**呼ぶ側の分岐**](…)`・`[呼ぶ側の分岐][]`）か、案内の言い回しを伴うもの。
+# 鉤括弧で名指しても後ろに文が続くだけ（`「呼ぶ側の分岐」は後で書く`）は案内でない。言い回しは熟語の一部（`以下の`・`却下`・`調節`・`節約`・`節目`・`見てから`・`参照先`）に当てない
+CALLER_DECOR = r"[*_`「」『』\s]*"
+CALLER_NAMED = re.compile(rf"{CALLER_DECOR}[「『]{CALLER_DECOR}{CALLER_LABEL}{CALLER_DECOR}[」』]{CALLER_DECOR}")
+CALLER_LINK = re.compile(rf"\[{CALLER_DECOR}{CALLER_LABEL}{CALLER_DECOR}\](?:\(|\[)")
+CALLER_POINTER_WORDS = re.compile(
+    r"(?<![一-龥々])節(?![一-龥々])|(?<![一-龥々])参照(?![元先す])|(?<![一-龥々])[後前]述"
+    r"|(?<![一-龥々])[上下](?:記|に|の(?:節|表|項|見出し|行|「|『))|次の(?:節|表|項|見出し|行)|見よ|見て(?!から)|[」』]の(?:とおり|通り)")
 
 
 def _caller_pointer(part: str) -> bool:
     """表の行の中身の 1 つの部分が、ほかの行を指す案内か（#1389）。"""
-    return CALLER_LABEL in part and (CALLER_LINK.search(part) is not None or CALLER_POINTER_WORDS.search(part) is not None)
+    if CALLER_LABEL not in part:
+        return False
+    return (CALLER_NAMED.fullmatch(part) is not None or CALLER_LINK.search(part) is not None
+            or CALLER_POINTER_WORDS.search(part) is not None)
 
 
 def _bare(text: str) -> str:
@@ -589,8 +597,8 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
                 touched |= names
         whole_none = whole_none and not labelled
         missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
-        # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、セル（`<br>` で分けた部分）の中で「呼ぶ側の分岐」をリンクで名指すか、
-        # 案内の言い回し（節・参照・下の・見よ など。`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、
+        # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、セル（`<br>` で分けた部分）の中で「呼ぶ側の分岐」を鉤括弧の名指しだけ・リンクで名指すか、
+        # 案内の言い回し（`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、
         # ほかの行を指す案内——ほかに行があれば行に数えない
         # （書きかけの行（`| 呼ぶ側の分岐 | 後で書く |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く |`・`| 呼ぶ側の分岐 | 「呼ぶ側の分岐」は後で書く |`）は案内でない。#1389）
         pointer = kind == "表" and not labelled and not whole_none and not refers and pointed
