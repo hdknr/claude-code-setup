@@ -119,6 +119,11 @@ Issue の「決めたいこと（未決定）」の 4 つ。確認の Issue は�
 - 狭いパス: 起点 `2ffa17d` → 終点 `f8751f0` の差分だけに別ティア（sonnet）の Verifier を 1 回当てた。反証 0（軽微 2——V3-1・V3-2）。verifier.md 250 行を読んだ——`wc -l` と一致。
   素通りした変異: M1（child-cycle.md の線の条件と公開ページの「この値では」を外す）——軽い歯止め 4 本が緑のまま。文書の食い違いを機械で止める検査は無い（CR2-8 と同型）。
 - 割り目: 割らない（cruise の周）。
+- PR の前に `origin/main`（`28b2409`。#1365・#1405・#1414）を取り込んだ（merge commit `4054cb2`）。衝突は版の行だけ（4 ファイル。塊ごとに周の側の 2.19.0 を取った）。main の dev-loop は 2.18.1 で、minor で 2.19.0 のまま。
+  取り込みで変わった検査: `check-gates.py`・`merge-pr.py`・`check-spec-exit.py` とそのテスト（#1365・#1405）——足した検査は無い。
+  式を当て直した base: `28b24099c25c24d29c571ac8573a9945ed9475c5`（`check-deps-declared.py`・`check-spec-writeback.py`・`formal-sync.py` に渡し、3 本とも 0。関門の記録の `周の base` は関門に渡した値のまま）。
+  取り込み後の `check-all.py`（run-serial 越し。HEAD `4054cb2`）: 69/101 本を回し失敗 0（32 本は CACHED）。`check-gates.py --absent`（取り込んだ版）: 照合を通った。
+- 外部レビュー: PR を作った後に `external-reviews.py` で見る。
 
 ```dev-loop-gates
 周の base: e7074c4d1917d2d067d8f7f6105f7d8ec1c84e85
