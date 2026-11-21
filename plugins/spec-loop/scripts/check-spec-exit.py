@@ -69,7 +69,7 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
 | **図（`FIGURE_SUFFIXES`）の中の印** | 図を置くことがあるので落とさない。**見なかったファイルは件数と名前を出す**。図以外の読めないファイルは 2 にする |
 | **印を使わずに書いた未決定**（「あとで決める」「検討中」） | 言い回しは列挙しきれない。判定役（Red Team）が条件 2・3 で見る |
 | **ドット始まりのファイル・ディレクトリの中** | `.git` などを見ないため |
-| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（本文の行の直後の `===`・`---`）は見出しと読まず、テストケースの節を閉じる。空行の後の `---` は区切りの線で、閉じない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
+| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（本文の行（段落）の直後の `===`・`---`）は見出しと読まず、テストケースの節を閉じる。段落の直後でない `---` は区切りの線で、閉じない。段落かどうかは CommonMark の段落の続きに合わせる: 空行・区切りの線・見出し・HTML の塊（CommonMark の 7 種）・段落の外の 4 字下げの行（コード）の後は段落でない。箇条書きの項と引用の行は、中身が段落で始まるときだけ段落を開き、空行までの続きの行（lazy）もその段落の続き——続きの行の `---` は下線にならない。下線は段落の容れ物の中身の桁（最上位は 0、項の中は項の中身の桁）まで字下げした行だけで、項の中身の桁まで字下げした `===`・`---` は項の中の下線の見出しとして節を閉じる。引用の中の段落の下線は見ない。項の中身の桁は空行をまたいで持ち、浅い行で項を閉じる（空の項は、次の行が空行なら空のまま閉じる）。同じ行で入れ子になった項（`- - x`）は内側の項の桁まで積む。段落の中の 4 字下げの行と、段落と同じ容れ物の中の 1 でない番号の項・空の項・タグだけの行は段落を割り込まず、段落の続き。#1379。容れ物は箇条書きの項と引用だけを見て、引用の中の項・HTML の塊の中の行の入れ子は追わない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
 | **番号の形に当たらない行の識別子**（`1`・`あ`・`No.3` など） | 表ごとに 1 から振り直す連番は、表が違えば重複でも誤りでない。形に当たる番号だけを全体で一意とみなす |
 | **全角・半角の違い以外の表記ゆれ**（`F1-5B` と `F1-5b`・`F1‐5b`（別のハイフン）） | 別の番号として数える。NFKC で畳むのは全角の英数字とハイフンだけ |
 | **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
@@ -137,9 +137,31 @@ ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)
 # テストケースの節の見出し（`#` の見出しの文）。**末尾が**テストケースの語（後ろに `一覧` と括弧書きを許す）。同じ写し
 SECTION_HEADER = re.compile(r"(?:テストケース|\btest ?cases?|\btc)(?:\s*一覧)?\s*(?:[(（][^()（）]*[)）])?$", re.IGNORECASE)
 HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")
-# 下線の見出しの下線（`===`・`---`）。本文の行の直後にあるときだけ下線の見出しで、節の見出しと読まず、テストケースの節を閉じる
-# （#1333。下線の見出しの下の表をテストケースに数えない。空行の後の `---`・`***` は区切りの線で、節を閉じない）
+# 下線の見出しの下線（`===`・`---`）。本文の行（段落）の直後にあるときだけ下線の見出しで、節の見出しと読まず、テストケースの節を閉じる
+# （#1333。下線の見出しの下の表をテストケースに数えない。段落の直後でない `---`・`***` は区切りの線で、節を閉じない）。
+# 段落かどうかと、下線を取る桁は CommonMark の段落の続きに合わせる（#1379。決まりは `references/spec-exit.md` の「テストケースの番号の重複」）
 UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+# 区切りの線（`---`・`***`・`___`。間に空白を挟んでよい）。段落の直後の `---` は先に下線として読む
+THEMATIC = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+# 箇条書きの項の行（`-`・`+`・`*`・`1.`・`1)`）と引用の行
+LIST_ITEM = re.compile(r"^( {0,3}(?:[-+*]|(\d{1,9})[.)]))(?:[ \t]|$)")
+QUOTE = re.compile(r"^ {0,3}>")
+# HTML の塊（CommonMark の 7 種）の開き・閉じ（None なら空行で閉じる）・段落を割り込めるか
+BLOCK_TAGS = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|"
+              "fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|"
+              "main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|"
+              "title|tr|track|ul")
+HTML_ATTRIBUTE = r"""\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?"""
+HTML_BLOCKS = (
+    (re.compile(r"^ {0,3}<(?:pre|script|style|textarea)(?:[ \t>]|$)", re.IGNORECASE),
+     re.compile(r"</(?:pre|script|style|textarea)>", re.IGNORECASE), True),
+    (re.compile(r"^ {0,3}<!--"), re.compile(r"-->"), True),
+    (re.compile(r"^ {0,3}<\?"), re.compile(r"\?>"), True),
+    (re.compile(r"^ {0,3}<![A-Za-z]"), re.compile(r">"), True),
+    (re.compile(r"^ {0,3}<!\[CDATA\["), re.compile(r"\]\]>"), True),
+    (re.compile(r"^ {0,3}</?(?:" + BLOCK_TAGS + r")(?:[ \t>]|/>|$)", re.IGNORECASE), None, True),
+    (re.compile(r"^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:" + HTML_ATTRIBUTE + r")*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>)[ \t]*$"), None, False),
+)
 SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
@@ -148,6 +170,83 @@ def fence_closes(opened: re.Match[str] | None, fence: str, line: str) -> bool:
     """開いているフェンス（`fence`）を、この行が閉じるか——同じ種類で、開きより短くなく、情報文字列の無いフェンスの行。
     テストケースの番号（`case_rows`）と呼ぶ側の分岐の行（`caller_rows`）が同じ読み方でコードブロックを外す。"""
     return bool(opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence) and not line.strip(" `~"))
+
+
+def indent_width(line: str) -> int:
+    """行頭の字下げの桁（タブは 4 の倍数の桁まで進める）。"""
+    width = 0
+    for ch in line:
+        if ch == " ":
+            width += 1
+        elif ch == "\t":
+            width += 4 - width % 4
+        else:
+            break
+    return width
+
+
+QUOTED = 10 ** 9  # 引用の中の段落の容れ物の桁——どの行もその桁まで字下げしないので、下線にならない
+
+
+def item_column(line: str) -> tuple[int, bool, str]:
+    """箇条書きの項の行（`LIST_ITEM` に当たる行だけを渡す）の、中身の桁・中身が空か・中身の文字列。
+    中身の桁は印の後ろの空白（1〜4 桁。5 桁以上なら 1 桁で、残りは字下げのコード）まで——この桁まで字下げした続きの行は項の中身（#1379）。"""
+    expanded = line.expandtabs(4)
+    marker = LIST_ITEM.match(expanded).end(1)
+    rest = expanded[marker:]
+    if not rest.strip():
+        return marker + 1, True, ""
+    spaces = len(rest) - len(rest.lstrip(" "))
+    column = marker + (spaces if spaces <= 4 else 1)
+    return column, False, expanded[column:]
+
+
+def block_kind(rest: str, prose: bool, inside: bool | None = None) -> str | None:
+    """容れ物（箇条書きの項）の中身の桁から見た行が始めるブロックの種類。段落の行（段落を始めるか、段落の続き）なら None。
+    `prose`（直前の行が段落の中）なら、4 字下げの行は段落の続き。`inside`（段落と同じ容れ物の中の行。省けば `prose`）なら、
+    段落を割り込めない形（空の項・1 でない番号の項・タグだけの行）も段落の続き——段落の容れ物の外の行では、これらもブロックを始める（#1379）。"""
+    inside = prose if inside is None else inside
+    if not rest.strip():
+        return "blank"
+    if indent_width(rest) >= 4:
+        return None if prose else "code"
+    if THEMATIC.match(rest):
+        return "thematic"
+    if HEADING.match(rest):
+        return "heading"
+    if FENCE.match(rest):
+        return "fence"
+    if QUOTE.match(rest):
+        return "quote"
+    item = LIST_ITEM.match(rest)
+    if item:
+        empty = item_column(rest)[1]
+        if inside and (empty or (item.group(2) is not None and int(item.group(2)) != 1)):
+            return None
+        return "item"
+    if html_block(rest, inside):
+        return "html"
+    return None
+
+
+def quoted_paragraph(line: str) -> bool:
+    """引用の行（`QUOTE` に当たる行）の中身が段落で始まるか（`>` の後ろの空白を 1 つ外して見る）。"""
+    content = line[QUOTE.match(line).end():]
+    return starts_paragraph(content[1:] if content.startswith(" ") else content)
+
+
+def starts_paragraph(content: str) -> bool:
+    """項・引用の中身が段落で始まるか——段落なら、その後ろの行は段落の続き（lazy）になりうる（#1379）。"""
+    return block_kind(content, False) is None
+
+
+def html_block(line: str, prose: bool) -> tuple[re.Pattern[str] | None] | None:
+    """この行が HTML の塊を開くなら (閉じの形,)（閉じの形が None なら空行で閉じる）、開かなければ None。
+    段落の直後（`prose`）では、段落を割り込めない 7 種目（ほかのタグだけの行）は開かない（段落の続き）。"""
+    for opening, closing, interrupts in HTML_BLOCKS:
+        if opening.match(line) and (interrupts or not prose):
+            return (closing,)
+    return None
 
 
 def find_markers(text: str) -> list[tuple[int, str]]:
@@ -177,7 +276,11 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
     fence = None
     previous = None  # 直前の行が表の行なら、その先頭のセル（次の行が区切りの行なら見出し）
     counting = False  # いまの表の見出しがテストケースの表か
-    prose = False  # 直前の行が本文の行（空でなく、表・見出し・コードブロックでない）か——次の下線で下線の見出しになる
+    prose = False  # 直前の行が段落の中か（CommonMark の段落の続き——#1379）——次の下線で下線の見出しになる
+    para_col = 0  # 開いている段落の容れ物の中身の桁（最上位は 0、項の中は項の中身の桁、引用の中は QUOTED）。下線はこの桁まで字下げした行だけ（#1379）
+    items: list[int] = []  # 開いている箇条書きの項の中身の桁（外から内へ。空行をまたいで残り、浅い行で閉じる——#1379）
+    fresh_empty = False  # 直前の行が空の項の行か——次が空行なら、その項は空のまま閉じる（CommonMark: 項は空行 1 つまでしか空で始まれない）
+    html = None  # いま HTML の塊の中なら (閉じの形,)（閉じの形が None なら空行で閉じる）。中の行は段落でない（#1379）
     section = None  # いまの見出しがテストケースの節の中なら、その節の見出しの深さ（#1333。小見出しは節を引き継ぐ）
     for number, line in enumerate(text.splitlines(), 1):
         opened = FENCE.match(line)
@@ -187,8 +290,35 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
             continue
         if opened:
             fence = opened.group(1)
-            previous, counting, prose = None, False, False
+            previous, counting, prose = None, False, False  # HTML の塊の状態は残す（塊の中のフェンスの形も今までどおりフェンスと読む）
+            items = [column for column in items if column <= indent_width(line)]
             continue
+        stripped = line.strip()
+        was_empty, fresh_empty = fresh_empty, False
+        if not stripped and was_empty and items:
+            items.pop()  # 空の項の後の空行で、その項は閉じる
+        if html is not None and ((html[0] is None and not stripped) or (stripped and indent_width(line) < html[1])):
+            html = None  # 空行で閉じる塊・容れ物（項）の外の行で閉じる塊
+        in_html = html is not None
+        kind, lazy, underline, base, rest = None, False, False, 0, line
+        if stripped and not in_html:
+            width = indent_width(line)
+            base = max([0] + [column for column in items if column <= width])
+            rest = line.expandtabs(4)[base:]
+            if prose and para_col != QUOTED and width >= para_col and UNDERLINE.match(line.expandtabs(4)[para_col:]):
+                underline = True  # 段落の容れ物の中の下線（項の中の下線の見出しを含む）
+            else:
+                inside = prose and base >= para_col and para_col != QUOTED
+                kind = block_kind(rest, prose, inside)
+                if prose and kind is None and base < para_col:  # 引用の中の段落（QUOTED）はどの行も容れ物の外
+                    lazy = True  # 容れ物の外の行も、ブロックを始めなければ段落の続き（下線は続きにならない）
+                else:
+                    items = [column for column in items if column <= width]
+                    if kind == "html":
+                        html = html_block(rest, inside) + (base,)
+                        in_html = True
+        if in_html and html is not None and html[0] is not None and html[0].search(line):
+            html = None  # 閉じの形の行までが塊
         heading = HEADING.match(line)
         if heading:
             level = len(heading.group(1))
@@ -197,16 +327,40 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
                 section = level if SECTION_HEADER.search(title) else None
             previous, counting, prose = None, False, False
             continue
-        if UNDERLINE.match(line) and prose:
+        if underline:
             section = None
             previous, counting, prose = None, False, False
             continue
-        stripped = line.strip()
         if not stripped.startswith("|"):
             previous, counting = None, False
-            prose = bool(stripped)
+            if not stripped or in_html:
+                prose = False
+            elif lazy:
+                pass
+            elif kind == "quote":
+                prose, para_col = quoted_paragraph(rest), QUOTED
+            elif kind == "item":
+                column, empty, content = item_column(rest)
+                column += base
+                items.append(column)
+                while not empty and block_kind(content, False) == "item":
+                    inner, empty, content = item_column(content)  # 同じ行で入れ子になった項（`- - x`）
+                    column += inner
+                    items.append(column)
+                fresh_empty = empty
+                prose, para_col = starts_paragraph(content), column
+                if block_kind(content, False) == "quote":
+                    prose, para_col = quoted_paragraph(content), QUOTED  # 引用で始まる項（中の段落は引用の段落）
+                if block_kind(content, False) == "html":
+                    html = html_block(content, False) + (column,)  # 中身が HTML の塊で始まる項（項の中の行も塊）
+                    if html[0] is not None and html[0].search(content):
+                        html = None
+            elif kind is not None:
+                prose = False  # 区切りの線・見出し・フェンス・HTML の塊・段落の外の 4 字下げのコード
+            elif not prose:
+                prose, para_col = True, base
             continue
-        prose = False
+        prose = False  # 表の行
         cell = unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip().strip("`*_ ")
         if SEPARATOR.fullmatch(stripped):
             counting = previous is not None and (CASE_HEADER.search(previous) is not None
