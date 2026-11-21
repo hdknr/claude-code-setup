@@ -134,11 +134,30 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "reset", "-q", "--hard", s["M"])
     s["M11"] = commit(repo, "no value decls", {".claude/dev-loop.md": MAIN_MD + NO_VALUE})
     git(repo, "reset", "-q", "--hard", s["M"])
+    # #1365: 周を squash でマージした既定ブランチ SQM（計画の記録の SHA は C1〜C3——SQM から辿れない）と、その後に計画を直す線
+    merged_plan = plan_text(sub(MERGED, **{"{" + k + "}": v for k, v in s.items()}))
+    counted = merged_plan + "\n- この周の起票: 1 件\n"
+    s["SQM"] = commit(repo, "squashed cycle", {PLAN_REL: merged_plan, "sq.txt": "q\n"})
+    s["PC"] = commit(repo, "count line only", {PLAN_REL: counted})
+    git(repo, "reset", "-q", "--hard", s["SQM"])
+    s["PC2"] = commit(repo, "count line and more", {PLAN_REL: counted, "sq.txt": "q2\n"})
+    git(repo, "reset", "-q", "--hard", s["SQM"])
+    s["PCv"] = commit(repo, "count line and version", {PLAN_REL: counted, ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.1"\n}\n'})
+    git(repo, "reset", "-q", "--hard", s["SQM"])
+    s["PCr"] = commit(repo, "count line and rewritten record", {PLAN_REL: counted.replace("反証=2", "反証=0")})
+    git(repo, "reset", "-q", "--hard", s["SQM"])
+    s["PCa"] = commit(repo, "touch other file", {"sq.txt": "tmp\n"})
+    s["PCb"] = commit(repo, "undo it and count", {"sq.txt": "q\n", PLAN_REL: counted})
+    git(repo, "reset", "-q", "--hard", s["M"])
+    s["NP"] = commit(repo, "plan only on an unmerged cycle", {PLAN_REL: merged_plan})
+    git(repo, "reset", "-q", "--hard", s["M"])
     git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
     git(repo, "switch", "-q", "issue/1-x")
     git(repo, "merge", "-q", "--no-edit", "--no-ff", "main")
     s["MM"] = git(repo, "rev-parse", "HEAD")
     s["D"] = commit(repo, "late fix", {"a.txt": "4\n"})
+    # #1332: 当て直し（MM → D）の後に足した直し（#1190 の F1 の形——当て直しの範囲の外）
+    s["D2"] = commit(repo, "fix after re-check", {"a.txt": "5\n"})
     git(repo, "reset", "-q", "--hard", s["MM"])
     s["X"] = commit(repo, "version and more", {
         ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.2"\n}\n', "a.txt": "5\n"})
@@ -205,6 +224,7 @@ CRIT = ["受入基準: A1 満たす", "受入基準: A2 未証明"]
 FULL = ["周の base: {B}", "関門: Verifier 1 {C1} 反証=2", "関門: /code-review 1 {C1} 指摘=5",
         "関門: Verifier 2 {C2} 反証=1", "関門: /code-review 2 {C2} 指摘=3", "関門: 狭いパス {C2} {C3} 反証=0"]
 REFL = "マージの反映: ドキュメントとプラグインの配布"
+MERGED = FULL + [REFL]  # 周を squash でマージした既定ブランチ（SQM）の計画の記録（#1365）
 ONE_PASS = ["周の base: {B}", "関門: Verifier 1 {C1} 反証=0", "関門: /code-review 1 {C1} 指摘=0",
             "関門: 狭いパス 該当なし"]
 
@@ -276,6 +296,16 @@ CASES = {
     "不在の周では BLOCKED を線（マージ前の判断（後退・未達を含む））でも通す（#1176）":
         (FULL + ["マージの反映: ドキュメントとプラグインの配布"], "MM", 0, ["--absent"],
          {"crit": ["受入基準: A1 BLOCKED 判断=マージ前の判断（後退・未達を含む）", "受入基準: A2 満たす"]}),
+    # #1332 の手順の陽性対照: 同じ満たしていない受入基準 A1 を、直す前の手順と直した手順の記録で照合に当てる
+    "#1332 直す前の手順（古い値の周は満たさないを線で通せない）は止まる":
+        (FULL + [REFL], "MM", 3, ["--absent"],
+         {"crit": ["受入基準: A1 満たさない", "受入基準: A2 満たす"]}, "判断の出所"),
+    "#1332 直した手順（直しを当て直しの範囲に収めて満たす）は進む":
+        (FULL + ["関門: 当て直し {MM} {D} 反証=1", REFL], "D", 0, ["--absent"],
+         {"crit": ["受入基準: A1 満たす", "受入基準: A2 満たす"]}),
+    "#1332 当て直しの後に足した直し（範囲の外）は止まる":
+        (FULL + ["関門: 当て直し {MM} {D} 反証=0", REFL], "D2", 3, ["--absent"],
+         {"crit": ["受入基準: A1 満たす", "受入基準: A2 満たす"]}, "fix after re-check"),
     "満たさないを線（実機確認）で通さない（不在の周でも。#1176 の後も）":
         (FULL + ["マージの反映: ドキュメントとプラグインの配布"], "MM", 3, ["--absent"],
          {"crit": ["受入基準: A1 満たさない 判断=実機確認", "受入基準: A2 満たす"]}, "この出所（"),
@@ -354,6 +384,23 @@ CASES = {
         (FULL + ["関門: 当て直し {MM} {H3} 反証=0", REFL], "H3", 3, ["--absent"], {"default": "M3"}, "不在で止める範囲: deepdir」に当たる"),
     "ブランチにだけ足した範囲の宣言は効かない（既定ブランチから読む）":
         (FULL + ["関門: 当て直し {MM} {Y2} 反証=0", REFL], "Y2", 0, ["--absent"], {}),
+    # マージ済みの周の計画ファイルだけを直す差分（#1365）。既定ブランチは SQM（周を squash でマージした後）
+    "マージ済みの周の計画ファイルだけを直す差分は、記録の SHA が辿れなくても 0（#1365）":
+        (MERGED, "PC", 0, [], {"default": "SQM"}, "マージ済みの周の計画ファイルだけ"),
+    "マージ済みの周の計画ファイルだけを直す差分は、不在の周でも 0（#1365）":
+        (MERGED, "PC", 0, ["--absent"], {"default": "SQM"}, "マージ済みの周の計画ファイルだけ"),
+    "マージ済みの周の計画でも、計画のほかのファイルも変える差分は非 0（#1365）":
+        (MERGED, "PC2", 3, [], {"default": "SQM"}, "祖先でない"),
+    "マージ済みの周の計画でも、版の行を足した差分は非 0（#1365 の (b)）":
+        (MERGED, "PCv", 3, [], {"default": "SQM"}, "祖先でない"),
+    "マージ済みの周の計画でも、途中で計画のほかを変えて戻した線は非 0（#1365 の (c)）":
+        (MERGED, "PCb", 3, [], {"default": "SQM"}, "祖先でない"),
+    "マージ済みの周の計画でも、記録を書き換えた差分は非 0（#1365 の (a)）":
+        (sub(MERGED, **{"反証=2": "反証=0"}), "PC", 3, [], {"default": "SQM"}, "祖先でない"),
+    "マージ済みの周の計画でも、head のコミットで記録を書き換えていれば非 0（読んだ計画が既定ブランチと同じでも。#1365 の (a)）":
+        (MERGED, "PCr", 3, [], {"default": "SQM"}, "祖先でない"),
+    "既定ブランチに計画が無ければ、計画だけの差分でも記録の SHA を照らす（#1365）":
+        (MERGED, "NP", 3, [], {}, "祖先でない"),
     "記録が無ければ 2": (FULL, "MM", 2, [], {"block": False}, "記録"),
     "記録が 2 つあれば 2": (FULL, "MM", 2, [], {"extra": "\n```dev-loop-gates\n周の base: {B}\n```\n"}, "2 つ"),
     "読めない行があれば 2": (FULL + ["関門: Verifier 1 {C1}"], "MM", 2, [], {}, "読めない行"),
@@ -426,6 +473,15 @@ MUTATIONS = {
     "起点を範囲に数える": ("commit != s and ", ""),
     # 守る 11: 計画と版の行だけは通す
     "計画だけのコミットを通さない": ("if f == ctx.plan_rel:", "if False:"),
+    # 守る（#1365）: マージ済みの周の計画ファイルだけを直す差分は、記録の SHA を照らさずに通す
+    "マージ済みの計画だけの差分も記録の SHA を照らす": ("    if merged_plan_only(rec, ctx):\n        return []", "    if False:\n        return []"),
+    # 守る（#1365 の (b)）: 計画のほかも変える差分は今までどおり
+    "計画のほかの差分も通す": ("    if files != [ctx.plan_rel]:\n", "    if False:\n"),
+    # 守る（#1365 の (a)）: 記録を書き換えた差分は今までどおり
+    "書き換えた記録も通す": ("        if merged != rec.block:\n", "        if False:\n"),
+    # 守る（#1365 の (c)）: 途中のコミットが計画のほかを変えていれば今までどおり
+    "途中のコミットを見ない": ("        if not ctx.is_ancestor(commit, default) and not exempt(ctx, commit, parents):\n            return False  # (c)",
+                          "        if False:\n            return False  # (c)"),
     # 守る 12: 既定ブランチ以外の取り込み
     "どの枝の取り込みも通す": ("return all(ctx.is_ancestor(p, default) for p in parents[1:])", "return True"),
     # 守る 13: 表の番号に判定
@@ -496,12 +552,15 @@ EXTRA_MUTATIONS = {
        for p in PARTICLES_DOC},
     "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": (
         'mark == "**" or tail == "" or tail[0].isspace()', "True"),
+    "head のコミットの中の記録を見ない（#1365 の (a)）": ("        if gate_block(at_head.stdout) != merged:\n", "        if False:\n"),
     "チェックボックス `[ ]` を外す": (r"\[[ xX]\]", r"\[[xX]\]"),
     "チェックボックス `[x]` を外す": (r"\[[ xX]\]", r"\[[ X]\]"),
     "チェックボックス `[X]` を外す": (r"\[[ xX]\]", r"\[[ x]\]"),
 }
 
 KILLS = {
+    "head のコミットの中の記録を見ない（#1365 の (a)）": [
+        "マージ済みの周の計画でも、head のコミットで記録を書き換えていれば非 0（読んだ計画が既定ブランチと同じでも。#1365 の (a)）"],
     "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": [
         "強調の閉じがコロンの内側にある宣言は、宣言したパターンで照合して止める（F1）"],
     **{f"助詞「{p}」を外す": ["キーワードを含むだけの散文の行では止めない（J2）"] for p in PARTICLES_DOC},
@@ -523,6 +582,11 @@ KILLS = {
     "起点を範囲に数える": ["狭いパスの起点そのものは範囲に数えない"],
     "計画だけのコミットを通さない": ["全部通した計画は 0（2 パス・狭いパス・計画と版の行だけのコミット・main の取り込み）"],
     "どの枝の取り込みも通す": ["main でない枝を取り込んだ merge commit は非 0"],
+    "マージ済みの計画だけの差分も記録の SHA を照らす": ["マージ済みの周の計画ファイルだけを直す差分は、記録の SHA が辿れなくても 0（#1365）",
+                                         "マージ済みの周の計画ファイルだけを直す差分は、不在の周でも 0（#1365）"],
+    "計画のほかの差分も通す": ["マージ済みの周の計画でも、版の行を足した差分は非 0（#1365 の (b)）"],
+    "書き換えた記録も通す": ["マージ済みの周の計画でも、記録を書き換えた差分は非 0（#1365 の (a)）"],
+    "途中のコミットを見ない": ["マージ済みの周の計画でも、途中で計画のほかを変えて戻した線は非 0（#1365 の (c)）"],
     "判定の無い番号を見ない": ["受入基準の表の番号に判定が無ければ非 0"],
     "判断の出所が無くても通す": ["BLOCKED に判断の出所が無ければ非 0"],
     "満たさないを線で通す": ["満たさないを線で通さない（不在の周でも）",
