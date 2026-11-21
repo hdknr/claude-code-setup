@@ -99,6 +99,8 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 狭いパス: 反証 0 件（記録 R1〜R4・素通りした変異 2 件。下の表）
 - マージ前の判断の直しの起点: `8cbc0ae5`（NP-R1a・NP-R2 の一部・NP-M1・M2）・終点: `c634f233`
 - 当て直し（`8cbc0ae5` → `c634f233`。1 回だけ）: 反証 1 件（RA-1。下の表）。陽性対照 `i1389-npctl.py` を Verifier が走らせ直し、起点 exit=5・終点 exit=0。`i1389-posctl.py` も終点で exit=0
+- PR: #1410（`6eab4613` で PR 側の CI 9 本すべて pass・deploy は skipping）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` が 3）
+- 割り目: どちらも割らない（cruise の周）
 - main の取り込み: 狭いパスと当て直しの後に `origin/main`（`0f4432d5`。#1399）を取り込み（衝突なし）、spec-loop を 0.131.4 に上げ直した。取り込んだ後の base（`git merge-base origin/main HEAD`）は `0f4432d5`——依存・仕様の戻しの歯止めにはこれを渡す。取り込みで増えた検査は無い（`git diff --name-status HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'` が空）
 - 2 パス目の直し: 鉤括弧の名指しだけのセル（`CALLER_NAMED`）・飾りつきと参照形式のリンク（`CALLER_LINK`）を案内に戻し、言い回しを熟語の一部に当てない形（漢字の前後・`次の`／`上の`／`下の` の後ろ・`見てから`・`参照する`・鉤括弧の後の `のとおり`）に絞った。
   確かめ: /code-review 2 パス目のプローブ（25 入力。`i1389-r2-probe.py`）を main と直した本体に当て、鉤括弧・リンクの 6 件は両方 pass、書きかけ 11 件は main が pass・直した版が名指す。残る差（`→`・`を見る`・`に記載`・`の見出しへ` を直した版が名指す）は既知の限界の表の行
