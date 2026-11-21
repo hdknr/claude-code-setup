@@ -23,6 +23,7 @@
    **後の版が同じファイルを置き換えたのは重複に数えない**（`merge-versions.py` で重ねた全体に当てる。別のファイルに同じ番号を置けば 1）。
    **番号の形が `references/spec-exit.md` の「テストケースの番号の重複」と一致する**（写しのずれ）。
    **テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の中では、見出しが `ID`・`No`・`項番` の表も読み、節の外では読まない**（#1333。`ID_HEADER`・`SECTION_HEADER` の写しも突き合わせる）。
+   **節を閉じるのは段落の直後の下線（`===`・`---`）だけで、区切りの線・箇条書きの項と引用（と続きの行）・HTML の塊・4 字下げのコードの直後の `---` では閉じない**（#1379。CommonMark の段落の続き。閉じる形——複数行の段落・段落を割り込めない行の後——は陰性対照）。
 8. **「呼ぶ側の分岐」の行が 8 分岐のどれかに触れていなければ 1 で落とし、行と欠けた分岐を名指しする**（#1340）——見出し・項目の行・表の行・表の見出しの 4 つの形・
    まとめて書く書き方・行ごと該当なしは通し、組の名前だけ（`量: …`）・組に無い述語・別の節を指す書き方（「…と同じ」）・空の文は触れないと読む。
    **組と分岐の表が `references/spec-exit.md` の「呼ぶ側の分岐の行の形」と、分岐の名前が `references/spec-ir.md` の分岐の名前の表と一致する**（写しのずれ）。
@@ -82,6 +83,13 @@ CALLER_GROUPED = ["- 入力が欠ける・遅れる・順が崩れる: 該当な
                   "- 量が上限を超える・重なる: 該当なし（1 件ずつ）"]
 CALLER_TABLE_HEAD = "| 項目 | 書くもの |\n| --- | --- |\n"
 GAP = "触れていない"
+
+def after_case_table(middle: str) -> dict[str, str]:
+    """テストケースの節の ID の表（F1-1）の後ろに `middle` を置き、同じ番号の ID の表を続けた仕様（#1379）。
+    節を閉じていなければ 2 つ目の表も数えて重複（1）、閉じていれば数えずに 0。"""
+    table = "| ID | 手順 |\n| --- | --- |\n"
+    return {"order.md": "## テストケース\n\n" + table + "| F1-1 | a |\n\n" + middle + table + "| F1-1 | b |\n"}
+
 
 # (名前, qa.csv の中身（None なら作らない）, {仕様の相対パス: 中身}（None ならディレクトリを作らない）,
 #  期待する終了コード, 出力に含まれるべき文字列)
@@ -223,6 +231,40 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("区切りの線では節を閉じない", HEADER,
      {"order.md": "## テストケース\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | a |\n\n---\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | b |\n\n***\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | c |\n"}, 1,
      "3 か所で重複"),
+    # 段落の直後でない区切りの線は節を閉じない——段落かどうかを CommonMark の段落の続きに合わせる（#1379）。
+    # 区切りの線の後ろの ID の表も数えて 2 か所の重複になれば、節を閉じていない
+    ("本文の後に続く 2 本目の区切りの線では節を閉じない", HEADER, after_case_table("本文\n\n---\n---\n\n"), 1, "2 か所で重複"),
+    ("間に空行のある 2 本の区切りの線でも節を閉じない", HEADER, after_case_table("本文\n\n---\n\n---\n\n"), 1, "2 か所で重複"),
+    ("*** の直後の区切りの線では節を閉じない", HEADER, after_case_table("本文\n\n***\n---\n\n"), 1, "2 か所で重複"),
+    ("箇条書きの直後の区切りの線では節を閉じない", HEADER, after_case_table("- a\n---\n\n"), 1, "2 か所で重複"),
+    ("番号つきの項の直後の区切りの線では節を閉じない", HEADER, after_case_table("1. a\n---\n\n"), 1, "2 か所で重複"),
+    ("箇条書きの続きの行の後の区切りの線では節を閉じない", HEADER, after_case_table("- a\n続き\n---\n\n"), 1, "2 か所で重複"),
+    ("段落を割り込んだ箇条書きの後の区切りの線では節を閉じない", HEADER, after_case_table("本文\n- a\n---\n\n"), 1, "2 か所で重複"),
+    ("引用の直後の区切りの線では節を閉じない", HEADER, after_case_table("> a\n---\n\n"), 1, "2 か所で重複"),
+    ("引用の続きの行の後の区切りの線では節を閉じない", HEADER, after_case_table("> a\n続き\n---\n\n"), 1, "2 か所で重複"),
+    ("HTML コメントの直後の区切りの線では節を閉じない", HEADER, after_case_table("<!-- c -->\n---\n\n"), 1, "2 か所で重複"),
+    ("複数行の HTML コメントの直後の区切りの線では節を閉じない", HEADER, after_case_table("<!--\nc\n-->\n---\n\n"), 1, "2 か所で重複"),
+    ("HTML コメントの中の本文と線では節を閉じない", HEADER, after_case_table("<!--\n本文\n---\n-->\n\n"), 1, "2 か所で重複"),
+    ("空行を挟んだ pre の中の本文と線では節を閉じない", HEADER, after_case_table("<pre>\n\n本文\n---\n</pre>\n\n"), 1, "2 か所で重複"),
+    ("処理命令の直後の区切りの線では節を閉じない", HEADER, after_case_table("<?php x ?>\n---\n\n"), 1, "2 か所で重複"),
+    ("宣言の直後の区切りの線では節を閉じない", HEADER, after_case_table("<!DOCTYPE html>\n---\n\n"), 1, "2 か所で重複"),
+    ("CDATA の直後の区切りの線では節を閉じない", HEADER, after_case_table("<![CDATA[x]]>\n---\n\n"), 1, "2 か所で重複"),
+    ("段落を割り込んだ div の中の本文と線では節を閉じない", HEADER, after_case_table("本文\n<div>\n本文\n---\n\n"), 1, "2 か所で重複"),
+    ("タグだけの行の直後の区切りの線では節を閉じない", HEADER, after_case_table("<span>\n---\n\n"), 1, "2 か所で重複"),
+    ("4 字下げのコードの直後の区切りの線では節を閉じない", HEADER, after_case_table("    code\n---\n\n"), 1, "2 か所で重複"),
+    ("タブで字下げしたコードの直後の区切りの線では節を閉じない", HEADER, after_case_table("  \tcode\n---\n\n"), 1, "2 か所で重複"),
+    # 段落の直後の下線は今までどおり節を閉じる（#1379 の陰性対照）
+    ("複数行の段落の下線で節を閉じる", HEADER, after_case_table("本文\n続き\n---\n\n"), 0, "条件 1 を満たす"),
+    ("4 字下げの続きの行を持つ段落の下線で節を閉じる", HEADER, after_case_table("本文\n    続き\n---\n\n"), 0, "条件 1 を満たす"),
+    ("引用の後に空行を挟んだ段落の下線で節を閉じる", HEADER, after_case_table("> a\n\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("コードの後の段落の下線で節を閉じる", HEADER, after_case_table("    code\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("1 でない番号の行は段落を割り込まない", HEADER, after_case_table("本文\n2. a\n---\n\n"), 0, "条件 1 を満たす"),
+    ("空の項は段落を割り込まない", HEADER, after_case_table("本文\n*\n---\n\n"), 0, "条件 1 を満たす"),
+    ("タグだけの行は段落を割り込まない", HEADER, after_case_table("本文\n<span>\n---\n\n"), 0, "条件 1 を満たす"),
+    ("HTML の塊の後に空行を挟んだ段落の下線で節を閉じる", HEADER, after_case_table("<div>\n\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("閉じた HTML コメントの後の段落の下線で節を閉じる", HEADER, after_case_table("<!-- c -->\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("フェンスの後の段落の下線で節を閉じる", HEADER, after_case_table("- a\n```\nx\n```\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("小見出しの後の段落の下線で節を閉じる", HEADER, after_case_table("- a\n### 小\n本文\n---\n\n"), 0, "条件 1 を満たす"),
     ("== の下線の見出しでも節を閉じる", HEADER,
      {"order.md": "## テストケース\n\n" + CASE_HEAD + "| F1-1 | a | b |\n\n質問\n===\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0,
      "条件 1 を満たす"),
@@ -445,8 +487,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '        spots = f"{where[0][0]}:{where[0][1]}"', "同じファイルの重複は後ろの場所も名指しする"),
     ("先頭のセルでなく最後のセルを見る", CELL,
      'unicodedata.normalize("NFKC", stripped.rstrip("|").rsplit("|", 1)[-1]).strip().strip("`*_ ")', "先頭のセル以外は数えない"),
-    ("表の行でなくても数える", '        if not stripped.startswith("|"):\n            previous, counting = None, False\n            prose = bool(stripped)\n            continue\n',
-     "", "行頭が `|` でない行は数えない"),
+    ("表の行でなくても数える", '        if not stripped.startswith("|"):\n            previous, counting = None, False\n            item = LIST_ITEM.match(line)\n',
+     '        if False:\n            previous, counting = None, False\n            item = LIST_ITEM.match(line)\n', "行頭が `|` でない行は数えない"),
     ("飾りを外さない", CELL, 'unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip()', "等幅の飾りを外して数える"),
     ("強調だけ外さない", '.strip().strip("`*_ ")', '.strip().strip("`_ ")', "強調の飾りを外して数える"),
     ("アンダースコアだけ外さない", '.strip().strip("`*_ ")', '.strip().strip("`* ")', "アンダースコアの飾りを外して数える"),
@@ -472,7 +514,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            if counting:\n                found.append((number, \"F1-5b\"))\n", "見出し行の先頭のセルは番号に数えない"),
     ("区切りの行が無くても数える", "        if counting and CASE_NUMBER_RE", "        if (counting or (previous and CASE_HEADER.search(previous))) and CASE_NUMBER_RE",
      "区切りの行が無い表は数えない"),
-    ("表が切れても見出しを引き継ぐ", "            previous, counting = None, False\n            prose = bool(stripped)\n", "            previous = None\n            prose = bool(stripped)\n",
+    ("表が切れても見出しを引き継ぐ", "            previous, counting = None, False\n            item = LIST_ITEM.match(line)\n", "            previous = None\n            item = LIST_ITEM.match(line)\n",
      "表が切れたら見出しを引き継がない"),
     ("見出しの語を `テストケース` だけにする", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', 'CASE_HEADER = re.compile(r"テストケース")',
      "英語の見出しでも数える"),
@@ -481,8 +523,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("見出しの語を部分一致で広げる", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', 'CASE_HEADER = re.compile(r"ケース|テスト|case|test", re.IGNORECASE)',
      "ユースケースの表は数えない"),
     ("見出しを行全体で探す", "        previous = cell\n    return found", "        previous = stripped\n    return found", "見出しは先頭のセルだけを見る"),
-    ("フェンスを開いても見出しの状態を残す", "            fence = opened.group(1)\n            previous, counting, prose = None, False, False\n",
-     "            fence = opened.group(1)\n            previous, prose = None, False\n", "フェンスは見出しの状態を消す"),
+    ("フェンスを開いても見出しの状態を残す", "            fence = opened.group(1)\n            previous, counting, prose, lazy = None, False, False, False",
+     "            fence = opened.group(1)\n            previous, prose, lazy = None, False, False", "フェンスは見出しの状態を消す"),
     ("フェンスの字下げを 2 字までにする", 'FENCE = re.compile(r"^ {0,3}', 'FENCE = re.compile(r"^ {0,2}', "3 字下げのフェンスも開く"),
     ("閉じのフェンスを同じ長さだけにする", "len(opened.group(1)) >= len(fence)", "len(opened.group(1)) == len(fence)", "長いフェンスで閉じる"),
     # テストケースの節の ID・No・項番の表（#1333）
@@ -512,6 +554,45 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("下線で節を閉じない", "        if UNDERLINE.match(line) and prose:\n            section = None\n", "        if UNDERLINE.match(line) and prose:\n            pass\n", "下線の見出しで節を閉じる"),
     ("空行の後の区切りの線でも節を閉じる", "        if UNDERLINE.match(line) and prose:", "        if UNDERLINE.match(line):", "区切りの線では節を閉じない"),
     ("== の下線を見ない", r'UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)', r'UNDERLINE = re.compile(r"^ {0,3}(?:-+)', "== の下線の見出しでも節を閉じる"),
+    # 段落の続き（#1379）。`prose` を戻す変異——区切りの線・箇条書きと引用・HTML の塊・4 字下げのコードを段落と読む
+    ("区切りの線を段落と読む", "            elif in_html or THEMATIC.match(line):", "            elif in_html:", "本文の後に続く 2 本目の区切りの線では節を閉じない"),
+    ("*** を区切りの線と読まない", r'THEMATIC = re.compile(r"^ {0,3}([-*_])', r'THEMATIC = re.compile(r"^ {0,3}([-_])', "*** の直後の区切りの線では節を閉じない"),
+    ("HTML の塊の中を段落と読む", "            elif in_html or THEMATIC.match(line):", "            elif THEMATIC.match(line):", "HTML コメントの中の本文と線では節を閉じない"),
+    ("箇条書きと引用を段落と読む", "                prose, lazy = False, True  # 空の項", "                prose, lazy = True, False  # 空の項",
+     "箇条書きの直後の区切りの線では節を閉じない"),
+    ("番号つきの項を見ない", r'LIST_ITEM = re.compile(r"^ {0,3}(?:[-+*]|(\d{1,9})[.)])(?:[ \t]|$)")', r'LIST_ITEM = re.compile(r"^ {0,3}(?:[-+*])(?:[ \t]|$)()")',
+     "番号つきの項の直後の区切りの線では節を閉じない"),
+    ("引用を見ない", "QUOTE.match(line) or (item", "False or (item", "引用の直後の区切りの線では節を閉じない"),
+    ("項の続きの行を段落と読む", "            elif lazy:\n                prose = False\n", "            elif False:\n                prose = False\n",
+     "箇条書きの続きの行の後の区切りの線では節を閉じない"),
+    ("引用の続きの行を段落と読む", "            elif lazy:\n                prose = False\n", "            elif False:\n                prose = False\n",
+     "引用の続きの行の後の区切りの線では節を閉じない"),
+    ("4 字下げのコードを段落と読む", "            elif not prose and indent_width(line) >= 4:", "            elif False:",
+     "4 字下げのコードの直後の区切りの線では節を閉じない"),
+    ("段落の中の 4 字下げもコードと読む", "            elif not prose and indent_width(line) >= 4:", "            elif indent_width(line) >= 4:",
+     "4 字下げの続きの行を持つ段落の下線で節を閉じる"),
+    ("タブを 1 桁に数える", "            width += 4 - width % 4", "            width += 1", "タブで字下げしたコードの直後の区切りの線では節を閉じない"),
+    ("空行で続きの状態を消さない", "            if not stripped:\n                prose, lazy = False, False\n", "            if not stripped:\n                prose = False\n",
+     "引用の後に空行を挟んだ段落の下線で節を閉じる"),
+    ("1 でない番号の項も段落を割り込む", " or (item.group(1) is not None and int(item.group(1)) != 1)", "", "1 でない番号の行は段落を割り込まない"),
+    ("空の項も段落を割り込む", "not (prose and (not line[item.end():].strip()", "not (prose and (False", "空の項は段落を割り込まない"),
+    ("フェンスで項の続きの状態を残す", "            previous, counting, prose, lazy = None, False, False, False  # HTML",
+     "            previous, counting, prose = None, False, False  # HTML", "フェンスの後の段落の下線で節を閉じる"),
+    ("見出しで項の続きの状態を残す", "            previous, counting, prose, lazy = None, False, False, False\n            continue\n        if UNDERLINE",
+     "            previous, counting, prose = None, False, False\n            continue\n        if UNDERLINE", "小見出しの後の段落の下線で節を閉じる"),
+    ("タグだけの行も段落を割り込む", "        if opening.match(line) and (interrupts or not prose):", "        if opening.match(line):", "タグだけの行は段落を割り込まない"),
+    ("空行で HTML の塊を閉じない", "        if html is not None and html[0] is None and not line.strip():\n            html = None\n",
+     "        if html is not None and html[0] is None and not line.strip():\n            pass\n", "HTML の塊の後に空行を挟んだ段落の下線で節を閉じる"),
+    ("閉じの形で HTML の塊を閉じない", "            html = None  # 閉じの形の行までが塊", "            pass  # 閉じの形の行までが塊",
+     "閉じた HTML コメントの後の段落の下線で節を閉じる"),
+    ("pre を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<(?:pre|script|style|textarea)', r'(re.compile(r"^ {0,3}<(?:never|script|style|textarea)',
+     "空行を挟んだ pre の中の本文と線では節を閉じない"),
+    ("HTML コメントを HTML の塊と読まない", r'(re.compile(r"^ {0,3}<!--")', r'(re.compile(r"^ {0,3}<!--never")', "HTML コメントの直後の区切りの線では節を閉じない"),
+    ("処理命令を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<\?")', r'(re.compile(r"^ {0,3}<\?never")', "処理命令の直後の区切りの線では節を閉じない"),
+    ("宣言を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<![A-Za-z]")', r'(re.compile(r"^ {0,3}<!never[A-Za-z]")', "宣言の直後の区切りの線では節を閉じない"),
+    ("CDATA を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<!\[CDATA\[")', r'(re.compile(r"^ {0,3}<!never\[CDATA\[")', "CDATA の直後の区切りの線では節を閉じない"),
+    ("div を段落を割り込める塊と読まない", "dialog|dir|div|dl", "dialog|dir|dl", "段落を割り込んだ div の中の本文と線では節を閉じない"),
+    ("タグだけの行を HTML の塊と読まない", r'(re.compile(r"^ {0,3}(?:<[A-Za-z]', r'(re.compile(r"^ {0,3}(?:<never[A-Za-z]', "タグだけの行の直後の区切りの線では節を閉じない"),
     ("節の見出しの飾りを外さない", '.strip(" `*_").rstrip(":：").strip(" `*_")', "", "飾りと末尾のコロンを外した節の見出しも読む"),
     ("節の見出しの閉じの # を外さない", 'title = unicodedata.normalize("NFKC", line.strip().strip("#"))', 'title = unicodedata.normalize("NFKC", line.strip()[len(heading.group(1)):])', "閉じの # を外した節の見出しも読む"),
     # 呼ぶ側の分岐の行の揃い（#1340）
