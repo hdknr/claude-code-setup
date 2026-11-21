@@ -84,6 +84,9 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 直す線: 既定（出所: cruise の台帳の確かめた線）
 - 割り目（手順 4）: 割らない（cruise の周）
 - 交絡を潰した手順: 実験なし（赤→緑は同じ試料を直す前と直した後の版に当てる陽性対照）
+- 赤→緑: `python3 <scratchpad>/i1389-posctl.py <check-spec-exit.py>`（Issue の示した入力に `caller_rows`・`caller_problems` を当て、書きかけの行（3 行目）を 8 分岐で名指せば 0）——`47602d16`・`673c5e77` の本体で exit=1、直した本体で exit=0
+- 歯止め（実装のコミットの前）: `run-serial.py` 越しの `check-all.py` で `check-plan-counts.py` だけ落ちた（件数の行が無かった）→ 件数の行を足し、`check-plan-counts.py` 単体で 0。`test-check-spec-exit.py` は単体で `OK: 試料 224 件・変異 179 件`
+- 1 パス目の指摘対応の起点: 1 パス目の関門に渡した時点の HEAD（このコミットの次に記録する）
 
 ## 既知の限界・決着済みの論点
 
