@@ -69,7 +69,7 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
 | **図（`FIGURE_SUFFIXES`）の中の印** | 図を置くことがあるので落とさない。**見なかったファイルは件数と名前を出す**。図以外の読めないファイルは 2 にする |
 | **印を使わずに書いた未決定**（「あとで決める」「検討中」） | 言い回しは列挙しきれない。判定役（Red Team）が条件 2・3 で見る |
 | **ドット始まりのファイル・ディレクトリの中** | `.git` などを見ないため |
-| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（本文の行（段落）の直後の `===`・`---`）は見出しと読まず、テストケースの節を閉じる。段落の直後でない `---` は区切りの線で、閉じない。段落かどうかは CommonMark の段落の続きに合わせる: 空行・区切りの線・見出し・HTML の塊（CommonMark の 7 種）・段落の外の 4 字下げの行（コード）の後は段落でない。箇条書きの項と引用の行は、中身が段落で始まるときだけ段落を開き、空行までの続きの行（lazy）もその段落の続き——続きの行の `---` は下線にならない。下線は段落の容れ物の中身の桁（最上位は 0、項の中は項の中身の桁）まで字下げした行だけで、項の中身の桁まで字下げした `===`・`---` は項の中の下線の見出しとして節を閉じる。引用の中の段落の下線は見ない。項の中身の桁は空行をまたいで持ち、浅い行で項を閉じる。段落の中の 4 字下げの行と、段落と同じ容れ物の中の 1 でない番号の項・空の項・タグだけの行は段落を割り込まず、段落の続き。#1379。容れ物は箇条書きの項と引用だけを見て、引用の中の項・HTML の塊の中の行の入れ子は追わない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
+| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（本文の行（段落）の直後の `===`・`---`）は見出しと読まず、テストケースの節を閉じる。段落の直後でない `---` は区切りの線で、閉じない。段落かどうかは CommonMark の段落の続きに合わせる: 空行・区切りの線・見出し・HTML の塊（CommonMark の 7 種）・段落の外の 4 字下げの行（コード）の後は段落でない。箇条書きの項と引用の行は、中身が段落で始まるときだけ段落を開き、空行までの続きの行（lazy）もその段落の続き——続きの行の `---` は下線にならない。下線は段落の容れ物の中身の桁（最上位は 0、項の中は項の中身の桁）まで字下げした行だけで、項の中身の桁まで字下げした `===`・`---` は項の中の下線の見出しとして節を閉じる。引用の中の段落の下線は見ない。項の中身の桁は空行をまたいで持ち、浅い行で項を閉じる（空の項は、次の行が空行なら空のまま閉じる）。同じ行で入れ子になった項（`- - x`）は内側の項の桁まで積む。段落の中の 4 字下げの行と、段落と同じ容れ物の中の 1 でない番号の項・空の項・タグだけの行は段落を割り込まず、段落の続き。#1379。容れ物は箇条書きの項と引用だけを見て、引用の中の項・HTML の塊の中の行の入れ子は追わない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
 | **番号の形に当たらない行の識別子**（`1`・`あ`・`No.3` など） | 表ごとに 1 から振り直す連番は、表が違えば重複でも誤りでない。形に当たる番号だけを全体で一意とみなす |
 | **全角・半角の違い以外の表記ゆれ**（`F1-5B` と `F1-5b`・`F1‐5b`（別のハイフン）） | 別の番号として数える。NFKC で畳むのは全角の英数字とハイフンだけ |
 | **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
@@ -279,6 +279,7 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
     prose = False  # 直前の行が段落の中か（CommonMark の段落の続き——#1379）——次の下線で下線の見出しになる
     para_col = 0  # 開いている段落の容れ物の中身の桁（最上位は 0、項の中は項の中身の桁、引用の中は QUOTED）。下線はこの桁まで字下げした行だけ（#1379）
     items: list[int] = []  # 開いている箇条書きの項の中身の桁（外から内へ。空行をまたいで残り、浅い行で閉じる——#1379）
+    fresh_empty = False  # 直前の行が空の項の行か——次が空行なら、その項は空のまま閉じる（CommonMark: 項は空行 1 つまでしか空で始まれない）
     html = None  # いま HTML の塊の中なら (閉じの形,)（閉じの形が None なら空行で閉じる）。中の行は段落でない（#1379）
     section = None  # いまの見出しがテストケースの節の中なら、その節の見出しの深さ（#1333。小見出しは節を引き継ぐ）
     for number, line in enumerate(text.splitlines(), 1):
@@ -293,6 +294,9 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
             items = [column for column in items if column <= indent_width(line)]
             continue
         stripped = line.strip()
+        was_empty, fresh_empty = fresh_empty, False
+        if not stripped and was_empty and items:
+            items.pop()  # 空の項の後の空行で、その項は閉じる
         if html is not None and ((html[0] is None and not stripped) or (stripped and indent_width(line) < html[1])):
             html = None  # 空行で閉じる塊・容れ物（項）の外の行で閉じる塊
         in_html = html is not None
@@ -336,13 +340,19 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
             elif kind == "quote":
                 prose, para_col = quoted_paragraph(rest), QUOTED
             elif kind == "item":
-                column, _, content = item_column(rest)
-                items.append(base + column)
-                prose, para_col = starts_paragraph(content), base + column
+                column, empty, content = item_column(rest)
+                column += base
+                items.append(column)
+                while not empty and block_kind(content, False) == "item":
+                    inner, empty, content = item_column(content)  # 同じ行で入れ子になった項（`- - x`）
+                    column += inner
+                    items.append(column)
+                fresh_empty = empty
+                prose, para_col = starts_paragraph(content), column
                 if block_kind(content, False) == "quote":
                     prose, para_col = quoted_paragraph(content), QUOTED  # 引用で始まる項（中の段落は引用の段落）
                 if block_kind(content, False) == "html":
-                    html = html_block(content, False) + (base + column,)  # 中身が HTML の塊で始まる項（項の中の行も塊）
+                    html = html_block(content, False) + (column,)  # 中身が HTML の塊で始まる項（項の中の行も塊）
                     if html[0] is not None and html[0].search(content):
                         html = None
             elif kind is not None:
