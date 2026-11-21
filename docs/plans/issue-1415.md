@@ -112,6 +112,8 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 2 パス目の指摘対応の終点（狭いパスの終点）: `04691e6c`（P2-CR1。コミットの前に `run-serial.py` 越しの `check-all.py` で `54/101 本を回した（失敗 0 / 飛ばし 0）`・`test-check-spec-exit.py` OK）
 - 狭いパス: Verifier（`dev-loop:dev-loop-verifier`・sonnet）を `git diff 56543b1b 04691e6c` に当てた——反証 0 件・観察 2 件（NP1・NP2。下の「狭いパスの指摘」）。P2-CR1 の陽性対照: `→ 呼ぶ側の分岐（）` などは `a955412f`=1・`56543b1b`=0・`04691e6c`=1
 - 割り目（2 パス目の前）: 割らない（cruise の周）
+- PR: #1442（`5adddef6` で PR 側の CI 8 本すべて pass・deploy は skipping）。外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。関門の結果と振り分けは PR コメントに書いた
+- main の取り込み: していない（PR を作る時点で main は `ea0b06fd`（#1332。dev-loop だけ）へ進んでいた。spec-loop の版は main でも 0.131.6——マージの直前の取り込みと上げ直しは親の指示で回す。上げ方は上の「版の上げ方」）
 
 ## 既知の限界・決着済みの論点
 
