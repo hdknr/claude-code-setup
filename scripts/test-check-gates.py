@@ -156,6 +156,8 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "merge", "-q", "--no-edit", "--no-ff", "main")
     s["MM"] = git(repo, "rev-parse", "HEAD")
     s["D"] = commit(repo, "late fix", {"a.txt": "4\n"})
+    # #1332: 当て直し（MM → D）の後に足した直し（#1190 の F1 の形——当て直しの範囲の外）
+    s["D2"] = commit(repo, "fix after re-check", {"a.txt": "5\n"})
     git(repo, "reset", "-q", "--hard", s["MM"])
     s["X"] = commit(repo, "version and more", {
         ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.2"\n}\n', "a.txt": "5\n"})
@@ -294,6 +296,16 @@ CASES = {
     "不在の周では BLOCKED を線（マージ前の判断（後退・未達を含む））でも通す（#1176）":
         (FULL + ["マージの反映: ドキュメントとプラグインの配布"], "MM", 0, ["--absent"],
          {"crit": ["受入基準: A1 BLOCKED 判断=マージ前の判断（後退・未達を含む）", "受入基準: A2 満たす"]}),
+    # #1332 の手順の陽性対照: 同じ満たしていない受入基準 A1 を、直す前の手順と直した手順の記録で照合に当てる
+    "#1332 直す前の手順（古い値の周は満たさないを線で通せない）は止まる":
+        (FULL + [REFL], "MM", 3, ["--absent"],
+         {"crit": ["受入基準: A1 満たさない", "受入基準: A2 満たす"]}, "判断の出所"),
+    "#1332 直した手順（直しを当て直しの範囲に収めて満たす）は進む":
+        (FULL + ["関門: 当て直し {MM} {D} 反証=1", REFL], "D", 0, ["--absent"],
+         {"crit": ["受入基準: A1 満たす", "受入基準: A2 満たす"]}),
+    "#1332 当て直しの後に足した直し（範囲の外）は止まる":
+        (FULL + ["関門: 当て直し {MM} {D} 反証=0", REFL], "D2", 3, ["--absent"],
+         {"crit": ["受入基準: A1 満たす", "受入基準: A2 満たす"]}, "fix after re-check"),
     "満たさないを線（実機確認）で通さない（不在の周でも。#1176 の後も）":
         (FULL + ["マージの反映: ドキュメントとプラグインの配布"], "MM", 3, ["--absent"],
          {"crit": ["受入基準: A1 満たさない 判断=実機確認", "受入基準: A2 満たす"]}, "この出所（"),
