@@ -20,7 +20,7 @@
 - **引き**: そのファイルの中に**ちょうど 1 回**現れる原文の一部。**`prompts/` の行は項の頭**（引き）で始まる項に当たること。
 - **元の事故**: 行ができた事故の Issue 番号（`#233;#96`）。分からなければ `-`。**初期値は項の本文に現れた番号を機械で写したもので、事故の番号とは限らない**。
 - **登録日**: `YYYY-MM-DD`。この日以降の周だけを「効いていない周」に数える。
-- **同趣旨**: 同じ趣旨の行に共通の短い語（空でよい）。2 行以上が共有すれば、まとめる候補に出す。
+- **同趣旨**: 同じ趣旨の行に共通の短い語（空でよい）。**同じファイルで** 2 行以上が共有すればまとめる候補に出す（ファイルをまたぐ組は統合できないので別の表）。
 - **統合元**: この行に統合して台帳から外した行の ID（`;` 区切り。空でよい）。**統合できるのは同じファイルの行だけ**（別の受け手の文面に移さない）。
 - **測り方**: `指摘`（関門の指摘で効きが測れる行）か `不可`（実環境を壊さない禁止・報告の形・実装役への指示など、指摘にならず効きを測れない行）。
   **`不可` の行は外す候補に出さない**（効いた記録が無いことが不要の根拠にならないため）。別の表に「測れない行」として並べる。
@@ -321,9 +321,19 @@ def report(files: list[Path], registry: Path, window: int) -> int:
     for r in rows:
         if r["同趣旨"]:
             groups.setdefault(r["同趣旨"], []).append(r["ID"])
-    merge = {k: v for k, v in groups.items() if len(v) >= 2}
-    print(f"\nまとめる候補（同趣旨が 2 行以上）: {len(merge)} 組")
+    file_of = {r["ID"]: r["ファイル"] for r in rows}
+    merge: dict[str, list[str]] = {}
+    for k, v in groups.items():
+        for f in sorted({file_of[i] for i in v}):
+            same = [i for i in v if file_of[i] == f]
+            if len(same) >= 2:
+                merge[f"{k}（{f}）"] = same
+    across = {k: v for k, v in groups.items() if len({file_of[i] for i in v}) >= 2}
+    print(f"\nまとめる候補（同じファイルで同趣旨が 2 行以上。統合できるのは同じファイルの行だけ）: {len(merge)} 組")
     for k, v in sorted(merge.items()):
+        print(f"  {k}: {' '.join(v)}")
+    print(f"\n同趣旨だがファイルをまたぐ組（統合できない。重複の目印）: {len(across)} 組")
+    for k, v in sorted(across.items()):
         print(f"  {k}: {' '.join(v)}")
     if unknown:
         print(f"\n台帳に無い ID（外した行か綴りの誤り）: {' '.join(unknown)}")

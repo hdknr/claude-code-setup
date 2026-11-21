@@ -185,7 +185,12 @@ def case_report(effects_text: str | None = None) -> list[str]:
         expect("R2 窓が 1 大きければ V-01 は候補でない（境界）・一度も効かない V-02 は 3 周で候補", r, 0,
                "V-02\t0\t-\t3\t", "登録日 2026-01-01 以降の記録のある 3 周で 0 回", absent=("V-01（",))
         r = tr.run("report", str(plans), "--window", "1")
-        expect("R3 同趣旨 t の組が出る", r, 0, "まとめる候補（同趣旨が 2 行以上）: 1 組", "t: V-01 V-02")
+        expect("R3 同じファイルの同趣旨 t の組が出る", r, 0, "まとめる候補（同じファイルで同趣旨が 2 行以上。統合できるのは同じファイルの行だけ）: 1 組", "t（prompts/verifier.md）: V-01 V-02")
+        d = t / "across"
+        d.mkdir()
+        ac = Tree(d, effects_text, rows=[ROWS[0], ["I-01", "prompts/implementer.md", "**ZZZ いち", "-", "2026-01-01", "t", "", "不可"]])
+        r = ac.run("report", str(plans), "--window", "1")
+        expect("R14 ファイルをまたぐ同趣旨の組は、まとめる候補に出さず別の表に出す", r, 0, "同じファイルで同趣旨が 2 行以上。統合できるのは同じファイルの行だけ）: 0 組", "同趣旨だがファイルをまたぐ組（統合できない。重複の目印）: 1 組", "t: V-01 I-01")
         # R4 登録日より前の周は分母に入れない
         d = t / "late"
         d.mkdir()
@@ -385,6 +390,26 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
     def s_shorten(root, skill):
         (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA ひ"] + ROWS[0][3:]] + ROWS[1:]))
     scenario("G22 引きを縮めるだけなら 0", 0, "問題 0 件", s_shorten)
+    def s_move_file(root, skill):
+        rows = [r[:1] + ["prompts/implementer.md", "**ZZZ いち"] + r[3:] if r[0] == "V-03" else r for r in ROWS]
+        (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("- **CCC みっつめの行です**\n", ""))
+    scenario("G23 生き残る ID のファイルを変えたら 1（prompts/ の外・別の受け手へ移して eval を逃れない）", 1, "ファイルを", s_move_file, pre_base=add_impl)
+    def s_merge_new_target(root, skill):
+        remove_v02(skill)
+        (skill / "prompts" / "verifier.md").write_text((skill / "prompts" / "verifier.md").read_text() + "- **NEW あたらしい行です**\n")
+        rows = [r for r in ROWS if r[0] != "V-02"] + [["V-99", "prompts/verifier.md", "**NEW あたらしい", "-", "2026-01-01", "t", "V-02", "指摘"]]
+        (skill / "references" / "line-registry.csv").write_text(registry_text(rows))
+    scenario("G24 統合先が base に無い新しい行なら 1", 1, "統合先が base に無い", s_merge_new_target)
+    def s_dash(root, skill):
+        remove_v02(skill)
+        add_eval(root, eval_case("V-02", "-"))
+    scenario("G25 台帳が `-` で eval の `元の事故:` も `-` なら 1", 1, "元の事故:` が空", s_dash)
+    def s_other_yaml(root, skill):
+        remove_v02(skill)
+        (root / "plugins/dev-loop/evals/e1").mkdir(parents=True)
+        (root / "plugins/dev-loop/evals/e1/other.yaml").write_text(eval_case("V-02", "x"))
+    scenario("G26 case.yaml でないファイルは eval に数えない", 1, "eval が付いていない", s_other_yaml)
     scenario("G17 `外した行: V-021` では V-02 を外せない（前方一致で受けない）", 1, "外した行: V-02", s_prefix)
     def s_graders_empty(root, skill):
         remove_v02(skill)
@@ -450,6 +475,11 @@ MUTATIONS = [
     ("外した行の名指しを前方一致にする", "guard", '{re.escape(line_id)}\\s*$"', '{re.escape(line_id)}"', "guard"),
     ("統合先が別のファイルでも許す", "guard", 'and base_target["ファイル"] == r["ファイル"]:', ":", "guard"),
     ("同趣旨が空でも統合と認める", "guard", 'target is not None and r["同趣旨"] and target["ID"]', 'target is not None and target["ID"]', "guard"),
+    ("統合先が base に無くても許す", "guard", 'if base_target is not None and base_target["同趣旨"] == r["同趣旨"]', 'if base_target is None or base_target["同趣旨"] == r["同趣旨"]', "guard"),
+    ("元の事故が - でも許す", "guard", 'if not want and inc.group(1).strip() in ("", "-"):', "if False:", "guard"),
+    ("case.yaml 以外の yaml も数える", "guard", '/[^/]+/case\\.yaml"', '/[^/]+/[^/]+\\.yaml"', "guard"),
+    ("ファイルの変更を見ない", "guard", 'if h["ファイル"] != b["ファイル"]:', "if False:", "guard"),
+    ("ファイルをまたぐ同趣旨もまとめる候補に出す", "effects", "if len(same) >= 2:", "if True:", "report"),
     ("付け替えを見ない", "guard", "        if clash:\n", "        if False:\n", "guard"),
     ("言い換えも付け替えと見る（部分文字列で照合）", "guard", "        if clash:\n", '        if h["引き"] in old_text.stdout:\n', "guard"),
     ("base の先端と比べる", "guard", "base = mb.stdout.strip()", "pass", "guard"),

@@ -57,7 +57,7 @@ V-19,prompts/verifier.md,**バックグラウンドのジョブを残さない�
 V-20,prompts/verifier.md,**頼まれていない全体スイートを回さないこと。*,-,2026-11-20,no-full-suite,,不可
 V-21,prompts/verifier.md,**コンテナ・常駐するサービスを起動しないこと*,-,2026-11-20,no-containers,,不可
 V-22,prompts/verifier.md,反証は**証拠つき**で。証拠はコマンド出力かフ,-,2026-11-20,,,不可
-V-23,prompts/verifier.md,**反証ごとに、それを見つけた「とくに見てほしい,-,2026-11-20,report-item-number,,指摘
+V-23,prompts/verifier.md,**反証ごとに、それを見つけた「とくに見てほしい,-,2026-11-20,report-item-number,,不可
 V-24,prompts/verifier.md,**コマンドを実行できなかった場合は、その旨を明,-,2026-11-20,,,不可
 V-25,prompts/verifier.md,**反証が 0 件なら「0 件」と明記**してく,-,2026-11-20,,,不可
 V-26,prompts/verifier.md,**重い段（変異・スイート・外部の探索）ごとに、,-,2026-11-20,,,不可
