@@ -144,6 +144,8 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "reset", "-q", "--hard", s["SQM"])
     s["PCv"] = commit(repo, "count line and version", {PLAN_REL: counted, ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.1"\n}\n'})
     git(repo, "reset", "-q", "--hard", s["SQM"])
+    s["PCr"] = commit(repo, "count line and rewritten record", {PLAN_REL: counted.replace("反証=2", "反証=0")})
+    git(repo, "reset", "-q", "--hard", s["SQM"])
     s["PCa"] = commit(repo, "touch other file", {"sq.txt": "tmp\n"})
     s["PCb"] = commit(repo, "undo it and count", {"sq.txt": "q\n", PLAN_REL: counted})
     git(repo, "reset", "-q", "--hard", s["M"])
@@ -383,6 +385,8 @@ CASES = {
         (MERGED, "PCb", 3, [], {"default": "SQM"}, "祖先でない"),
     "マージ済みの周の計画でも、記録を書き換えた差分は非 0（#1365 の (a)）":
         (sub(MERGED, **{"反証=2": "反証=0"}), "PC", 3, [], {"default": "SQM"}, "祖先でない"),
+    "マージ済みの周の計画でも、head のコミットで記録を書き換えていれば非 0（読んだ計画が既定ブランチと同じでも。#1365 の (a)）":
+        (MERGED, "PCr", 3, [], {"default": "SQM"}, "祖先でない"),
     "既定ブランチに計画が無ければ、計画だけの差分でも記録の SHA を照らす（#1365）":
         (MERGED, "NP", 3, [], {}, "祖先でない"),
     "記録が無ければ 2": (FULL, "MM", 2, [], {"block": False}, "記録"),
@@ -462,7 +466,7 @@ MUTATIONS = {
     # 守る（#1365 の (b)）: 計画のほかも変える差分は今までどおり
     "計画のほかの差分も通す": ("    if files != [ctx.plan_rel]:\n", "    if False:\n"),
     # 守る（#1365 の (a)）: 記録を書き換えた差分は今までどおり
-    "書き換えた記録も通す": ("        if gate_block(shown.stdout) != rec.block:\n", "        if False:\n"),
+    "書き換えた記録も通す": ("        if merged != rec.block:\n", "        if False:\n"),
     # 守る（#1365 の (c)）: 途中のコミットが計画のほかを変えていれば今までどおり
     "途中のコミットを見ない": ("        if not ctx.is_ancestor(commit, default) and not exempt(ctx, commit, parents):\n            return False  # (c)",
                           "        if False:\n            return False  # (c)"),
@@ -536,12 +540,15 @@ EXTRA_MUTATIONS = {
        for p in PARTICLES_DOC},
     "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": (
         'mark == "**" or tail == "" or tail[0].isspace()', "True"),
+    "head のコミットの中の記録を見ない（#1365 の (a)）": ("        if gate_block(at_head.stdout) != merged:\n", "        if False:\n"),
     "チェックボックス `[ ]` を外す": (r"\[[ xX]\]", r"\[[xX]\]"),
     "チェックボックス `[x]` を外す": (r"\[[ xX]\]", r"\[[ X]\]"),
     "チェックボックス `[X]` を外す": (r"\[[ xX]\]", r"\[[ x]\]"),
 }
 
 KILLS = {
+    "head のコミットの中の記録を見ない（#1365 の (a)）": [
+        "マージ済みの周の計画でも、head のコミットで記録を書き換えていれば非 0（読んだ計画が既定ブランチと同じでも。#1365 の (a)）"],
     "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": [
         "強調の閉じがコロンの内側にある宣言は、宣言したパターンで照合して止める（F1）"],
     **{f"助詞「{p}」を外す": ["キーワードを含むだけの散文の行では止めない（J2）"] for p in PARTICLES_DOC},
