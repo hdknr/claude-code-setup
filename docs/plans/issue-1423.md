@@ -111,6 +111,10 @@ main へのマージは GitHub Pages の再ビルドとプラグインの配布�
 - 2 パス目（先端 `57ce0f01`）: Verifier（sonnet）**反証 2 件**（F1・F2）／`/code-review`（high）**指摘 7 件**。採否は下の 2 パス目の表。
 - 狭いパスの終点: `b1ff598e42a8554fa3dd26360ede3ea173d908e0`（2 パス目の指摘対応のコミット。`git diff 57ce0f01 b1ff598e`）。
 - 狭いパス（Verifier sonnet）: **反証 1 件**（N1・後退——修正の起点 57ce0f01 で rc=1、b1ff598e で rc=0。main の b9fca0c7 でも rc=0）。著者の変異 3 件は赤と確認。直さず PR コメントで渡す（マージ前の判断）。
+- 当て直し（Verifier sonnet 1 回。`git diff b1ff598e 45df5ce7`）: **反証 0 件**。b1ff598e で本体の行を 2 行に割ったため、変異「付け替え先を言い換えた付け替えを見ない」の壊す文字列が本体に 0 回になり、
+  `test-line-effects.py` が AssertionError で落ちた（b1ff598e の `check-all.py`）。壊す文字列を新しい行に合わせた（45df5ce7）。当て直しは全 40 件の文字列が 1 回ずつ・直した変異が G27・G28・G38 で赤を確かめた。
+- `check-all.py`（run-serial 越し）: b1ff598e で 3 本落ちた——`check-plan-counts.py`（件数の行が無かった。書いた）・`test-line-effects.py`（上の変異の文字列）・`test-intake-code.py`（「このリポジトリの作業ツリーを変えていない」——**走っている最中に著者が計画ファイルを編集した**のが原因で、テストの不安定ではない）。
+  45df5ce7 の 2 回目: **20/101 本を回し失敗 0**（81 本はキャッシュ。`test-line-effects.py` OK 570 秒・`test-intake-code.py` OK）。
 - 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。
 
 ## 既知の限界・決着済みの論点
@@ -154,6 +158,7 @@ main へのマージは GitHub Pages の再ビルドとプラグインの配布�
 関門: Verifier 2 57ce0f0117ab28e1a05258e51f9db8981e14e40d 反証=2
 関門: /code-review 2 57ce0f0117ab28e1a05258e51f9db8981e14e40d 指摘=7
 関門: 狭いパス 57ce0f0117ab28e1a05258e51f9db8981e14e40d b1ff598e42a8554fa3dd26360ede3ea173d908e0 反証=1
+関門: 当て直し b1ff598e42a8554fa3dd26360ede3ea173d908e0 45df5ce7c77e 反証=0
 受入基準: 1 満たす
 受入基準: 2 満たす
 受入基準: 3 BLOCKED 判断=マージ前の判断
