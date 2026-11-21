@@ -418,6 +418,17 @@ CALLER_LINK = re.compile(rf"\[{CALLER_DECOR}{CALLER_LABEL}{CALLER_DECOR}\](?:\(|
 CALLER_POINTER_WORDS = re.compile(
     r"(?<![一-龥々])節(?![一-龥々])|(?<![一-龥々])参照(?![元先す])|(?<![一-龥々])[後前]述"
     r"|(?<![一-龥々])[上下](?:記|に|の(?:節|表|項|見出し|行|「|『))|次の(?:節|表|項|見出し|行)|見よ(?!う)|見て(?!から|い)|[」』]の(?:とおり|通り)")
+# 一覧に無い言い回しの案内（#1415）——部分がこの形だけのときに限る。語の前の矢印（`→ 呼ぶ側の分岐`・`→「呼ぶ側の分岐」`）と、
+# 語（鉤括弧の閉じ・強調・等幅を含む——`CALLER_CLOSE`）の直後で部分が終わる `を見る`・`に記載`（`呼ぶ側の分岐を見る`・`「呼ぶ側の分岐」に記載`。後ろの句読点は許す）。
+# 後ろに文が続く（`呼ぶ側の分岐を見るのは後で`・`→ 呼ぶ側の分岐は後で書く`）・語の後ろに別の語や句読点・括弧が挟まる（`呼ぶ側の分岐は後で見る`・`呼ぶ側の分岐。に記載`）は書きかけとして名指す。
+# 行のほかの空でない部分が案内でなければ（`→ 呼ぶ側の分岐<br>後で書く`）、この形の部分があっても案内と読まない（`caller_rows`）。
+# 形の前は鉤括弧の開き・強調・等幅・空白（`CALLER_OPEN`）、形の終わりは句読点・空白（`CALLER_PUNCT`）だけで、括弧は許さない（`→ 呼ぶ側の分岐（）` は書きかけ）
+CALLER_OPEN = r"[*_`「『\s]*"
+CALLER_CLOSE = r"[*_`」』]*"
+CALLER_PUNCT = r"[。.、\s]*"
+CALLER_POINTER_FORM = re.compile(
+    rf"{CALLER_OPEN}→{CALLER_OPEN}{CALLER_LABEL}{CALLER_CLOSE}{CALLER_PUNCT}"
+    rf"|{CALLER_OPEN}{CALLER_LABEL}{CALLER_CLOSE}(?:を見る|に記載){CALLER_PUNCT}")
 
 
 def _caller_pointer(part: str) -> bool:
@@ -426,6 +437,11 @@ def _caller_pointer(part: str) -> bool:
         return False
     return (CALLER_NAMED.fullmatch(part) is not None or CALLER_LINK.search(part) is not None
             or CALLER_POINTER_WORDS.search(part) is not None)
+
+
+def _caller_form(part: str) -> bool:
+    """表の行の中身の 1 つの部分が、一覧に無い言い回しの案内の形だけか（#1415）。"""
+    return CALLER_POINTER_FORM.fullmatch(part) is not None
 
 
 def _bare(text: str) -> str:
@@ -575,12 +591,16 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
         first = True  # 中身の最初の空でない部分か——行ごと該当なしは、中身が `該当なし` で始まり、分岐の項目を持たないときだけ
         labelled = False  # 分岐の書き方の項目を 1 つでも持つか
         pointed = False  # ほかの行を指す案内の部分を持つか（#1389）
+        formed = False  # 一覧に無い言い回しの案内の形の部分を持つか（#1415）
+        loose = False  # 一覧に無い言い回しの形でない空でない部分を持つか（#1415）
         for part in (piece for entry in content for piece in BREAK.split(entry)):
             pointed = pointed or _caller_pointer(part)
+            formed = formed or _caller_form(part)
             item = _caller_item(part)
             plain = _bare(BULLET.sub("", unicodedata.normalize("NFKC", part).strip()).strip("|"))
             if not plain:
                 continue
+            loose = loose or not _caller_form(part)  # 既存の形の案内の部分があれば、`pointed` がもう真
             leading, first = first, False
             if item is None or caller_label(item[0]) is None:
                 if leading and plain.startswith(CALLER_NONE):
@@ -601,9 +621,12 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
         whole_none = whole_none and not labelled
         missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
         # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、セル（`<br>` で分けた部分）の中で「呼ぶ側の分岐」を鉤括弧の名指しだけ・リンクで名指すか、
-        # 案内の言い回し（`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、
+        # 案内の言い回し（`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）か、
+        # 一覧に無い言い回しの形（`CALLER_POINTER_FORM`。`| 呼ぶ側の分岐 | → 呼ぶ側の分岐 |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐を見る |`）の部分を持ち、
+        # 空でない部分がどれも案内のもの（`| 呼ぶ側の分岐 | → 呼ぶ側の分岐<br>後で書く |` は案内でない。#1415）は、
         # ほかの行を指す案内——ほかに行があれば行に数えない
         # （書きかけの行（`| 呼ぶ側の分岐 | 後で書く |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く |`・`| 呼ぶ側の分岐 | 「呼ぶ側の分岐」は後で書く |`）は案内でない。#1389）
+        pointed = pointed or (formed and not loose)
         pointer = kind == "表" and not labelled and not whole_none and not refers and pointed
         rows.append((at + 1, missing, unread, refers, pointer))
         at = follow
