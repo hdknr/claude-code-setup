@@ -91,6 +91,7 @@ BLOCKED: なし。
 - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2）と /code-review 2 の両方。
 - 1 パス目の指摘対応: `36ac4092`（CR1〜CR4 を直した。`git diff d4cc574d` の計画ファイル以外が 2 ファイル）→ 2 パス目を回す。2 パス目の関門に渡した成果物: `36ac4092`（狭いパスの起点）。Verifier 2: 反証 1 件・/code-review 2: 指摘 8 件（直す 4——V2-1 と CR2-4 は同じ——・残課題 3・捨てる 1）。
 - 2 パス目の指摘対応: 起点 `36ac4092` → 終点 `322540db`（V2-1・CR2-1〜CR2-4）。狭いパス（dev-loop:dev-loop-verifier・sonnet）: 反証 1 件（R-1。記録だけ・後退ではない）。
+- マージ直前の取り込み（親の指示）: `git merge origin/main`（`673c5e77`。#1379 が spec-loop を 0.131.2 に上げていた）を merge commit `11b08652` で取り込み（衝突なし）、spec-loop を 0.131.3 に上げ直した。
 - PR #1407。PR 側の CI（先端 `d15a730e`）: 全部 pass（deploy は skipping）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` が 3）。
 
 ## 既知の限界・決着済みの論点
