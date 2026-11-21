@@ -91,6 +91,8 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 2 パス目: 該当なし（1 パス目の指摘対応の差分 0 行。起点 `8e4e2ef1`。`git diff 8e4e2ef1 -- ':(top)' ':(top,exclude)docs/plans/issue-1414.md'` が 0 行、`git status --porcelain` が計画ファイルだけ）
 - 狭いパス: 該当なし
 - 割り目（手順 6）: 2 パス目が無いので置かない
+- PR: #1427（`85667128` で PR 側の CI 8 本すべて pass・deploy は skipping）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` が 3）。関門の結果と振り分けは PR コメントに書いた
+- main の取り込み: していない（PR を作った後に main が `e7074c4d`（#1423）へ進んだ。spec-loop は触っていない——マージの直前の取り込みと上げ直しは親の指示で回す。上げ方は上の「版の上げ方」）
 - 関門の報告の届き方: 2 体とも SubagentHandback で「届けた」と返したが、親の会話に通知が来なかった。親が催促し、報告は子の transcript（`subagents/agent-<id>.jsonl` の SubagentHandback の引数）から読んだ
 - /code-review は `test-check-spec-exit.py` を run-serial を通さずに前景で直に走らせた（委譲文の決まりと違う。緑だったので負荷による偽の失敗の扱いは掛からない）
 
