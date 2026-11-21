@@ -568,7 +568,7 @@ MUTATIONS = [
     ("base の先端と比べる", "guard", "base = mb.stdout.strip()", "pass", "guard"),
     # #1423
     ("改名を追わない", "guard", 'moved = renamed.get(b["ファイル"]) == h["ファイル"]', "moved = False", "guard"),
-    ("付け替え先を言い換えた付け替えを見ない（前方一致だけで照らす）", "guard", "            clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash]\n", "            pass\n", "guard"),
+    ("付け替え先を言い換えた付け替えを見ない（前方一致だけで照らす）", "guard", "            clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash\n", "            clash += [f for f in [] if flat(f) and flat(f) in cur and f not in clash\n", "guard"),
     ("元の項の頭が残っていても別の項の頭を付け替えと見る", "guard", "        if not (prev is not None and flat(prev) in cur):", "        if True:", "guard"),
     ("HEAD に残った項に限らない（外した項の頭も照らす）", "guard", "and f in new_heads]", "]", "guard"),
     ("統合した項の頭も照らす", "guard", "and not any(f.startswith(m) for m in merged) and flat(f) not in prev_own]", "and flat(f) not in prev_own]", "guard"),
