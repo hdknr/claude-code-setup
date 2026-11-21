@@ -28,12 +28,18 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
   **`REFLECTED` に無い状態は数える側に倒れる**（決まりに状態が増えても、反映が残っている行を黙って落とさない）。
   暫定の行（判別は `check-qa-csv.py` の `is_provisional`）は件数を出す（要求確定のサインオフの前に確認が要る。`references/signoff-tags.md`）。
   Q&A 表の列検査（`check-qa-csv.py`）も `read_rows` で掛かる。
-- **テストケースの番号が重複していたら 1**（#1297）——**同じ重ねた全体の仕様（`spec/`）の `.md` の中で**、見出しの先頭のセルが `CASE_HEADER`（`テストケース`・`test case`・`ケース番号`・`TC` など。正規表現は `references/spec-exit.md`）に当たる表の、データ行の先頭のセルが
+- **テストケースの番号が重複していたら 1**（#1297）——**同じ重ねた全体の仕様（`spec/`）の `.md` の中で**、見出しの先頭のセルが `CASE_HEADER`（`テストケース`・`test case`・`ケース番号`・`TC` など。正規表現は `references/spec-exit.md`）に当たる表
+  （**と、テストケースの節（`#` の見出しの末尾がテストケースの語の節。小見出しの下を含む）の、見出しの先頭のセルが `ID_HEADER`（`ID`・`No`・`項番`）の表**。#1333）の、データ行の先頭のセルが
   番号（`CASE_NUMBER` の形）である行が、同じファイルでも別のファイルでも 2 つ以上あれば、番号と出た場所（`ファイル:行`）を全部名指しする。
   **中間表現のケースの `ref` の照合（`scaffold.py` の `check_ref`。#465）は番号が原文に在るかだけを見る**ので、重複は通り、どちらの行を写したのかが決まらない。
   **数えるのは重ねた後の全体**——後の版が同じファイルを置き換えたなら、置き換えられた前の版の行は全体に無いので重複に数えない
   （重ね方は `merge-versions.py`。このスクリプトは重ねない）。番号の形・どの列を番号と読むか・読まないものは `references/spec-exit.md` の
   「テストケースの番号の重複」を正とする。重複が無い仕様では出力も終了コードも変わらない。
+- **「呼ぶ側の分岐」の行が 8 分岐のどれかに触れていなければ 1**（#1340）——仕様の `.md` の、見出し・項目の行・表の行・表の見出しの形の「呼ぶ側の分岐」の行ごとに、
+  分岐（`CALLER_BRANCHES`）のうち触れていないものを、行（`ファイル:行`）と一緒に名指しする。**組の名前だけの項目（`量: …`）と別の節を指す書き方（「…と同じ」）は
+  どの分岐にも触れない**（そう添えて出す）。**行の形・まとめて書く書き方・触れているの読み方は `references/spec-exit.md` の「呼ぶ側の分岐の行の形」を正とする。**
+  **分岐の名前の原本はここ**で、`scaffold.py` の `BRANCHES`（課題一覧（案）の未決定事項）はこれを読む——検査器と scaffold は同じ定義で数える。
+  行の無い仕様では出力も終了コードも変わらない。`check(callers=False)` は見ない（`scaffold.py` の前の版の時点の `--upto`）。
 - 未決定の印（`MARKERS`）と、印に当たらない語（`NOT_MARKERS`）は `references/spec-exit.md` の写しで、
   **写しがずれていないかはこのリポジトリの `scripts/test-check-spec-exit.py` が突き合わせて見る**。
 
@@ -63,10 +69,14 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
 | **図（`FIGURE_SUFFIXES`）の中の印** | 図を置くことがあるので落とさない。**見なかったファイルは件数と名前を出す**。図以外の読めないファイルは 2 にする |
 | **印を使わずに書いた未決定**（「あとで決める」「検討中」） | 言い回しは列挙しきれない。判定役（Red Team）が条件 2・3 で見る |
 | **ドット始まりのファイル・ディレクトリの中** | `.git` などを見ないため |
-| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの表でも読まない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
+| **テストケースの表以外の先頭のセル（見出しが `ID`・`No`・`項番` の表は、テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の外なら、テストケースの表でも読まない。節の中の小見出しの下の `ID` の表は、テストケースでなくても読む。下線の見出し（本文の行（段落）の直後の `===`・`---`）は見出しと読まず、テストケースの節を閉じる。段落の直後でない `---` は区切りの線で、閉じない。段落かどうかは CommonMark の段落の続きに合わせる: 空行・区切りの線・見出し・HTML の塊（CommonMark の 7 種）・段落の外の 4 字下げの行（コード）の後は段落でない。箇条書きの項と引用の行は、中身が段落で始まるときだけ段落を開き、空行までの続きの行（lazy）もその段落の続き——続きの行の `---` は下線にならない。下線は段落の容れ物の中身の桁（最上位は 0、項の中は項の中身の桁）まで字下げした行だけで、項の中身の桁まで字下げした `===`・`---` は項の中の下線の見出しとして節を閉じる。引用の中の段落の下線は見ない。項の中身の桁は空行をまたいで持ち、浅い行で項を閉じる（空の項は、次の行が空行なら空のまま閉じる）。同じ行で入れ子になった項（`- - x`）は内側の項の桁まで積む。段落の中の 4 字下げの行と、段落と同じ容れ物の中の 1 でない番号の項・空の項・タグだけの行は段落を割り込まず、段落の続き。#1379。容れ物は箇条書きの項と引用だけを見て、引用の中の項・HTML の塊の中の行の入れ子は追わない）・先頭のセル以外の番号・`.md` 以外のファイルの番号（`.MD` を含む）・フェンスのコードブロックの中の番号・引用や先頭の `|` の無い表・`1-1`・`TC001`・`TC-1.1` のような形の外の番号** | 番号を振る場所の決まりはテストケースの表の先頭のセルだけ（`references/spec-exit.md`）。ほかを読むと、Q&A・NFR・決定表の行の番号を並べた表や本文中の言及（`F1-5b を参照`）を重複に数える。**逆に、4 字下げのコードブロックと HTML コメントの中の表は、読んでしまう（数える）** |
 | **番号の形に当たらない行の識別子**（`1`・`あ`・`No.3` など） | 表ごとに 1 から振り直す連番は、表が違えば重複でも誤りでない。形に当たる番号だけを全体で一意とみなす |
 | **全角・半角の違い以外の表記ゆれ**（`F1-5B` と `F1-5b`・`F1‐5b`（別のハイフン）） | 別の番号として数える。NFKC で畳むのは全角の英数字とハイフンだけ |
 | **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
+| **「呼ぶ側の分岐」の行そのものが無い機能** | 機能の単位（仕様が書き分けている単位）を機械で決めない。行の無い機能は条件 2 の判定役（Red Team）が見る |
+| **4 つの形の外の「呼ぶ側の分岐」**（「呼ぶ側の分岐は次のとおり」のような本文・見出しの後ろに字が続く `呼ぶ側の分岐（受注）`）と、**`.md` 以外のファイルの行** | 行の形の決まり（`references/spec-exit.md`）の外は行と読まない——読まない行は揃いを見ない |
+| **分岐の項目の文の中身**（見せるものが仕様として足りるか・「該当なし」に理由があるか） | 触れているか（`:` の後ろに文があるか）だけを見る。中身は条件 2 の判定役が見る |
+| **4 字下げのコードブロックと HTML コメントの中の行** | フェンスのコードブロックの中だけを外す（テストケースの番号と同じ）。中の行も読んでしまう |
 """
 
 from __future__ import annotations
@@ -121,8 +131,122 @@ CASE_NUMBER = r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+"
 CASE_NUMBER_RE = re.compile(CASE_NUMBER)
 # テストケースの表の見出し（先頭のセル）。`references/spec-exit.md` の「テストケースの番号の重複」の写し
 CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)
+# テストケースの節の表の見出し（先頭のセル）。テストケースの節（`SECTION_HEADER`）の中でだけ、テストケースの表と読む（#1333）。
+# `references/spec-exit.md` の「テストケースの番号の重複」の写し
+ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)
+# テストケースの節の見出し（`#` の見出しの文）。**末尾が**テストケースの語（後ろに `一覧` と括弧書きを許す）。同じ写し
+SECTION_HEADER = re.compile(r"(?:テストケース|\btest ?cases?|\btc)(?:\s*一覧)?\s*(?:[(（][^()（）]*[)）])?$", re.IGNORECASE)
+HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")
+# 下線の見出しの下線（`===`・`---`）。本文の行（段落）の直後にあるときだけ下線の見出しで、節の見出しと読まず、テストケースの節を閉じる
+# （#1333。下線の見出しの下の表をテストケースに数えない。段落の直後でない `---`・`***` は区切りの線で、節を閉じない）。
+# 段落かどうかと、下線を取る桁は CommonMark の段落の続きに合わせる（#1379。決まりは `references/spec-exit.md` の「テストケースの番号の重複」）
+UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+# 区切りの線（`---`・`***`・`___`。間に空白を挟んでよい）。段落の直後の `---` は先に下線として読む
+THEMATIC = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+# 箇条書きの項の行（`-`・`+`・`*`・`1.`・`1)`）と引用の行
+LIST_ITEM = re.compile(r"^( {0,3}(?:[-+*]|(\d{1,9})[.)]))(?:[ \t]|$)")
+QUOTE = re.compile(r"^ {0,3}>")
+# HTML の塊（CommonMark の 7 種）の開き・閉じ（None なら空行で閉じる）・段落を割り込めるか
+BLOCK_TAGS = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|"
+              "fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|"
+              "main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|"
+              "title|tr|track|ul")
+HTML_ATTRIBUTE = r"""\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?"""
+HTML_BLOCKS = (
+    (re.compile(r"^ {0,3}<(?:pre|script|style|textarea)(?:[ \t>]|$)", re.IGNORECASE),
+     re.compile(r"</(?:pre|script|style|textarea)>", re.IGNORECASE), True),
+    (re.compile(r"^ {0,3}<!--"), re.compile(r"-->"), True),
+    (re.compile(r"^ {0,3}<\?"), re.compile(r"\?>"), True),
+    (re.compile(r"^ {0,3}<![A-Za-z]"), re.compile(r">"), True),
+    (re.compile(r"^ {0,3}<!\[CDATA\["), re.compile(r"\]\]>"), True),
+    (re.compile(r"^ {0,3}</?(?:" + BLOCK_TAGS + r")(?:[ \t>]|/>|$)", re.IGNORECASE), None, True),
+    (re.compile(r"^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:" + HTML_ATTRIBUTE + r")*\s*/?>|</[A-Za-z][A-Za-z0-9-]*\s*>)[ \t]*$"), None, False),
+)
 SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def fence_closes(opened: re.Match[str] | None, fence: str, line: str) -> bool:
+    """開いているフェンス（`fence`）を、この行が閉じるか——同じ種類で、開きより短くなく、情報文字列の無いフェンスの行。
+    テストケースの番号（`case_rows`）と呼ぶ側の分岐の行（`caller_rows`）が同じ読み方でコードブロックを外す。"""
+    return bool(opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence) and not line.strip(" `~"))
+
+
+def indent_width(line: str) -> int:
+    """行頭の字下げの桁（タブは 4 の倍数の桁まで進める）。"""
+    width = 0
+    for ch in line:
+        if ch == " ":
+            width += 1
+        elif ch == "\t":
+            width += 4 - width % 4
+        else:
+            break
+    return width
+
+
+QUOTED = 10 ** 9  # 引用の中の段落の容れ物の桁——どの行もその桁まで字下げしないので、下線にならない
+
+
+def item_column(line: str) -> tuple[int, bool, str]:
+    """箇条書きの項の行（`LIST_ITEM` に当たる行だけを渡す）の、中身の桁・中身が空か・中身の文字列。
+    中身の桁は印の後ろの空白（1〜4 桁。5 桁以上なら 1 桁で、残りは字下げのコード）まで——この桁まで字下げした続きの行は項の中身（#1379）。"""
+    expanded = line.expandtabs(4)
+    marker = LIST_ITEM.match(expanded).end(1)
+    rest = expanded[marker:]
+    if not rest.strip():
+        return marker + 1, True, ""
+    spaces = len(rest) - len(rest.lstrip(" "))
+    column = marker + (spaces if spaces <= 4 else 1)
+    return column, False, expanded[column:]
+
+
+def block_kind(rest: str, prose: bool, inside: bool | None = None) -> str | None:
+    """容れ物（箇条書きの項）の中身の桁から見た行が始めるブロックの種類。段落の行（段落を始めるか、段落の続き）なら None。
+    `prose`（直前の行が段落の中）なら、4 字下げの行は段落の続き。`inside`（段落と同じ容れ物の中の行。省けば `prose`）なら、
+    段落を割り込めない形（空の項・1 でない番号の項・タグだけの行）も段落の続き——段落の容れ物の外の行では、これらもブロックを始める（#1379）。"""
+    inside = prose if inside is None else inside
+    if not rest.strip():
+        return "blank"
+    if indent_width(rest) >= 4:
+        return None if prose else "code"
+    if THEMATIC.match(rest):
+        return "thematic"
+    if HEADING.match(rest):
+        return "heading"
+    if FENCE.match(rest):
+        return "fence"
+    if QUOTE.match(rest):
+        return "quote"
+    item = LIST_ITEM.match(rest)
+    if item:
+        empty = item_column(rest)[1]
+        if inside and (empty or (item.group(2) is not None and int(item.group(2)) != 1)):
+            return None
+        return "item"
+    if html_block(rest, inside):
+        return "html"
+    return None
+
+
+def quoted_paragraph(line: str) -> bool:
+    """引用の行（`QUOTE` に当たる行）の中身が段落で始まるか（`>` の後ろの空白を 1 つ外して見る）。"""
+    content = line[QUOTE.match(line).end():]
+    return starts_paragraph(content[1:] if content.startswith(" ") else content)
+
+
+def starts_paragraph(content: str) -> bool:
+    """項・引用の中身が段落で始まるか——段落なら、その後ろの行は段落の続き（lazy）になりうる（#1379）。"""
+    return block_kind(content, False) is None
+
+
+def html_block(line: str, prose: bool) -> tuple[re.Pattern[str] | None] | None:
+    """この行が HTML の塊を開くなら (閉じの形,)（閉じの形が None なら空行で閉じる）、開かなければ None。
+    段落の直後（`prose`）では、段落を割り込めない 7 種目（ほかのタグだけの行）は開かない（段落の続き）。"""
+    for opening, closing, interrupts in HTML_BLOCKS:
+        if opening.match(line) and (interrupts or not prose):
+            return (closing,)
+    return None
 
 
 def find_markers(text: str) -> list[tuple[int, str]]:
@@ -145,28 +269,102 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
     """(行番号, 番号, 行の原文) の一覧。**見出しの先頭のセルがテストケースの表（`CASE_HEADER`）の、データ行の先頭のセル**だけを見る。
     行の原文は前後の空白を落とした 1 行（`scaffold.py` の `acceptance` が、中間表現に並べた原文から番号を引くのに使う。#1301）。
     見出し行そのもの・区切りの行・見出しが `CASE_HEADER` に当たらない表（Q&A・NFR・決定表の行の番号を並べた表など）は見ない。
+    **ただしテストケースの節（`#` の見出しの文の末尾が `SECTION_HEADER` に当たる。その節の小見出しの下も、同じか浅い見出しが来るまで節の中）では、
+    表の見出しの先頭のセルが `ID_HEADER`（`ID`・`No`・`項番`）の表もテストケースの表と読む**（#1333）。
     コードブロックの中は見ない。セルは NFKC で正規化し、前後の空白・バッククォート・`*`・`_`（強調と等幅の飾り）を外してから番号の形に当てる。"""
     found = []
     fence = None
     previous = None  # 直前の行が表の行なら、その先頭のセル（次の行が区切りの行なら見出し）
     counting = False  # いまの表の見出しがテストケースの表か
+    prose = False  # 直前の行が段落の中か（CommonMark の段落の続き——#1379）——次の下線で下線の見出しになる
+    para_col = 0  # 開いている段落の容れ物の中身の桁（最上位は 0、項の中は項の中身の桁、引用の中は QUOTED）。下線はこの桁まで字下げした行だけ（#1379）
+    items: list[int] = []  # 開いている箇条書きの項の中身の桁（外から内へ。空行をまたいで残り、浅い行で閉じる——#1379）
+    fresh_empty = False  # 直前の行が空の項の行か——次が空行なら、その項は空のまま閉じる（CommonMark: 項は空行 1 つまでしか空で始まれない）
+    html = None  # いま HTML の塊の中なら (閉じの形,)（閉じの形が None なら空行で閉じる）。中の行は段落でない（#1379）
+    section = None  # いまの見出しがテストケースの節の中なら、その節の見出しの深さ（#1333。小見出しは節を引き継ぐ）
     for number, line in enumerate(text.splitlines(), 1):
         opened = FENCE.match(line)
         if fence is not None:
-            if opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence) and not line.strip(" `~"):
+            if fence_closes(opened, fence, line):
                 fence = None
             continue
         if opened:
             fence = opened.group(1)
-            previous, counting = None, False
+            previous, counting, prose = None, False, False  # HTML の塊の状態は残す（塊の中のフェンスの形も今までどおりフェンスと読む）
+            items = [column for column in items if column <= indent_width(line)]
             continue
         stripped = line.strip()
+        was_empty, fresh_empty = fresh_empty, False
+        if not stripped and was_empty and items:
+            items.pop()  # 空の項の後の空行で、その項は閉じる
+        if html is not None and ((html[0] is None and not stripped) or (stripped and indent_width(line) < html[1])):
+            html = None  # 空行で閉じる塊・容れ物（項）の外の行で閉じる塊
+        in_html = html is not None
+        kind, lazy, underline, base, rest = None, False, False, 0, line
+        if stripped and not in_html:
+            width = indent_width(line)
+            base = max([0] + [column for column in items if column <= width])
+            rest = line.expandtabs(4)[base:]
+            if prose and para_col != QUOTED and width >= para_col and UNDERLINE.match(line.expandtabs(4)[para_col:]):
+                underline = True  # 段落の容れ物の中の下線（項の中の下線の見出しを含む）
+            else:
+                inside = prose and base >= para_col and para_col != QUOTED
+                kind = block_kind(rest, prose, inside)
+                if prose and kind is None and base < para_col:  # 引用の中の段落（QUOTED）はどの行も容れ物の外
+                    lazy = True  # 容れ物の外の行も、ブロックを始めなければ段落の続き（下線は続きにならない）
+                else:
+                    items = [column for column in items if column <= width]
+                    if kind == "html":
+                        html = html_block(rest, inside) + (base,)
+                        in_html = True
+        if in_html and html is not None and html[0] is not None and html[0].search(line):
+            html = None  # 閉じの形の行までが塊
+        heading = HEADING.match(line)
+        if heading:
+            level = len(heading.group(1))
+            if section is None or level <= section:
+                title = unicodedata.normalize("NFKC", line.strip().strip("#")).strip(" `*_").rstrip(":：").strip(" `*_")
+                section = level if SECTION_HEADER.search(title) else None
+            previous, counting, prose = None, False, False
+            continue
+        if underline:
+            section = None
+            previous, counting, prose = None, False, False
+            continue
         if not stripped.startswith("|"):
             previous, counting = None, False
+            if not stripped or in_html:
+                prose = False
+            elif lazy:
+                pass
+            elif kind == "quote":
+                prose, para_col = quoted_paragraph(rest), QUOTED
+            elif kind == "item":
+                column, empty, content = item_column(rest)
+                column += base
+                items.append(column)
+                while not empty and block_kind(content, False) == "item":
+                    inner, empty, content = item_column(content)  # 同じ行で入れ子になった項（`- - x`）
+                    column += inner
+                    items.append(column)
+                fresh_empty = empty
+                prose, para_col = starts_paragraph(content), column
+                if block_kind(content, False) == "quote":
+                    prose, para_col = quoted_paragraph(content), QUOTED  # 引用で始まる項（中の段落は引用の段落）
+                if block_kind(content, False) == "html":
+                    html = html_block(content, False) + (column,)  # 中身が HTML の塊で始まる項（項の中の行も塊）
+                    if html[0] is not None and html[0].search(content):
+                        html = None
+            elif kind is not None:
+                prose = False  # 区切りの線・見出し・フェンス・HTML の塊・段落の外の 4 字下げのコード
+            elif not prose:
+                prose, para_col = True, base
             continue
+        prose = False  # 表の行
         cell = unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip().strip("`*_ ")
         if SEPARATOR.fullmatch(stripped):
-            counting = previous is not None and CASE_HEADER.search(previous) is not None
+            counting = previous is not None and (CASE_HEADER.search(previous) is not None
+                                                 or (section is not None and ID_HEADER.fullmatch(previous) is not None))
             previous = None
             continue
         if counting and CASE_NUMBER_RE.fullmatch(cell) and any(ch.isdigit() for ch in cell):
@@ -189,6 +387,252 @@ def duplicate_numbers(places: dict[str, list[tuple[Path, int]]]) -> list[str]:
         spots = "、".join(f"{path}:{line}" for path, line in where)
         problems.append(f"{where[0][0]}:{where[0][1]}: テストケースの番号 {number} が {len(where)} か所で重複（{spots}）"
                         "——中間表現の `ref` がどの行を指すか決まらない")
+    return problems
+
+
+# 呼ぶ側の分岐（#1340）。`references/spec-exit.md` の「呼ぶ側の分岐の行の形」の写し（`scripts/test-check-spec-exit.py` が突き合わせる）。
+# **分岐の名前の原本はここ**——`scaffold.py` の `BRANCHES` はこれを読む（写さない）。組の名前 → (つなぐ助詞, 分岐の述語) の並び
+CALLER_LABEL = "呼ぶ側の分岐"
+CALLER_GROUPS = (
+    ("入力", (("が", "欠ける"), ("が", "遅れる"), ("の", "順が崩れる"))),
+    ("呼ぶ処理", (("が", "失敗する"), ("が", "やり直される"), ("が", "再起動する"))),
+    ("量", (("が", "上限を超える"), ("が", "重なる"))),
+)
+CALLER_BRANCHES = tuple(f"{group}{particle}{predicate}" for group, preds in CALLER_GROUPS for particle, predicate in preds)
+CALLER_NONE = "該当なし"
+# まとめて書くときの区切り（`入力が欠ける・遅れる`）。NFKC の後なので全角の `／` は `/` になっている
+CALLER_JOINERS = re.compile(r"[・、/]")
+BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?")  # タスクリストのチェックボックスも外す
+BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# 別の節を指す書き方（「[価格照会書を出力する] と同じ」）——文の末尾が「と同じ」
+REFERS = re.compile(r"(?:\]\([^)]*\)|[\]」』])\s*と同じ\s*(?:[。.]|[（(][^）)]*[）)])?$")  # 角括弧・鉤括弧・リンクで名指した先と「同じ」で文が終わる（後ろの句点・括弧書きは許す）
+# ほかの行を指す案内の表の行（#1389）——セル・`<br>` で分けた 1 つの部分の中に `呼ぶ側の分岐` の語があり、部分が鉤括弧の名指しだけ（`『呼ぶ側の分岐』`）か、
+# リンクの名指し（`[呼ぶ側の分岐](…)`・`[**呼ぶ側の分岐**](…)`・`[呼ぶ側の分岐][]`）か、案内の言い回しを伴うもの。
+# 鉤括弧で名指しても後ろに文が続くだけ（`「呼ぶ側の分岐」は後で書く`）は案内でない。言い回しは熟語の一部（`以下の`・`却下`・`調節`・`節約`・`節目`・`見てから`・`見ていない`・`見よう`・`参照先`）に当てない
+CALLER_DECOR = r"[*_`「」『』\s]*"
+# 名指しだけのセル——前後の鉤括弧・強調・等幅・括弧・句読点だけを許す（`『呼ぶ側の分岐』。`・`（『呼ぶ側の分岐』）`・`` `呼ぶ側の分岐` ``）
+CALLER_EDGE = r"[*_`「」『』（）()。.、\s]*"
+CALLER_NAMED = re.compile(rf"{CALLER_EDGE}{CALLER_LABEL}{CALLER_EDGE}")
+CALLER_LINK = re.compile(rf"\[{CALLER_DECOR}{CALLER_LABEL}{CALLER_DECOR}\](?:\(|\[)")
+CALLER_POINTER_WORDS = re.compile(
+    r"(?<![一-龥々])節(?![一-龥々])|(?<![一-龥々])参照(?![元先す])|(?<![一-龥々])[後前]述"
+    r"|(?<![一-龥々])[上下](?:記|に|の(?:節|表|項|見出し|行|「|『))|次の(?:節|表|項|見出し|行)|見よ(?!う)|見て(?!から|い)|[」』]の(?:とおり|通り)")
+
+
+def _caller_pointer(part: str) -> bool:
+    """表の行の中身の 1 つの部分が、ほかの行を指す案内か（#1389）。"""
+    if CALLER_LABEL not in part:
+        return False
+    return (CALLER_NAMED.fullmatch(part) is not None or CALLER_LINK.search(part) is not None
+            or CALLER_POINTER_WORDS.search(part) is not None)
+
+
+def _bare(text: str) -> str:
+    """前後の空白・強調と等幅の飾り（`*`・`_`・`` ` ``）を外す。"""
+    return text.strip().strip("*`_ ").strip()
+
+
+def caller_label(label: str) -> tuple[set[str], bool] | None:
+    """項目の見出し（`:` の前）を分岐の書き方として読む。読めれば (触れる分岐, 読めない書き方か)、組の名前で始まらなければ None。
+
+    分岐の名前（`入力が欠ける`）か、組の名前に `が`・`の` を続けてその組の述語を `・`・`、`・`/` で並べたもの
+    （`入力が欠ける・遅れる・順が崩れる`。並べる途中で別の組の分岐の名前を書いてもよい）。
+    **組の名前だけ（`量`）や組に無い述語を含む書き方は、どの分岐にも触れない**（読めない書き方として返す）。"""
+    label = _bare(label)
+    if not any(label.startswith(group) for group, _ in CALLER_GROUPS):
+        return None
+    touched: set[str] = set()
+    current = None
+    for piece in CALLER_JOINERS.split(label):
+        piece = _bare(piece)
+        for group, preds in CALLER_GROUPS:
+            if piece.startswith(group) and piece[len(group):len(group) + 1] in ("が", "の"):
+                current, piece = (group, preds), piece[len(group) + 1:]
+                break
+        if current is None:
+            return set(), True
+        group, preds = current
+        names = [f"{group}{particle}{predicate}" for particle, predicate in preds if predicate == piece]
+        if not names:
+            return set(), True
+        touched.update(names)
+    return touched, False
+
+
+def _caller_start(line: str) -> tuple[str, str] | None:
+    """行が「呼ぶ側の分岐」の行の始まりなら (形, 同じ行の中身)。形は `見出し`・`表`・`項目`。"""
+    text = unicodedata.normalize("NFKC", line)
+    heading = HEADING.match(text)
+    if heading:
+        title = _bare(text.strip().strip("#")).rstrip(":").strip()
+        title = re.sub(r"^[0-9]+(?:\.[0-9]+)*\.?\s+", "", _bare(title))  # 節の番号（`3.2 `）を外す
+        return ("見出し", "") if _bare(title) == CALLER_LABEL else None
+    stripped = text.strip()
+    if stripped.startswith("|"):
+        cells = stripped.strip("|").split("|")
+        return ("表", "|".join(cells[1:])) if _bare(cells[0]) == CALLER_LABEL else None
+    body = BULLET.sub("", stripped)
+    if not body.lstrip("*_`").startswith(CALLER_LABEL):
+        return None
+    rest = _bare(body.lstrip("*_`")[len(CALLER_LABEL):].lstrip("*_`"))
+    if rest == "":
+        return "項目", ""
+    if rest.startswith(":"):
+        return "項目", rest[1:].strip()
+    return None
+
+
+def _caller_item(line: str) -> tuple[str, str] | None:
+    """中身の 1 項目を (見出し, 文) に分ける。表の行は先頭のセルが見出し。`:` の無い行は None。"""
+    text = unicodedata.normalize("NFKC", line).strip()
+    if text.startswith("|"):
+        if SEPARATOR.fullmatch(text):
+            return None
+        cells = text.strip("|").split("|")
+        return (cells[0], "|".join(cells[1:])) if len(cells) > 1 else None
+    body = BULLET.sub("", text)
+    if ":" not in body:
+        return None
+    label, _, rest = body.partition(":")
+    return label, rest
+
+
+def _is_branch_item(line: str) -> bool:
+    item = _caller_item(line)
+    return item is not None and caller_label(item[0]) is not None
+
+
+def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
+    """仕様の「呼ぶ側の分岐」の行ごとに (行番号, 触れていない分岐, 読めない書き方, 別の節を指す書き方か)。
+
+    行の形と読み方は `references/spec-exit.md` の「呼ぶ側の分岐の行の形」を正とする（#1340）。コードブロックの中は見ない。"""
+    lines = text.splitlines()
+    rows = []
+    fence = None
+    at = 0
+    while at < len(lines):
+        line = lines[at]
+        opened = FENCE.match(line)
+        if fence:
+            if fence_closes(opened, fence, line):
+                fence = None
+            at += 1
+            continue
+        if opened:
+            fence = opened.group(1)
+            at += 1
+            continue
+        start = _caller_start(line)
+        if start is None:
+            at += 1
+            continue
+        kind, own = start
+        follow = at + 1
+        if kind == "表" and follow < len(lines) and SEPARATOR.fullmatch(lines[follow].strip()):
+            # 先頭の列の見出しが `呼ぶ側の分岐` の表——見出し行のほかのセルは列の名前で、続く表の行（先頭のセルが分岐の書き方）が中身
+            kind = "表の見出し"
+            content, follow = _table_body(lines, follow + 1)
+        elif kind == "表":
+            content = [cell for cell in own.split("|") if cell.strip()]  # セルごとに項目（`<br>` でも分ける）
+        else:
+            content = [own] if own else []
+            inner = None  # 中身の途中のコードブロック（中は読まずに飛ばし、行は閉じない）
+            while follow < len(lines):
+                nxt = lines[follow]
+                fenced = FENCE.match(nxt)
+                if inner:
+                    if fence_closes(fenced, inner, nxt):
+                        inner = None
+                    follow += 1
+                    continue
+                if fenced:
+                    inner = fenced.group(1)
+                    follow += 1
+                    continue
+                nested = _caller_start(nxt)
+                if nested is not None and nested[0] == "表" and follow + 1 < len(lines) and SEPARATOR.fullmatch(lines[follow + 1].strip()):
+                    # 見出しの下の、先頭の列の見出しが `呼ぶ側の分岐` の表は、この行の中身（別の行にしない）
+                    body, follow = _table_body(lines, follow + 2)
+                    content += body
+                    continue
+                if nested is not None:
+                    break
+                if HEADING.match(unicodedata.normalize("NFKC", nxt)):
+                    break
+                if not nxt.strip() and kind == "項目":
+                    ahead = follow + 1
+                    while ahead < len(lines) and not lines[ahead].strip():
+                        ahead += 1
+                    if ahead >= len(lines) or not _is_branch_item(lines[ahead]):
+                        break
+                content.append(nxt)
+                follow += 1
+        touched: set[str] = set()
+        unread: list[str] = []
+        whole_none = False
+        refers = False
+        first = True  # 中身の最初の空でない部分か——行ごと該当なしは、中身が `該当なし` で始まり、分岐の項目を持たないときだけ
+        labelled = False  # 分岐の書き方の項目を 1 つでも持つか
+        pointed = False  # ほかの行を指す案内の部分を持つか（#1389）
+        for part in (piece for entry in content for piece in BREAK.split(entry)):
+            pointed = pointed or _caller_pointer(part)
+            item = _caller_item(part)
+            plain = _bare(BULLET.sub("", unicodedata.normalize("NFKC", part).strip()).strip("|"))
+            if not plain:
+                continue
+            leading, first = first, False
+            if item is None or caller_label(item[0]) is None:
+                if leading and plain.startswith(CALLER_NONE):
+                    whole_none = True
+                if REFERS.search(plain):
+                    refers = True
+                continue
+            label, rest = item
+            labelled = True
+            names, bad = caller_label(label)
+            text_of = _bare(rest.strip("|"))
+            if bad:
+                unread.append(_bare(label))
+            elif REFERS.search(text_of):
+                refers = True  # 別の節を指す書き方は、分岐の項目の文でも触れない
+            elif text_of:
+                touched |= names
+        whole_none = whole_none and not labelled
+        missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
+        # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、セル（`<br>` で分けた部分）の中で「呼ぶ側の分岐」を鉤括弧の名指しだけ・リンクで名指すか、
+        # 案内の言い回し（`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、
+        # ほかの行を指す案内——ほかに行があれば行に数えない
+        # （書きかけの行（`| 呼ぶ側の分岐 | 後で書く |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く |`・`| 呼ぶ側の分岐 | 「呼ぶ側の分岐」は後で書く |`）は案内でない。#1389）
+        pointer = kind == "表" and not labelled and not whole_none and not refers and pointed
+        rows.append((at + 1, missing, unread, refers, pointer))
+        at = follow
+    if any(not row[4] for row in rows):
+        rows = [row for row in rows if not row[4]]
+    return [row[:4] for row in rows]
+
+
+def _table_body(lines: list[str], at: int) -> tuple[list[str], int]:
+    """`at` から続く表の行（`|` で始まる行）と、その次の行の番号。"""
+    body = []
+    while at < len(lines) and lines[at].strip().startswith("|"):
+        body.append(lines[at])
+        at += 1
+    return body, at
+
+
+def caller_problems(path: Path, text: str) -> list[str]:
+    """揃わない「呼ぶ側の分岐」の行を、行と欠けた分岐を名指しして 1 行ずつ。"""
+    problems = []
+    for number, missing, unread, refers in caller_rows(text):
+        if not missing:
+            continue
+        line = (f"{path}:{number}: 呼ぶ側の分岐の行が 8 分岐のうち {len(missing)} 分岐に触れていない（{'・'.join(missing)}）"
+                "——分岐ごとに見せるものか「該当なし」と理由を書く")
+        if unread:
+            line += f"。読めない分岐の書き方（組の名前だけ・組に無い述語。どの分岐にも触れない）: {'・'.join(unread)}"
+        if refers:
+            line += "。別の節を指す書き方（「…と同じ」）は認めない——この機能の分岐を書く"
+        problems.append(line + "（references/spec-exit.md の「呼ぶ側の分岐の行の形」）")
     return problems
 
 
@@ -219,9 +663,10 @@ def screen_gate(spec_dir: Path, docs: Path | None, upto: int | None, named: str 
 
 
 def check(qa_path: Path, spec_dir: Path, docs: Path | None = None, upto: int | None = None,
-          named: str | None = None, screen: bool = True) -> tuple[int, list[str]]:
+          named: str | None = None, screen: bool = True, callers: bool = True) -> tuple[int, list[str]]:
     """(終了コード, 出力する行) を返す。`docs`・`upto`・`named` は画面の関門（`screen-gate.py`）に渡す。
-    `screen=False` は画面の関門を当てない——呼ぶ側（`scaffold.py`）が自分の条件で `screen-gate.py` を当てるとき。"""
+    `screen=False` は画面の関門を当てない——呼ぶ側（`scaffold.py`）が自分の条件で `screen-gate.py` を当てるとき。
+    `callers=False` は呼ぶ側の分岐の行の揃いを見ない——`scaffold.py` が前の版の時点（`--upto <n-1>`。凍結した版は直せない）を見るとき（#1340）。"""
     code, lines, rows = pptx.read_rows(qa_path)
     provisional = [row for row in rows if pptx.qa.is_provisional(row)]
     if code == 2:
@@ -266,6 +711,8 @@ def check(qa_path: Path, spec_dir: Path, docs: Path | None = None, upto: int | N
         if path.suffix == ".md":
             for number, case in case_numbers(text):
                 numbers.setdefault(case, []).append((path, number))
+            if callers:
+                problems += caller_problems(path, text)
     problems += duplicate_numbers(numbers)
 
     screen_code, screen_lines = screen_gate(spec_dir, docs, upto, named) if screen else (0, [])

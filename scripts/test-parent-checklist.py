@@ -14,7 +14,8 @@
 
 試料の依存（`called_by`）: F-003 が F-001 から呼ばれ、F-002 が F-003 から呼ばれる——F-001 は F-003 に、F-003 は F-002 に依存する
 （`issues.json` の順は F-001・F-002・F-003 で、依存先が先に来る順はその逆向き）。`--bundle F-002,F-003` の組では、F-001 が組の
-2 つ目の機能（F-003）に依存する。
+2 つ目の機能（F-003）に依存する。**`--foundation` の組**（#1347）は、Red テストの前提で F-001 の入口を呼ぶ F-004 を足し、土台の項目を持つ——
+F-004 は F-001 に（Red テストの呼び出しから）、どの機能も土台に依存する。
 
 **守ること**（各行に変異が 1 つ以上ある——下の `MUTATIONS`）:
 
@@ -28,6 +29,7 @@
 - 依存先が先に来る順で出す
 - 閉じた Issue は `[x]` で出す
 - 題は機能の id だけ（出した行が `parent-issue.py show` にそのまま通り、依存がそのとおり読まれる）
+- 土台の項目は id `foundation` の項目として読み、ほかの項目の `foundation` への依存を土台の Issue の番号に引く
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
 **壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、穴が無くても緑になるので）。
@@ -71,6 +73,12 @@ IR = {"spec_ir_version": 1, "title": "注文", "features": [
 ]}
 
 
+# Red テストの前提で F-001 の入口（place_order）を呼ぶ機能——F-004 は F-001 に依存する（#1347）
+CALLING = feature("F-004", "show_order", "注文を見る")
+CALLING["cases"][0]["setup"] = [{"operation": "place_order", "input": {"n": 1}, "expected": {"ok": True}}]
+IR_FOUNDATION = {**IR, "features": IR["features"] + [CALLING]}
+
+
 class Case:
     def __init__(self, name: str, kind: str, code: int, out: str | None = None, err: tuple[str, ...] = (),
                  issues=None, index=None, show: tuple[str, ...] = ()):
@@ -98,6 +106,13 @@ def bundle(b: dict[str, str]) -> list[dict]:
                    (22, "F-002・F-003: 割引額を計算する／在庫を確かめる", "OPEN", b["bundle-F-002-F-003.md"]))
 
 
+def founded(b: dict[str, str]) -> list[dict]:
+    """土台 → #50・F-001 → #51・F-002 → #52・F-003 → #53・F-004 → #54。"""
+    return listing((50, "土台: 実装のモジュール・口・verify の手順（注文）", "OPEN", b["foundation.md"]),
+                   (51, "F-001: 注文を受ける", "OPEN", b["F-001.md"]), (52, "F-002: 割引額を計算する", "OPEN", b["F-002.md"]),
+                   (53, "F-003: 在庫を確かめる", "OPEN", b["F-003.md"]), (54, "F-004: 注文を見る", "OPEN", b["F-004.md"]))
+
+
 def redepend(fid: str, depends: list[str]):
     def edit(index: list[dict]) -> list[dict]:
         index = copy.deepcopy(index)
@@ -114,6 +129,10 @@ CASES = [
          show=("#12\t依存: -\tF-002", "#13\t依存: #12\tF-003", "#11\t依存: #13\tF-001")),
     Case("まとめた Issue への依存", "bundle", 0, "- [ ] #22 F-002・F-003\n- [ ] #21 F-001 (depends: #22)\n", issues=bundle,
          show=("#22\t依存: -\tF-002・F-003", "#21\t依存: #22\tF-001")),
+    Case("土台と Red テストの呼び出しの依存", "foundation", 0,
+         "- [ ] #50 foundation\n- [ ] #52 F-002 (depends: #50)\n- [ ] #53 F-003 (depends: #50, #52)\n"
+         "- [ ] #51 F-001 (depends: #50, #53)\n- [ ] #54 F-004 (depends: #50, #51)\n", issues=founded,
+         show=("#50\t依存: -\tfoundation", "#54\t依存: #50, #51\tF-004")),
     Case("閉じた Issue は済んだ行", "plain", 0, PLAIN_OUT.replace("- [ ] #11", "- [x] #11"), issues=lambda b: plain(b, closed=True),
          show=("#12\t依存: -\tF-002", "#13\t依存: #12\tF-003")),
     Case("登録していない項目", "plain", 1, "", ("F-003（F-003.md）: 本文が同じ Issue が入力に無い", "一覧を出していない"),
@@ -141,6 +160,8 @@ MUTATIONS = [
     ("入力の順で出す", "    return done\n", "    return list(range(len(entries)))\n", "依存の連鎖"),
     ("閉じた Issue も未チェック", 'mark = "x" if', 'mark = " " if', "閉じた Issue は済んだ行"),
     ("題を写す", "{'・'.join(entry['ids'])}{depends}", "{issue['title']}{depends}", "依存の連鎖"),
+    ("土台の項目を読まない", '        if isinstance(item, dict) and item.get("foundation") is True:', "        if False:",
+     "土台と Red テストの呼び出しの依存"),
 ]
 
 failures: list[str] = []
@@ -155,7 +176,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 PASSED_RECORD = "回,日付,結果,条件2〜4,要求の行,決定表の行,テストケース,仕様の行,判断,機能\n1,2026-11-01,抜けた,満たす,1,1,1,1,-,-\n"
 
 
-def generate(work: Path, scripts: Path, *extra: str) -> Path:
+def generate(work: Path, scripts: Path, *extra: str, ir: dict = IR) -> Path:
     """本物の `scaffold.py` で本文と `issues.json` を作り、置き場所（`build/scaffold/issues`）を返す。"""
     repo = work / "repo"
     base = repo / "docs" / "v1"
@@ -163,7 +184,7 @@ def generate(work: Path, scripts: Path, *extra: str) -> Path:
     (base / "spec").mkdir(parents=True)
     (base / "shared" / "qa.csv").write_text(QA, encoding="utf-8")
     (base / "spec" / "order.md").write_text(SPEC, encoding="utf-8")
-    (base / "spec" / "spec_ir.json").write_text(json.dumps(IR, ensure_ascii=False, indent=2), encoding="utf-8")
+    (base / "spec" / "spec_ir.json").write_text(json.dumps(ir, ensure_ascii=False, indent=2), encoding="utf-8")
     (repo / "spec-review").mkdir()
     (repo / "spec-review" / "v1.csv").write_text(PASSED_RECORD, encoding="utf-8")
     proc = subprocess.run([sys.executable, "-I", str(scripts / "scaffold.py"), "--repo", str(repo), *extra],
@@ -224,9 +245,13 @@ def main() -> int:
         (work / "bin").mkdir()
         (work / "bin" / "gh").write_text("#!/bin/sh\necho 'gh: 偽の失敗' >&2\nexit 1\n", encoding="utf-8")
         (work / "bin" / "gh").chmod(0o755)
-        made = {"plain": generate(work / "plain", scripts), "bundle": generate(work / "bundle", scripts, "--bundle", "F-002,F-003")}
+        made = {"plain": generate(work / "plain", scripts), "bundle": generate(work / "bundle", scripts, "--bundle", "F-002,F-003"),
+                "foundation": generate(work / "foundation", scripts, "--foundation", ir=IR_FOUNDATION)}
         check("scaffold が本文を作った", sorted(p.name for p in made["plain"].glob("*.md")) == ["F-001.md", "F-002.md", "F-003.md", "proposals.md"]
-              and (made["bundle"] / "bundle-F-002-F-003.md").is_file())
+              and (made["bundle"] / "bundle-F-002-F-003.md").is_file() and (made["foundation"] / "foundation.md").is_file())
+        # 土台の項目の id は scaffold.py の写し
+        check("FOUNDATION_ID が scaffold.py と違う", constant_of(scripts / TARGET, "FOUNDATION_ID") == constant_of(scripts / "scaffold.py", "FOUNDATION_ID")
+              and constant_of(scripts / TARGET, "FOUNDATION_ID") is not None)
 
         print("正しい本体")
         for index, case in enumerate(CASES):
@@ -260,6 +285,13 @@ def main() -> int:
         return 1
     print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
     return 0
+
+
+def constant_of(path: Path, name: str):
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            return ast.literal_eval(node.value)
+    return None
 
 
 def docstring_rules() -> int:

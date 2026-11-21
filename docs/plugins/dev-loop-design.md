@@ -1325,7 +1325,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | 守ること | 28 | 1 |
 | 複数の Issue を回すとき | 7 | 1 |
 
-**このほかに、起点に載らないファイルが 21 本・3518 行**（`（必須）` 178 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 5468 行・`（必須）` 370 個）。
+**このほかに、起点に載らないファイルが 21 本・3519 行**（`（必須）` 178 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 5469 行・`（必須）` 370 個）。
 
 | 起点に載らないファイル | 行 | `（必須）` |
 | --- | --- | --- |
@@ -1346,7 +1346,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | references/spec-writeback.md | 94 | 5 |
 | references/stacked.md | 155 | 9 |
 | references/untrusted-input.md | 52 | 2 |
-| references/verification-trailer.md | 108 | 1 |
+| references/verification-trailer.md | 109 | 1 |
 | prompts/implementer.md | 108 | — |
 | prompts/review-handoff.md | 132 | — |
 | prompts/verifier.md | 250 | — |

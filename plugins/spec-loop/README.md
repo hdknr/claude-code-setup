@@ -28,6 +28,7 @@
 | `scripts/intake-code.py` | 取り込みの段の機械で決まる部分——持ち込まれたコードを読むだけで写し（`snapshot`）、候補の JSON を検査して Q&A 表の回答待ちの行にし、基盤要件との食い違いを照らす（`rows`）（標準ライブラリと `git`） |
 | `scripts/review-meeting.py` | モックと Q&A 表で進めるレビュー会の機械で決まる部分——会の記録（`reviews/<日付>/notes.csv`）を読んで回答の候補と指摘を出し（`notes`。何も書かない）、指摘の振り分けを検査して回答待ちの行として起票し（`rows`）、資料に載る質問を画面の表の逆引きで画面ごとにまとめる（`groups`。`qa-to-pptx.py --groups` に渡す）（標準ライブラリだけ） |
 | `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
+| `references/test-effort.md` | テストの工数の見積り方（工程の分け方・要求のつなぎ口から数える結合テストのケースと仕様のテストケースの区別・生産性と係数の目安と出典・受け入れテストの支援の張り付きと範囲・費用付きの質問）と、規模の文書の「テストの工数の突き合わせ」の節 |
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-review-record.py` | 仕様レビューの記録（指摘の表と実行の記録）から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限と、条件 5 のうち内部の Q&A 表の足した・変えた行を Domain Checker が確かめたかを数え直す。`scaffold.py` は最後の実行の行をここで読む（標準ライブラリのみ） |
 | `scripts/check-formal-rerun.py` | 保存した TLC のモデルの本体と陽性対照を、正本の `CLAUDE.md` の呼び方で走らせ直し、抜ける条件 4 を判定し直す（標準ライブラリと TLC） |
@@ -115,7 +116,8 @@
 
 `/spec-loop:feasibility` で呼びます。1 回の実行で、要求・仕様から規模を数えて見積り（開発費・運用費）と
 スケジュールを更新し、ガントチャートをスクリプトで生成し、**選択肢によって費用が変わる未決定事項を
-費用付きの質問として Q&A 表に起票します**。見積りは `agents/estimate-checker.md` に**別のティアで**検証させます。
+費用付きの質問として Q&A 表に起票します**。テストの工数は工程ごとに見積もり、工程の比・積み上げ・受け入れテストの支援の張り付きの 3 つで突き合わせます（`references/test-effort.md`）。
+見積りは `agents/estimate-checker.md` に**別のティアで**検証させます。
 **予算責任者の合意待ちで止まります**——合意を推測で埋めることも、予算の承認のタグ（`signoff/v<n>/budget-<k>`）を付けることもありません。
 
 手順と守ることは [`skills/feasibility/SKILL.md`](skills/feasibility/SKILL.md) を正とします。
@@ -136,8 +138,9 @@
 `/spec-loop:scaffold` で呼びます。仕様レビューを抜けた仕様を中間表現（`spec_ir.json`）に書き起こし、
 同梱のスクリプトで OpenAPI・型・**Red テスト**（実装が無いと失敗するテスト）と **Issue の本文**を作って、
 **1 機能 = Issue 1 件**で登録します（登録の前に利用者に確かめます。同じモジュール・同じ受入基準・同じデプロイ経路の機能は、
-`--bundle` で選んで 1 件にまとめられます）。依存の連鎖（呼ぶ機能が呼ばれる機能に依存する）は、登録した後に `parent-checklist.py` が
-dev-loop の cruise の親 Issue の書式で出します。**Issue の登録で止まり、以降は dev-loop が受け持ちます。**
+`--bundle` で選んで 1 件にまとめられます）。依存の連鎖（呼ぶ機能が呼ばれる機能に、Red テストが前提・後の状態でほかの機能の入口を呼ぶ機能がその機能に依存する。
+循環すれば登録の前に止まります）は、登録した後に `parent-checklist.py` が dev-loop の cruise の親 Issue の書式で出します。
+一から作る案件の v1 では `--foundation` で、実装の土台（モジュール・口・verify の手順）を作る Issue を 1 件足し、ほかの全部の Issue をそれに依存させます。**Issue の登録で止まり、以降は dev-loop が受け持ちます。**
 v2 以降は前の版と比べて機能を**追加・変更・削除**に分け、**変わった機能だけ**を Issue にします——変更の Issue は
 回帰（変わらないケースも緑であること）を、削除の Issue は撤去を受入基準に持ちます（形は `references/handoff-issue.md`）。
 dev-loop は Issue の本文の印で spec-loop から来たことを知り、開発中に見つけた仕様の穴を
@@ -146,7 +149,7 @@ Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `ref
 手順と守ることは [`skills/scaffold/SKILL.md`](skills/scaffold/SKILL.md) を正とします。
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional] [--bundle F-001,F-002]...
+python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional] [--bundle F-001,F-002]... [--foundation]
 python3 <spec-loop の base ディレクトリ>/scripts/parent-checklist.py --index build/scaffold/issues/issues.json --issues <gh issue list の出力>
 python3 <spec-loop の base ディレクトリ>/scripts/green-list.py {record|check} [--repo <製品のリポジトリ>] [--list <一覧>]
 ```

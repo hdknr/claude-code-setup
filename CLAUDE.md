@@ -192,6 +192,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **前の版の時点に `反映済み` でない Q&A が残れば、指しているかに依らず止める——凍結した前の版なら止めずに全部を追加にする**
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
       **中間表現の機能の `acceptance`（Red テストにしないケースを仕様の行の原文のまま並べる）は本文の `## 受入基準` の中の小見出しに写り、書く生成と `--dry-run` は「仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件」を出して、どちらにも無いケースを番号と場所で名指しする——止めない。数える番号の形は `check-spec-exit.py` の `case_rows`（条件 1 の重複と同じ）**（#1301。決まりは `references/spec-ir.md` の「Red テストにしない受入基準」）。
+      **`issues.json` の依存（`depends`）は呼ぶ機能（`called_by`）と Red テストの前提・後の状態・トレースの呼び出しから引き、循環すれば書く生成と `--dry-run` が組とケースを名指しして 1 で止まる。
+      `--foundation`（一から作る案件の v1。利用者に確かめて付ける）で土台の本文と項目を足し、ほかの全部の項目をそれに依存させる**（#1347。決まりは `references/handoff-issue.md` の「依存の連鎖」「土台の本文」）。
       **画面の表があれば、`機能` の列が機能を挙げる画面の仕様書・ワイヤーフレーム・生成したモック（書く生成が screen-spec の `build-mock.py` で作る）を本文と `scaffold/refs/` に足す——
       機能のオブジェクトには入れず、`--check` はモックを生成し直さない**（#1099。決まりは `references/handoff-issue.md` の「画面の表から引く参考資料」）。
       **正本の根の `design/sources.csv`（版の外。デザインの正本の参照）があれば、画面を持つ機能の本文の `## 参考資料` にだけ載せ、形に反すれば作らない——無ければ前と同じバイト**
@@ -212,7 +214,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#989。**読むだけで何も書かない**。記録の置き場所と形は `rework-metrics.py` から読み込む——写さない。**CI からは呼ばない**——入力が利用者の PC にある。
       守る／守らないは docstring を正とする。テストは `scripts/test-rework-report.py`）
     - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
-      （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に依存する。**項目の Issue は本文が生成した本文と同じもの**で、
+      （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に、Red テストが前提・後の状態・トレースでほかの機能の入口を呼ぶ機能がその機能に依存する（#1347）。
+      `scaffold.py --foundation` の土台の項目は id `foundation` で読む。**項目の Issue は本文が生成した本文と同じもの**で、
       `gh issue list --json` の出力から引く。**`gh` は呼ばない**。守る／守らないは docstring を正とする。テストは `scripts/test-parent-checklist.py`）
     - `scripts/green-list.py` - 製品のリポジトリで、scaffold の Red テストのうち**緑のケースとその中身の指紋を一覧（`scaffold-green.txt`）に書き（`record`）、CI で一覧のケースが緑のままかを見る（`check`）**
       （#1000。**一覧に無いケース（まだ実装していない機能）の赤では落ちず、`record` は載ったケースを壊していれば書かない**。走らせ方は `scaffold.py` の `run_tests` を読み込む。
@@ -472,7 +475,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     合成の材料（Q&A 120 件・費用 22 行・工程 14 行・図）を渡し、**描画はせず**構造（費用が別のページ・どの行も 1 度ずつ・ガントチャートの ◆ と網掛け・カードを割っても箇条を落とさない・別紙に全件・PNG の部品）を見る。
     **偽の `rsvg-convert`（`SPEC_LOOP_RSVG`）で、drawio の代わりの文字が変換の入力から消えることも見る**。描画の実機の結果は PR に貼る
   - `test-check-pptx-render.py` - **PPTX の描画の確かめ**（#1289）の回帰テスト（変異テストを含む）。**偽の `soffice`・`pdftotext`・`pdftoppm` を `PATH` の先頭に置く**（残りは `/usr/bin:/bin`）。
-    手元に本物の道具があれば、収まる枚は 0・はみ出す枚は 1 も見る（無ければ「走らせていない」と言う）
+    手元に本物の道具があれば、収まる枚は 0・はみ出す枚は 1 も見る（無ければ「走らせていない」と言う）。
+    **道具があっても描画できなければ（本体が 2・3・時間切れ）、本体の理由を出して「確かめられない」と言い、3 で終わる——緑にも NG にもしない**（#1359。読み分けは docstring を正とする）
   - `test-check-feasibility-csv.py` / `test-schedule-to-gantt.py` / `test-check-signoff.py` /
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと

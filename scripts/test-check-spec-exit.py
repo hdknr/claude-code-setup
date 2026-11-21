@@ -22,6 +22,12 @@
    重複の無い仕様・先頭のセル以外の言及・コードブロックの中・形の外の識別子（連番 `1`・数字の無い名前）・`.md` 以外・形式検査のモデルは数えない（陰性対照）。
    **後の版が同じファイルを置き換えたのは重複に数えない**（`merge-versions.py` で重ねた全体に当てる。別のファイルに同じ番号を置けば 1）。
    **番号の形が `references/spec-exit.md` の「テストケースの番号の重複」と一致する**（写しのずれ）。
+   **テストケースの節（`#` の見出しの末尾がテストケースの語。小見出しの下を含む）の中では、見出しが `ID`・`No`・`項番` の表も読み、節の外では読まない**（#1333。`ID_HEADER`・`SECTION_HEADER` の写しも突き合わせる）。
+   **節を閉じるのは段落の直後の下線（`===`・`---`。項の中の段落なら項の中身の桁まで字下げした下線）だけで、区切りの線・中身が段落の箇条書きの項と引用の続きの行・HTML の塊・4 字下げのコードの直後の `---` では閉じない**（#1379。CommonMark の段落の続き。閉じる形——複数行の段落・段落を割り込めない行・中身が段落でない項と引用の後・項の中身の桁の下線——は陰性対照。CommonMark の参照は pandoc で確かめた形）。
+8. **「呼ぶ側の分岐」の行が 8 分岐のどれかに触れていなければ 1 で落とし、行と欠けた分岐を名指しする**（#1340）——見出し・項目の行・表の行・表の見出しの 4 つの形・
+   まとめて書く書き方・行ごと該当なしは通し、組の名前だけ（`量: …`）・組に無い述語・別の節を指す書き方（「…と同じ」）・空の文は触れないと読む。
+   **表の行のうちほかの行を指す案内は、1 つのセルの中で鉤括弧の名指しだけ・リンク・案内の言い回し（熟語の一部は除く）で `呼ぶ側の分岐` を名指すものだけで、`呼ぶ側の分岐` の語を含む書きかけの行（鉤括弧の後ろに文・言い回しでない `下`・`次の`・語と言い回しが別のセル）はほかに行があっても名指す**（#1389）。
+   **組と分岐の表が `references/spec-exit.md` の「呼ぶ側の分岐の行の形」と、分岐の名前が `references/spec-ir.md` の分岐の名前の表と一致する**（写しのずれ）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -33,6 +39,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
 import shutil
 import subprocess
@@ -65,6 +72,25 @@ CLEAN_SPEC = "# 注文\n\n未定義の状態に遷移しない。\nmastodon の�
 CASE_HEAD = "| テストケース | 入力 | 期待 |\n| --- | --- | --- |\n"
 CASE_TABLE = "# 注文\n\n" + CASE_HEAD + "| F1-5a | 1 | 通る |\n| F1-5b | 2 | 拒否 |\n"
 DUP = "重複"
+
+# 呼ぶ側の分岐の行の揃い（#1340）。見出しの形の行で、8 分岐に 1 行ずつ触れる
+CALLER_ITEMS = ["- 入力が欠ける: 「データ欠落」と表示する", "- 入力が遅れる: 「取得中」と表示する", "- 入力の順が崩れる: 該当なし（1 回で届く）",
+                "- 呼ぶ処理が失敗する: 「再計算待ち」と表示する", "- 呼ぶ処理がやり直される: 該当なし（呼ばない）",
+                "- 呼ぶ処理が再起動する: 該当なし（呼ばない）", "- 量が上限を超える: 「上限」と表示する", "- 量が重なる: 該当なし（1 件ずつ）"]
+CALLER_HEAD = "## 受注\n\n### 呼ぶ側の分岐\n\n"
+CALLER_FULL = CALLER_HEAD + "\n".join(CALLER_ITEMS) + "\n"
+# まとめて書く書き方（組の名前に分岐を並べる）
+CALLER_GROUPED = ["- 入力が欠ける・遅れる・順が崩れる: 該当なし（1 回で届く）", "- 呼ぶ処理が失敗する・やり直される・再起動する: 該当なし（呼ばない）",
+                  "- 量が上限を超える・重なる: 該当なし（1 件ずつ）"]
+CALLER_TABLE_HEAD = "| 項目 | 書くもの |\n| --- | --- |\n"
+GAP = "触れていない"
+
+def after_case_table(middle: str) -> dict[str, str]:
+    """テストケースの節の ID の表（F1-1）の後ろに `middle` を置き、同じ番号の ID の表を続けた仕様（#1379）。
+    節を閉じていなければ 2 つ目の表も数えて重複（1）、閉じていれば数えずに 0。"""
+    table = "| ID | 手順 |\n| --- | --- |\n"
+    return {"order.md": "## テストケース\n\n" + table + "| F1-1 | a |\n\n" + middle + table + "| F1-1 | b |\n"}
+
 
 # (名前, qa.csv の中身（None なら作らない）, {仕様の相対パス: 中身}（None ならディレクトリを作らない）,
 #  期待する終了コード, 出力に含まれるべき文字列)
@@ -171,6 +197,121 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("見出しが ID・No の表は読まない（見逃しの限界）", HEADER,
      {"order.md": "| ID | 手順 |\n| --- | --- |\n| TC-001 | a |\n| TC-001 | b |\n", "flow.md": "| No | 手順 |\n| --- | --- |\n| TC-001 | c |\n"}, 0,
      "条件 1 を満たす"),
+    # テストケースの節（直前の見出しが CASE_HEADER に当たる）の ID・No・項番の表は読む（#1333）
+    ("テストケースの節の ID の表は読む", HEADER,
+     {"order.md": "## テストケース\n\n| ID | 手順 |\n| --- | --- |\n| TC-001 | a |\n| TC-001 | b |\n"}, 1, "テストケースの番号 TC-001"),
+    ("テストケースの節の No. の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "### テストケース\n| No. | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの節の項番の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "### テストケース\n| 項番 | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの節の小文字の id の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## テストケース\n| id | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの節の強調した ID の表も読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## テストケース\n| **ID** | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("全角の節の見出しもそろえて読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## ＴＣ\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("小見出しの下も節の中", HEADER,
+     {"order.md": "## テストケース\n\n### 正常系\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | a |\n\n#### 境界\n\n### 異常系\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | b |\n"}, 1,
+     "テストケースの番号 F1-1"),
+    ("浅い見出しで節を抜ける", HEADER,
+     {"order.md": "### テストケース\n\n" + CASE_HEAD + "| F1-1 | a | b |\n\n## 質問\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("末尾が一覧の節の見出しも読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## F2 のテストケース一覧\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("括弧書きの付いた節の見出しも読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## TC（注文）\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("テストケースの語で終わらない見出しは節でない", HEADER,
+     {"order.md": "## テストケースの前提となるマスタ\n\n| ID | 名前 |\n| --- | --- |\n| M-001 | a |\n| M-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("下線の見出しで節を閉じる", HEADER,
+     {"order.md": "## テストケース\n\n" + CASE_HEAD + "| F1-1 | a | b |\n\n質問\n----\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("飾りと末尾のコロンを外した節の見出しも読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## **テストケース**:\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("閉じの # を外した節の見出しも読む", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "## テストケース ##\n| ID | 手順 |\n| --- | --- |\n| F1-5b | c |\n"}, 1, "flow.md:4"),
+    ("区切りの線では節を閉じない", HEADER,
+     {"order.md": "## テストケース\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | a |\n\n---\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | b |\n\n***\n\n| ID | 手順 |\n| --- | --- |\n| F1-1 | c |\n"}, 1,
+     "3 か所で重複"),
+    # 段落の直後でない区切りの線は節を閉じない——段落かどうかを CommonMark の段落の続きに合わせる（#1379）。
+    # 区切りの線の後ろの ID の表も数えて 2 か所の重複になれば、節を閉じていない
+    ("本文の後に続く 2 本目の区切りの線では節を閉じない", HEADER, after_case_table("本文\n\n---\n---\n\n"), 1, "2 か所で重複"),
+    ("間に空行のある 2 本の区切りの線でも節を閉じない", HEADER, after_case_table("本文\n\n---\n\n---\n\n"), 1, "2 か所で重複"),
+    ("*** の直後の区切りの線では節を閉じない", HEADER, after_case_table("本文\n\n***\n---\n\n"), 1, "2 か所で重複"),
+    ("箇条書きの直後の区切りの線では節を閉じない", HEADER, after_case_table("- a\n---\n\n"), 1, "2 か所で重複"),
+    ("番号つきの項の直後の区切りの線では節を閉じない", HEADER, after_case_table("1. a\n---\n\n"), 1, "2 か所で重複"),
+    ("箇条書きの続きの行の後の区切りの線では節を閉じない", HEADER, after_case_table("- a\n続き\n---\n\n"), 1, "2 か所で重複"),
+    ("段落を割り込んだ箇条書きの後の区切りの線では節を閉じない", HEADER, after_case_table("本文\n- a\n---\n\n"), 1, "2 か所で重複"),
+    ("引用の直後の区切りの線では節を閉じない", HEADER, after_case_table("> a\n---\n\n"), 1, "2 か所で重複"),
+    ("引用の続きの行の後の区切りの線では節を閉じない", HEADER, after_case_table("> a\n続き\n---\n\n"), 1, "2 か所で重複"),
+    ("HTML コメントの直後の区切りの線では節を閉じない", HEADER, after_case_table("<!-- c -->\n---\n\n"), 1, "2 か所で重複"),
+    ("複数行の HTML コメントの直後の区切りの線では節を閉じない", HEADER, after_case_table("<!--\nc\n-->\n---\n\n"), 1, "2 か所で重複"),
+    ("HTML コメントの中の本文と線では節を閉じない", HEADER, after_case_table("<!--\n本文\n---\n-->\n\n"), 1, "2 か所で重複"),
+    ("空行を挟んだ pre の中の本文と線では節を閉じない", HEADER, after_case_table("<pre>\n\n本文\n---\n</pre>\n\n"), 1, "2 か所で重複"),
+    ("処理命令の直後の区切りの線では節を閉じない", HEADER, after_case_table("<?php x ?>\n---\n\n"), 1, "2 か所で重複"),
+    ("宣言の直後の区切りの線では節を閉じない", HEADER, after_case_table("<!DOCTYPE html>\n---\n\n"), 1, "2 か所で重複"),
+    ("CDATA の直後の区切りの線では節を閉じない", HEADER, after_case_table("<![CDATA[x]]>\n---\n\n"), 1, "2 か所で重複"),
+    ("段落を割り込んだ div の中の本文と線では節を閉じない", HEADER, after_case_table("本文\n<div>\n本文\n---\n\n"), 1, "2 か所で重複"),
+    ("タグだけの行の直後の区切りの線では節を閉じない", HEADER, after_case_table("<span>\n---\n\n"), 1, "2 か所で重複"),
+    ("4 字下げのコードの直後の区切りの線では節を閉じない", HEADER, after_case_table("    code\n---\n\n"), 1, "2 か所で重複"),
+    ("タブで字下げしたコードの直後の区切りの線では節を閉じない", HEADER, after_case_table("  \tcode\n---\n\n"), 1, "2 か所で重複"),
+    # 段落の直後の下線は今までどおり節を閉じる（#1379 の陰性対照）
+    ("複数行の段落の下線で節を閉じる", HEADER, after_case_table("本文\n続き\n---\n\n"), 0, "条件 1 を満たす"),
+    ("4 字下げの続きの行を持つ段落の下線で節を閉じる", HEADER, after_case_table("本文\n    続き\n---\n\n"), 0, "条件 1 を満たす"),
+    ("引用の後に空行を挟んだ段落の下線で節を閉じる", HEADER, after_case_table("> a\n\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("コードの後の段落の下線で節を閉じる", HEADER, after_case_table("    code\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("1 でない番号の行は段落を割り込まない", HEADER, after_case_table("本文\n2. a\n---\n\n"), 0, "条件 1 を満たす"),
+    ("空の項は段落を割り込まない", HEADER, after_case_table("本文\n*\n---\n\n"), 0, "条件 1 を満たす"),
+    ("タグだけの行は段落を割り込まない", HEADER, after_case_table("本文\n<span>\n---\n\n"), 0, "条件 1 を満たす"),
+    ("HTML の塊の後に空行を挟んだ段落の下線で節を閉じる", HEADER, after_case_table("<div>\n\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("閉じた HTML コメントの後の段落の下線で節を閉じる", HEADER, after_case_table("<!-- c -->\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("フェンスの後の段落の下線で節を閉じる", HEADER, after_case_table("- a\n```\nx\n```\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("小見出しの後の段落の下線で節を閉じる", HEADER, after_case_table("- a\n### 小\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    # 2 パス目の指摘（#1379）——中身が段落でない項・引用の後は新しい段落、項の中の桁を空行をまたいで持つ
+    ("空行の後の項の外の区切りの線では節を閉じない", HEADER, after_case_table("- a\n\n  b\n---\n\n"), 1, "2 か所で重複"),
+    ("空の項の次の行の項の中身の段落の下線で節を閉じる", HEADER, after_case_table("-\n    code\n  ---\n\n"), 0, "条件 1 を満たす"),
+    # 狭いパスの指摘（#1379）——空の項の後の空行で項を閉じる・同じ行で入れ子になった項の桁を積む
+    ("空の項の後の空行で項を閉じる（字下げの段落と線では閉じない）", HEADER, after_case_table("-\n\n    a\n    ---\n\n"), 1, "2 か所で重複"),
+    ("空の項の後の空行で項を閉じる（段落の下線で閉じる）", HEADER, after_case_table("-\n\n  a\nb\n---\n\n"), 0, "条件 1 を満たす"),
+    ("同じ行で入れ子になった項の中身の桁の下線で節を閉じる", HEADER, after_case_table("- - x\n    ---\n\n"), 0, "条件 1 を満たす"),
+    ("同じ行で入れ子になった項の中身の桁に届かない線では節を閉じない", HEADER, after_case_table("- - x\n  ---\n\n"), 1, "2 か所で重複"),
+    ("HTML コメントの閉じの行の後の区切りの線では節を閉じない", HEADER, after_case_table("<!--\n本文\n-->\n---\n\n"), 1, "2 か所で重複"),
+    ("見出しで始まる引用の後の段落の下線で節を閉じる", HEADER, after_case_table("> ###### 注記\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("区切りの線で始まる項の後の段落の下線で節を閉じる", HEADER, after_case_table("- ***\nb\n---\n\n"), 0, "条件 1 を満たす"),
+    ("引用で始まる項の後の続きの行と線では節を閉じない", HEADER, after_case_table("- > q\nb\n  ---\n\n"), 1, "2 か所で重複"),
+    ("HTML で始まる項の中の本文と線では節を閉じない", HEADER, after_case_table("- <div>\n  b\n  ---\n\n"), 1, "2 か所で重複"),
+    ("項の外の行で項の中の HTML の塊を閉じる", HEADER, after_case_table("- <div>\nb\n本文\n   ---\n\n"), 0, "条件 1 を満たす"),
+    ("3 段目の項の中身の桁に届かない下線では節を閉じない", HEADER, after_case_table("- a\n  - b\n    - c\n    ---\n\n"), 1, "2 か所で重複"),
+    ("空行の後の項の中の字下げの段落の下線で節を閉じる", HEADER, after_case_table("- a\n\n    b\n  ---\n\n"), 0, "条件 1 を満たす"),
+    ("項の外のタグだけの行は HTML の塊を始める", HEADER, after_case_table("  - b\n<span>\n    ---\n\n"), 1, "2 か所で重複"),
+    ("タブで字下げした項の中の下線で節を閉じる", HEADER, after_case_table("- a\n\t---\n\n"), 0, "条件 1 を満たす"),
+    ("コードで始まる項の後の字下げの段落の下線で節を閉じる", HEADER, after_case_table("-     code\n\tcode\n  ---\n\n"), 0, "条件 1 を満たす"),
+    ("空の引用の行の後の段落の下線で節を閉じる", HEADER, after_case_table("> a\n>\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("空の項の後の段落の下線で節を閉じる", HEADER, after_case_table("-\n本文\n---\n\n"), 0, "条件 1 を満たす"),
+    ("項の中身の桁まで字下げした下線で節を閉じる", HEADER, after_case_table("- a\n  ---\n\n"), 0, "条件 1 を満たす"),
+    ("番号つきの項の中身の桁まで字下げした下線で節を閉じる", HEADER, after_case_table("1. a\n   ---\n\n"), 0, "条件 1 を満たす"),
+    ("項の続きの行の後の中身の桁の下線で節を閉じる", HEADER, after_case_table("- a\nb\n  ---\n\n"), 0, "条件 1 を満たす"),
+    ("入れ子の項の中身の桁に届かない下線では節を閉じない", HEADER, after_case_table("- a\n  - b\n  ---\n\n"), 1, "2 か所で重複"),
+    ("印の後ろの空白まで中身の桁に数える", HEADER, after_case_table("-   a\n  ---\n\n"), 1, "2 か所で重複"),
+    ("コードで始まる項の後の下線では節を閉じない", HEADER, after_case_table("-     code\n  ---\n\n"), 1, "2 か所で重複"),
+    ("== の下線の見出しでも節を閉じる", HEADER,
+     {"order.md": "## テストケース\n\n" + CASE_HEAD + "| F1-1 | a | b |\n\n質問\n===\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("テストケースの節の外の ID の表は読まない", HEADER,
+     {"order.md": "## 質問\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("次の見出しで節を引き継がない", HEADER,
+     {"order.md": "## テストケース\n\n" + CASE_HEAD + "| F1-1 | a | b |\n\n## 質問\n\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("テストケースの節でも ID・No でない見出しの表は読まない", HEADER,
+     {"order.md": "## テストケース\n\n| 質問 | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("ID で始まるだけの見出しの表は読まない", HEADER,
+     {"order.md": "## テストケース\n\n| ID番号 | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("# の後に空白の無い行は見出しでない", HEADER,
+     {"order.md": "#テストケース\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("4 字下げの # は見出しでない", HEADER,
+     {"order.md": "    ## テストケース\n| ID | 内容 |\n| --- | --- |\n| Q-001 | a |\n| Q-001 | b |\n"}, 0, "条件 1 を満たす"),
+    ("コードブロックの中の見出しは節を変えない", HEADER,
+     {"order.md": "## テストケース\n\n```\n## 質問\n```\n\n| ID | 内容 |\n| --- | --- |\n| TC-001 | a |\n| TC-001 | b |\n"}, 1,
+     "テストケースの番号 TC-001"),
     ("見出しは先頭のセルだけを見る", HEADER,
      {"order.md": "| No | テストケース内容 |\n| --- | --- |\n| F1-5b | a |\n", "flow.md": "| No | テストケース内容 |\n| --- | --- |\n| F1-5b | b |\n"}, 0,
      "条件 1 を満たす"),
@@ -206,6 +347,172 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("形式検査のモデルの番号は数えない", HEADER, {"order.md": CASE_TABLE, "formal/order/README.md": CASE_HEAD + "| F1-5b | 9 |\n"}, 0, "条件 1 を満たす"),
     ("内部の表の番号は数えない", HEADER + DONE_ROW,
      {"order.md": CASE_TABLE, "qa-dev.csv": HEADER + INTERNAL_DONE}, 0, "条件 1 を満たす"),
+    # 呼ぶ側の分岐の行の揃い（#1340）
+    ("呼ぶ側の分岐: 8 分岐に触れた見出しの行は通す", HEADER, {"order.md": CALLER_FULL}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 見出しの行の欠けを名指しする", HEADER, {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[:-1]) + "\n"}, 1,
+     "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 1 分岐に触れていない（量が重なる）"),
+    ("呼ぶ側の分岐: まとめて書く書き方は通す", HEADER, {"order.md": CALLER_HEAD + "\n".join(CALLER_GROUPED) + "\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 別の組の分岐の名前を並べてもよい", HEADER,
+     {"order.md": CALLER_HEAD + "- 入力が欠ける・遅れる・順が崩れる・呼ぶ処理が失敗する・やり直される・再起動する・量が上限を超える・重なる: 該当なし（x）\n"}, 0,
+     "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 組の名前だけの項目は触れない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_GROUPED[:2]) + "\n- 量: 100 件まで\n"}, 1,
+     "（量が上限を超える・量が重なる）——分岐ごとに見せるものか「該当なし」と理由を書く。読めない分岐の書き方（組の名前だけ・組に無い述語。どの分岐にも触れない）: 量"),
+    ("呼ぶ側の分岐: 組に無い述語は触れない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_GROUPED[1:]) + "\n- 入力が欠ける・壊れる: 該当なし\n"}, 1, "どの分岐にも触れない）: 入力が欠ける・壊れる"),
+    ("呼ぶ側の分岐: 別の節を指す書き方は認めない", HEADER, {"order.md": CALLER_HEAD + "[価格照会書を出力する] と同じ\n"}, 1,
+     "8 分岐のうち 8 分岐に触れていない（入力が欠ける・入力が遅れる・入力の順が崩れる・呼ぶ処理が失敗する・呼ぶ処理がやり直される・呼ぶ処理が再起動する・量が上限を超える・量が重なる）"
+     "——分岐ごとに見せるものか「該当なし」と理由を書く。別の節を指す書き方（「…と同じ」）は認めない"),
+    ("呼ぶ側の分岐: 項目の行の行ごと該当なしは通す", HEADER, {"order.md": "## 純粋な計算\n\n- 呼ぶ側の分岐: 該当なし（純粋な計算）\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 見出しの行の中身が該当なしで始まれば行ごと該当なし", HEADER, {"order.md": CALLER_HEAD + "該当なし（純粋な計算）\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 項目の行の欠けを名指しする", HEADER, {"order.md": "## 受注\n\n- 呼ぶ側の分岐:\n  " + CALLER_GROUPED[0] + "\n"}, 1,
+     "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 5 分岐に触れていない（呼ぶ処理が失敗する・呼ぶ処理がやり直される・呼ぶ処理が再起動する・量が上限を超える・量が重なる）"),
+    ("呼ぶ側の分岐: 項目の行は空行の後の分岐の項目も読む", HEADER,
+     {"order.md": "## 受注\n\n- 呼ぶ側の分岐:\n\n  " + CALLER_GROUPED[0] + "\n\n  " + "\n  ".join(CALLER_GROUPED[1:]) + "\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 項目の行は空行の後の本文で終わる", HEADER,
+     {"order.md": "## 受注\n\n- 呼ぶ側の分岐:\n  " + CALLER_GROUPED[0] + "\n\n本文の段落。\n\n" + "\n".join(CALLER_GROUPED[1:]) + "\n"}, 1,
+     "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 5 分岐に触れていない"),
+    ("呼ぶ側の分岐: 表の行の <br> で分けた項目を読む", HEADER,
+     {"order.md": CALLER_TABLE_HEAD + "| 呼ぶ側の分岐 | " + "<br>".join(item[2:] for item in CALLER_GROUPED) + " |\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 表の行の欠けを名指しする", HEADER,
+     {"order.md": CALLER_TABLE_HEAD + "| 呼ぶ側の分岐 | " + "<br>".join(item[2:] for item in CALLER_GROUPED[:2]) + " |\n"}, 1,
+     "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 2 分岐に触れていない（量が上限を超える・量が重なる）"),
+    ("呼ぶ側の分岐: 見出しの下の分岐の表を読む", HEADER,
+     {"order.md": CALLER_HEAD + "| 分岐 | 見せるもの |\n| --- | --- |\n" + "".join(f"| {item[2:].split(': ')[0]} | {item[2:].split(': ')[1]} |\n" for item in CALLER_ITEMS)},
+     0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 空の文の項目は触れない", HEADER, {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[:-1]) + "\n- 量が重なる:\n"}, 1,
+     "1 分岐に触れていない（量が重なる）"),
+    ("呼ぶ側の分岐: コードブロックの中の行は見ない", HEADER, {"order.md": "## 受注\n\n```\n### 呼ぶ側の分岐\n- 入力が欠ける: x\n```\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 全角のコロンと強調の飾りを外して読む", HEADER,
+     {"order.md": "## 受注\n\n- **呼ぶ側の分岐**：\n" + "\n".join("  - **" + item[2:].replace(": ", "**：") for item in CALLER_ITEMS[:-1]) + "\n"}, 1,
+     "1 分岐に触れていない（量が重なる）"),
+    ("呼ぶ側の分岐: 行と読まない書き方は見ない（限界）", HEADER, {"order.md": "## 受注\n\n呼ぶ側の分岐は次のとおり。\n- 入力が欠ける: x\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 次の見出しで行を閉じる", HEADER,
+     {"order.md": CALLER_HEAD + CALLER_GROUPED[0] + "\n\n### 測る値\n\n" + "\n".join(CALLER_GROUPED[1:]) + "\n"}, 1, "5 分岐に触れていない"),
+    ("呼ぶ側の分岐: 次の行の始まりで中身を閉じる", HEADER,
+     {"order.md": CALLER_FULL + "- 呼ぶ側の分岐:\n  " + CALLER_GROUPED[0] + "\n"}, 1, "order.md:13: 呼ぶ側の分岐の行が 8 分岐のうち 5 分岐"),
+    ("呼ぶ側の分岐: 2 つの行をそれぞれ名指しする", HEADER,
+     {"order.md": CALLER_HEAD + CALLER_GROUPED[0] + "\n\n## 出荷\n\n- 呼ぶ側の分岐:\n  " + CALLER_GROUPED[2] + "\n"}, 1, "order.md:9: 呼ぶ側の分岐の行が 8 分岐のうち 6 分岐"),
+    # 1 パス目の指摘で足した試料（#1340）
+    ("呼ぶ側の分岐: 中身の途中の該当なしは行ごと該当なしでない", HEADER, {"order.md": CALLER_HEAD + "- 入力が欠ける: a\n該当なし以外は書いていない\n"}, 1,
+     "8 分岐のうち 7 分岐に触れていない"),
+    ("呼ぶ側の分岐: 列見出しが呼ぶ側の分岐の表を読む", HEADER,
+     {"order.md": "## 受注\n\n| 呼ぶ側の分岐 | 見せるもの |\n| --- | --- |\n" + "".join(f"| {item[2:].split(': ')[0]} | {item[2:].split(': ')[1]} |\n" for item in CALLER_ITEMS)},
+     0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 列見出しの表の欠けを名指しする", HEADER,
+     {"order.md": "## 受注\n\n| 呼ぶ側の分岐 | 見せるもの |\n| --- | --- |\n" + "".join(f"| {item[2:].split(': ')[0]} | {item[2:].split(': ')[1]} |\n" for item in CALLER_ITEMS[:-1])},
+     1, "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 1 分岐に触れていない（量が重なる）"),
+    ("呼ぶ側の分岐: 中身のコードブロックを挟んでも行を閉じない", HEADER,
+     {"order.md": CALLER_HEAD + CALLER_ITEMS[0] + "\n\n```\n例\n```\n\n" + "\n".join(CALLER_ITEMS[1:]) + "\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 分岐の項目の文が別の節を指せば触れない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(item.split(": ")[0] + ": [価格照会書を出力する] と同じ" for item in CALLER_GROUPED) + "\n"}, 1,
+     "8 分岐のうち 8 分岐に触れていない（入力が欠ける・入力が遅れる・入力の順が崩れる・呼ぶ処理が失敗する・呼ぶ処理がやり直される・呼ぶ処理が再起動する・量が上限を超える・量が重なる）"
+     "——分岐ごとに見せるものか「該当なし」と理由を書く。別の節を指す書き方（「…と同じ」）は認めない"),
+    ("呼ぶ側の分岐: 文の途中の「と同じ」は別の節を指す書き方でない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[:-1]) + "\n- 量が重なる: 入力は画面と同じ形式で 1 件ずつ受ける\n"}, 0, "条件 1 を満たす"),
+    # 2 パス目の指摘で足した試料（#1340）
+    ("呼ぶ側の分岐: 最初でない該当なしの文は行ごと該当なしでない", HEADER,
+     {"order.md": CALLER_HEAD + "見せるものは別途決める。\n該当なし（純粋な計算）\n"}, 1, "8 分岐のうち 8 分岐に触れていない"),
+    ("呼ぶ側の分岐: 見出しの下の表の見出しの形の表はその行の中身", HEADER,
+     {"order.md": CALLER_HEAD + "| 呼ぶ側の分岐 | 見せるもの |\n| --- | --- |\n" + "".join(f"| {item[2:].split(': ')[0]} | a |\n" for item in CALLER_GROUPED)}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 表の見出しの形の行ごと該当なし", HEADER, {"order.md": "| 呼ぶ側の分岐 | 見せるもの |\n| --- | --- |\n| 該当なし | 純粋な計算 |\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 該当なしで始まる文があっても分岐の項目を数える", HEADER,
+     {"order.md": CALLER_HEAD + "該当なしの分岐には理由を書く。\n\n" + CALLER_ITEMS[0] + "\n"}, 1, "8 分岐のうち 7 分岐に触れていない"),
+    ("呼ぶ側の分岐: 名指しの無い「と同じ」は触れる", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[:4]) + "\n- 呼ぶ処理がやり直される: 結果は 1 回目と同じ\n" + "\n".join(CALLER_ITEMS[5:]) + "\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 文の途中の名指しの「と同じ」も触れない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[1:]) + "\n- 入力が欠ける: [価格照会書を出力する] と同じ（該当なし）\n"}, 1, "1 分岐に触れていない（入力が欠ける）"),
+    ("呼ぶ側の分岐: チェックボックスの行と項目を読む", HEADER,
+     {"order.md": "- [x] 呼ぶ側の分岐:\n" + "\n".join("  - [x] " + item[2:] for item in CALLER_ITEMS[:-1]) + "\n"}, 1, "order.md:1: 呼ぶ側の分岐の行が 8 分岐のうち 1 分岐に触れていない（量が重なる）"),
+    ("呼ぶ側の分岐: 表の行のセルごとの項目を読む", HEADER,
+     {"order.md": CALLER_TABLE_HEAD + "| 呼ぶ側の分岐 | " + " | ".join(item[2:] for item in CALLER_GROUPED) + " |\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: ほかの行を指す表の行は数えない", HEADER,
+     {"order.md": CALLER_TABLE_HEAD + "| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |\n\n" + CALLER_FULL}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: ほかに行が無ければ案内の表の行も名指す", HEADER,
+     {"order.md": CALLER_TABLE_HEAD + "| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |\n"}, 1, "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐"),
+    ("呼ぶ側の分岐: 節の番号の付いた見出しも読む", HEADER, {"order.md": "### 3.2 呼ぶ側の分岐\n\n" + CALLER_ITEMS[0] + "\n"}, 1, "order.md:1: 呼ぶ側の分岐の行が 8 分岐のうち 7 分岐"),
+    # 狭いパスの指摘で足した試料（#1340）
+    ("呼ぶ側の分岐: 鉤括弧の引用の後に文が続けば触れる", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[:-1]) + "\n- 量が重なる: 「エラー画面」と同じ画面を出す\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: リンクで名指した先と同じも触れない", HEADER,
+     {"order.md": CALLER_HEAD + "\n".join(CALLER_ITEMS[:-1]) + "\n- 量が重なる: [出荷](ship.md) と同じ\n"}, 1, "1 分岐に触れていない（量が重なる）"),
+    ("呼ぶ側の分岐: 書きかけの表の行はほかに行があっても名指す", HEADER,
+     {"order.md": CALLER_TABLE_HEAD + "| 呼ぶ側の分岐 | 後で書く |\n\n" + CALLER_FULL}, 1, "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐"),
+    # #1389: 「呼ぶ側の分岐」の語を含む書きかけの表の行を案内と読まない。案内は 1 つのセルの中で、鉤括弧の名指しだけ・リンク・案内の言い回しのどれかで名指すものだけ
+    ('呼ぶ側の分岐: 語を含む書きかけの表の行もほかに行があっても名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 飾りのある書きかけの表の行も名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '｜**呼ぶ側の分岐**｜**呼ぶ側の分岐**は後で書く｜\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 下書きの表の行は案内でなく名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は下書き |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 言い回しでない下の字の表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書いて下さい |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 節目の表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は節目で決める |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 調節の表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で調節する |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 目下にの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は目下に検討中 |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 下の担当の表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は下の担当が書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 参照するの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は参照する API が決まってから書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 見てからの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は実装を見てから書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 次の版の表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は次の版で書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 鉤括弧の無いのとおりの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は仕様のとおり後で書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 鉤括弧の後ろに文が続く書きかけの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 「呼ぶ側の分岐」は後で書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 語と言い回しが別のセルの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く | 参照: spec-ir.md |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 語と言い回しが別の項目の表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く<br>下の表は別 |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 語の無い案内の言い回しの書きかけの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 下の節で後で書く |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 二重鉤括弧の名指しだけの表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 『呼ぶ側の分岐』 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: リンクで名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | [呼ぶ側の分岐](#呼ぶ側の分岐) |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 飾りのあるリンクで名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | [**呼ぶ側の分岐**](#呼ぶ側の分岐) |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 参照形式のリンクで名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | [呼ぶ側の分岐][callers] |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 節を伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐の節 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 参照を伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐を参照 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 下にを伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は下に書く |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 後述を伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は後述 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 次の表を伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は次の表 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: のとおりを伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 『呼ぶ側の分岐』のとおり |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 飾りのある鉤括弧の名指しに見よを伴う表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 「**呼ぶ側の分岐**」を見よ |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    # #1389 の狭いパスの後で足した試料（句読点・括弧つきの名指しだけ・見よう・見ていない・次の行・前述）
+    ('呼ぶ側の分岐: 句読点つきの鉤括弧の名指しだけの表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 『呼ぶ側の分岐』。 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 括弧の中の鉤括弧の名指しだけの表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | （『呼ぶ側の分岐』） |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 見ようの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で見よう |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 見ていないの表の行は名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は実装を見ていないので後で |\n\n' + CALLER_FULL}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ('呼ぶ側の分岐: 次の行を伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は次の行 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: 前述を伴って名指す表の行は数えない', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐は前述 |\n\n' + CALLER_FULL}, 0, '条件 1 を満たす'),
+    ('呼ぶ側の分岐: ほかに行が無ければ語を伴う案内の表の行も名指す', HEADER,
+     {"order.md": CALLER_TABLE_HEAD + '| 呼ぶ側の分岐 | 呼ぶ側の分岐を参照 |\n'}, 1, 'order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 8 分岐'),
+    ("呼ぶ側の分岐: 欠けた表の行はほかに行があっても名指す", HEADER,
+     {"order.md": CALLER_TABLE_HEAD + "| 呼ぶ側の分岐 | 入力が欠ける: a（ほかは下の「呼ぶ側の分岐」の節で後で） |\n\n" + CALLER_FULL}, 1, "order.md:3: 呼ぶ側の分岐の行が 8 分岐のうち 7 分岐"),
+    ("呼ぶ側の分岐: .md 以外のファイルの行は見ない", HEADER, {"order.md": CLEAN_SPEC, "rules.txt": CALLER_HEAD + CALLER_GROUPED[0] + "\n"}, 0, "条件 1 を満たす"),
+    ("呼ぶ側の分岐: 形式検査のモデルの行は見ない", HEADER, {"order.md": CLEAN_SPEC, "formal/order/README.md": CALLER_HEAD + CALLER_GROUPED[0] + "\n"}, 0,
+     "条件 1 を満たす"),
     ("Q&A 表が無い", None, {"order.md": CLEAN_SPEC}, 2, "Q&A 表を読めない"),
     ("Q&A 表が UTF-8 でない", b"\xff\xfe\x00", {"order.md": CLEAN_SPEC}, 2, "Q&A 表を読めない"),
     # 想定外の例外（128KB 超のセルの csv.Error）も 2 で、トレースバックの 1 にしない（#286）
@@ -278,8 +585,6 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '        spots = f"{where[0][0]}:{where[0][1]}"', "同じファイルの重複は後ろの場所も名指しする"),
     ("先頭のセルでなく最後のセルを見る", CELL,
      'unicodedata.normalize("NFKC", stripped.rstrip("|").rsplit("|", 1)[-1]).strip().strip("`*_ ")', "先頭のセル以外は数えない"),
-    ("表の行でなくても数える", '        if not stripped.startswith("|"):\n            previous, counting = None, False\n            continue\n',
-     "", "行頭が `|` でない行は数えない"),
     ("飾りを外さない", CELL, 'unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip()', "等幅の飾りを外して数える"),
     ("強調だけ外さない", '.strip().strip("`*_ ")', '.strip().strip("`_ ")', "強調の飾りを外して数える"),
     ("アンダースコアだけ外さない", '.strip().strip("`*_ ")', '.strip().strip("`* ")', "アンダースコアの飾りを外して数える"),
@@ -300,13 +605,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("形の外の識別子も番号に数える", 'CASE_NUMBER = r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+"', 'CASE_NUMBER = r"[A-Za-z0-9][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*"',
      "表ごとに振り直す連番は数えない"),
     ("見出しを見ずに全部の表を数える", "        if counting and CASE_NUMBER_RE", "        if CASE_NUMBER_RE", "Q&A の番号を引く表は数えない"),
-    ("見出し行も数える", "            counting = previous is not None and CASE_HEADER.search(previous) is not None\n            previous = None\n",
-     "            counting = previous is not None and CASE_HEADER.search(previous) is not None\n            previous = None\n"
+    ("見出し行も数える", "is not None))\n            previous = None\n",
+     "is not None))\n            previous = None\n"
      "            if counting:\n                found.append((number, \"F1-5b\"))\n", "見出し行の先頭のセルは番号に数えない"),
     ("区切りの行が無くても数える", "        if counting and CASE_NUMBER_RE", "        if (counting or (previous and CASE_HEADER.search(previous))) and CASE_NUMBER_RE",
      "区切りの行が無い表は数えない"),
-    ("表が切れても見出しを引き継ぐ", "            previous, counting = None, False\n            continue\n        cell =", "            previous = None\n            continue\n        cell =",
-     "表が切れたら見出しを引き継がない"),
     ("見出しの語を `テストケース` だけにする", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', 'CASE_HEADER = re.compile(r"テストケース")',
      "英語の見出しでも数える"),
     ("見出しの大文字小文字を区別する", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b")',
@@ -314,10 +617,198 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("見出しの語を部分一致で広げる", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', 'CASE_HEADER = re.compile(r"ケース|テスト|case|test", re.IGNORECASE)',
      "ユースケースの表は数えない"),
     ("見出しを行全体で探す", "        previous = cell\n    return found", "        previous = stripped\n    return found", "見出しは先頭のセルだけを見る"),
-    ("フェンスを開いても見出しの状態を残す", "            fence = opened.group(1)\n            previous, counting = None, False\n",
-     "            fence = opened.group(1)\n            previous = None\n", "フェンスは見出しの状態を消す"),
     ("フェンスの字下げを 2 字までにする", 'FENCE = re.compile(r"^ {0,3}', 'FENCE = re.compile(r"^ {0,2}', "3 字下げのフェンスも開く"),
     ("閉じのフェンスを同じ長さだけにする", "len(opened.group(1)) >= len(fence)", "len(opened.group(1)) == len(fence)", "長いフェンスで閉じる"),
+    # テストケースの節の ID・No・項番の表（#1333）
+    ("節の ID の表を読まない", "\n                                                 or (section is not None and ID_HEADER.fullmatch(previous) is not None))",
+     ")", "テストケースの節の ID の表は読む"),
+    ("節を見ずに ID の表を読む", "(section is not None and ID_HEADER.fullmatch(previous) is not None)", "(ID_HEADER.fullmatch(previous) is not None)",
+     "テストケースの節の外の ID の表は読まない"),
+    ("次の見出しで節を変えない", "            if section is None or level <= section:", "            if section is None:", "次の見出しで節を引き継がない"),
+    ("小見出しで節を抜ける", "            if section is None or level <= section:", "            if True:", "小見出しの下も節の中"),
+    ("浅い見出しで節を抜けない", "            if section is None or level <= section:", "            if section is None or level == section:", "浅い見出しで節を抜ける"),
+    ("節の見出しを部分一致で読む", '                section = level if SECTION_HEADER.search(title) else None', '                section = level if CASE_HEADER.search(title) else None',
+     "テストケースの語で終わらない見出しは節でない"),
+    ("節の見出しの一覧を許さない", r'(?:\s*一覧)?', '', "末尾が一覧の節の見出しも読む"),
+    ("節の見出しの括弧書きを許さない", r'\s*(?:[(（][^()（）]*[)）])?$", re.IGNORECASE)', r'$", re.IGNORECASE)', "括弧書きの付いた節の見出しも読む"),
+    ("ID の見出しを前方一致で読む", "ID_HEADER.fullmatch(previous)", 're.match(r"(?i)id|no|項番", previous)', "ID で始まるだけの見出しの表は読まない"),
+    ("ID の見出しの大文字小文字を区別する", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:ID|no\.?|項番)$")',
+     "テストケースの節の小文字の id の表も読む"),
+    ("No. を読まない", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:id|no|項番)$", re.IGNORECASE)',
+     "テストケースの節の No. の表も読む"),
+    ("項番を読まない", r'ID_HEADER = re.compile(r"^(?:id|no\.?|項番)$", re.IGNORECASE)', r'ID_HEADER = re.compile(r"^(?:id|no\.?)$", re.IGNORECASE)',
+     "テストケースの節の項番の表も読む"),
+    ("# の後の空白を要らなくする", r'HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")', r'HEADING = re.compile(r"^ {0,3}(#{1,6})")',
+     "# の後に空白の無い行は見出しでない"),
+    ("深い字下げの # も見出しにする", r'HEADING = re.compile(r"^ {0,3}(#', r'HEADING = re.compile(r"^ *(#', "4 字下げの # は見出しでない"),
+    ("節の見出しをそろえない", 'title = unicodedata.normalize("NFKC", line.strip().strip("#"))', 'title = (line.strip().strip("#"))',
+     "全角の節の見出しもそろえて読む"),
+    ("== の下線を見ない", r'UNDERLINE = re.compile(r"^ {0,3}(?:=+|-+)', r'UNDERLINE = re.compile(r"^ {0,3}(?:-+)', "== の下線の見出しでも節を閉じる"),
+    # 段落の続き（#1379）。`prose` を戻す変異——区切りの線・箇条書きと引用・HTML の塊・4 字下げのコードを段落と読む
+    ("表の行でなくても数える", '        if not stripped.startswith("|"):\n            previous, counting = None, False\n            if not stripped or in_html:',
+     '        if False:\n            previous, counting = None, False\n            if not stripped or in_html:', "行頭が `|` でない行は数えない"),
+    ("表が切れても見出しを引き継ぐ", "            previous, counting = None, False\n            if not stripped or in_html:", "            previous = None\n            if not stripped or in_html:",
+     "表が切れたら見出しを引き継がない"),
+    ("フェンスを開いても見出しの状態を残す", "            previous, counting, prose = None, False, False  # HTML の塊", "            previous, prose = None, False  # HTML の塊",
+     "フェンスは見出しの状態を消す"),
+    ("下線で節を閉じない", "        if underline:\n            section = None\n", "        if underline:\n            pass\n", "下線の見出しで節を閉じる"),
+    ("空行の後の区切りの線でも節を閉じる", "            if prose and para_col != QUOTED and width >= para_col and UNDERLINE",
+     "            if para_col != QUOTED and width >= para_col and UNDERLINE", "区切りの線では節を閉じない"),
+    ("区切りの線を段落と読む", '    if THEMATIC.match(rest):\n        return "thematic"\n', '    if False:\n        return "thematic"\n', "本文の後に続く 2 本目の区切りの線では節を閉じない"),
+    ("HTML の塊の中を段落と読む", "            if not stripped or in_html:\n                prose = False\n", "            if not stripped:\n                prose = False\n",
+     "HTML コメントの閉じの行の後の区切りの線では節を閉じない"),
+    ("箇条書きを見ない", "    item = LIST_ITEM.match(rest)\n    if item:\n", "    item = LIST_ITEM.match(rest)\n    if False:\n", "箇条書きの直後の区切りの線では節を閉じない"),
+    ("引用を見ない", '    if QUOTE.match(rest):\n        return "quote"', '    if False:\n        return "quote"', "引用の直後の区切りの線では節を閉じない"),
+    ("項の続きの行を段落の始まりと読む", "            elif lazy:\n                pass\n", "            elif lazy:\n                prose, para_col = True, base\n",
+     "箇条書きの続きの行の後の区切りの線では節を閉じない"),
+    ("引用の段落も下線を取る", "prose, para_col = quoted_paragraph(rest), QUOTED", "prose, para_col = quoted_paragraph(rest), 0", "引用の続きの行の後の区切りの線では節を閉じない"),
+    ("4 字下げのコードを段落と読む", '        return None if prose else "code"', "        return None", "4 字下げのコードの直後の区切りの線では節を閉じない"),
+    ("段落の中の 4 字下げもコードと読む", '        return None if prose else "code"', '        return "code"', "4 字下げの続きの行を持つ段落の下線で節を閉じる"),
+    ("空の中身も段落の始まりと読む", "    return block_kind(content, False) is None", '    return block_kind(content, False) in (None, "blank")', "空の引用の行の後の段落の下線で節を閉じる"),
+    ("空の項の中身を空でなくする", '        return marker + 1, True, ""\n', '        return marker + 1, True, "x"\n', "空の項の後の段落の下線で節を閉じる"),
+    ("引用の中身を見ずに段落と読む", '    return starts_paragraph(content[1:] if content.startswith(" ") else content)', "    return bool(content.strip())",
+     "見出しで始まる引用の後の段落の下線で節を閉じる"),
+    ("項の中身を見ずに段落と読む", "                prose, para_col = starts_paragraph(content), column\n", "                prose, para_col = bool(content.strip()), column\n",
+     "区切りの線で始まる項の後の段落の下線で節を閉じる"),
+    ("項の中身の桁の下線を見ない", "UNDERLINE.match(line.expandtabs(4)[para_col:]):", "UNDERLINE.match(line.expandtabs(4)[para_col:]) and para_col == 0:",
+     "項の中身の桁まで字下げした下線で節を閉じる"),
+    ("中身の桁に届かない下線も項の下線にする", "and width >= para_col and UNDERLINE", "and UNDERLINE", "箇条書きの続きの行の後の区切りの線では節を閉じない"),
+    ("中身の桁を印の幅と 1 桁にする", "    column = marker + (spaces if spaces <= 4 else 1)\n", "    column = marker + 1\n", "印の後ろの空白まで中身の桁に数える"),
+    ("タブを 1 桁に数える", "            width += 4 - width % 4", "            width += 1", "タブで字下げした項の中の下線で節を閉じる"),
+    ("空行で項を閉じる", "            if not stripped or in_html:\n                prose = False\n",
+     "            if not stripped or in_html:\n                prose, items = False, (items if stripped else [])\n", "空行の後の項の中の字下げの段落の下線で節を閉じる"),
+    ("深い入れ子の項の桁を見ない", "            base = max([0] + [column for column in items if column <= width])", "            base = 0",
+     "3 段目の項の中身の桁に届かない下線では節を閉じない"),
+    ("空の項の後の空行で項を閉じない", "        if not stripped and was_empty and items:\n            items.pop()", "        if not stripped and was_empty and items:\n            pass",
+     "空の項の後の空行で項を閉じる（字下げの段落と線では閉じない）"),
+    ("空の項の行の印を立てない", "                fresh_empty = empty\n", "                fresh_empty = False\n", "空の項の後の空行で項を閉じる（段落の下線で閉じる）"),
+    ("同じ行の入れ子の項を積まない", '                while not empty and block_kind(content, False) == "item":', "                while False:",
+     "同じ行で入れ子になった項の中身の桁の下線で節を閉じる"),
+    ("同じ行の入れ子の項の桁を足さない", "                    column += inner\n", "", "同じ行で入れ子になった項の中身の桁に届かない線では節を閉じない"),
+    ("空の項も段落を割り込む", "        if inside and (empty", "        if inside and (False", "空の項は段落を割り込まない"),
+    ("1 でない番号の項も段落を割り込む", " or (item.group(2) is not None and int(item.group(2)) != 1)", "", "1 でない番号の行は段落を割り込まない"),
+    ("段落の容れ物の外でも割り込めない形を段落の続きにする", "                inside = prose and base >= para_col and para_col != QUOTED\n",
+     "                inside = prose\n", "項の外のタグだけの行は HTML の塊を始める"),
+    ("空行で HTML の塊を閉じない", "((html[0] is None and not stripped) or", "((False) or", "HTML の塊の後に空行を挟んだ段落の下線で節を閉じる"),
+    ("項の外の行で HTML の塊を閉じない", " or (stripped and indent_width(line) < html[1]))", ")", "項の外の行で項の中の HTML の塊を閉じる"),
+    ("HTML で始まる項の中身を塊にしない", '                if block_kind(content, False) == "html":', "                if False:", "HTML で始まる項の中の本文と線では節を閉じない"),
+    ("引用で始まる項の中身を引用にしない", '                if block_kind(content, False) == "quote":', "                if False:", "引用で始まる項の後の続きの行と線では節を閉じない"),
+    ("*** を区切りの線と読まない", r'THEMATIC = re.compile(r"^ {0,3}([-*_])', r'THEMATIC = re.compile(r"^ {0,3}([-_])', "*** の直後の区切りの線では節を閉じない"),
+    ("番号つきの項を見ない", r'LIST_ITEM = re.compile(r"^( {0,3}(?:[-+*]|(\d{1,9})[.)]))(?:[ \t]|$)")', r'LIST_ITEM = re.compile(r"^( {0,3}(?:[-+*]))(?:[ \t]|$)()")',
+     "番号つきの項の直後の区切りの線では節を閉じない"),
+    ("タグだけの行も段落を割り込む", "        if opening.match(line) and (interrupts or not prose):", "        if opening.match(line):", "タグだけの行は段落を割り込まない"),
+    ("閉じの形で HTML の塊を閉じない", "            html = None  # 閉じの形の行までが塊", "            pass  # 閉じの形の行までが塊",
+     "閉じた HTML コメントの後の段落の下線で節を閉じる"),
+    ("pre を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<(?:pre|script|style|textarea)', r'(re.compile(r"^ {0,3}<(?:never|script|style|textarea)',
+     "空行を挟んだ pre の中の本文と線では節を閉じない"),
+    ("HTML コメントを HTML の塊と読まない", r'(re.compile(r"^ {0,3}<!--")', r'(re.compile(r"^ {0,3}<!--never")', "HTML コメントの直後の区切りの線では節を閉じない"),
+    ("処理命令を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<\?")', r'(re.compile(r"^ {0,3}<\?never")', "処理命令の直後の区切りの線では節を閉じない"),
+    ("宣言を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<![A-Za-z]")', r'(re.compile(r"^ {0,3}<!never[A-Za-z]")', "宣言の直後の区切りの線では節を閉じない"),
+    ("CDATA を HTML の塊と読まない", r'(re.compile(r"^ {0,3}<!\[CDATA\[")', r'(re.compile(r"^ {0,3}<!never\[CDATA\[")', "CDATA の直後の区切りの線では節を閉じない"),
+    ("div を段落を割り込める塊と読まない", "dialog|dir|div|dl", "dialog|dir|dl", "段落を割り込んだ div の中の本文と線では節を閉じない"),
+    ("タグだけの行を HTML の塊と読まない", r'(re.compile(r"^ {0,3}(?:<[A-Za-z]', r'(re.compile(r"^ {0,3}(?:<never[A-Za-z]', "タグだけの行の直後の区切りの線では節を閉じない"),
+    ("節の見出しの飾りを外さない", '.strip(" `*_").rstrip(":：").strip(" `*_")', "", "飾りと末尾のコロンを外した節の見出しも読む"),
+    ("節の見出しの閉じの # を外さない", 'title = unicodedata.normalize("NFKC", line.strip().strip("#"))', 'title = unicodedata.normalize("NFKC", line.strip()[len(heading.group(1)):])', "閉じの # を外した節の見出しも読む"),
+    # 呼ぶ側の分岐の行の揃い（#1340）
+    ("呼ぶ側の分岐の揃いを見ない", "            problems += caller_problems(path, text)\n", "            pass\n", "呼ぶ側の分岐: 見出しの行の欠けを名指しする"),
+    ("見出しの形を行と読まない", '        return ("見出し", "") if _bare(title) == CALLER_LABEL else None', "        return None",
+     "呼ぶ側の分岐: 見出しの行の欠けを名指しする"),
+    ("表の形を行と読まない", '        return ("表", "|".join(cells[1:])) if _bare(cells[0]) == CALLER_LABEL else None', "        return None",
+     "呼ぶ側の分岐: 表の行の欠けを名指しする"),
+    ("項目の行の形を読まない", '    if rest.startswith(":"):\n        return "項目", rest[1:].strip()', '    if False:\n        return "項目", rest[1:].strip()',
+     "呼ぶ側の分岐: 項目の行の欠けを名指しする"),
+    ("組の名前だけを組の全部に読む", "        if current is None:\n            return set(), True\n",
+     "        if current is None:\n            return {name for name in CALLER_BRANCHES if name.startswith(piece)}, False\n",
+     "呼ぶ側の分岐: 組の名前だけの項目は触れない"),
+    ("組に無い述語を飛ばして読む", "        if not names:\n            return set(), True\n", "        if not names:\n            continue\n",
+     "呼ぶ側の分岐: 組に無い述語は触れない"),
+    ("別の組の分岐の名前で組を変えない", "                current, piece = (group, preds), piece[len(group) + 1:]\n                break",
+     "                if current is None:\n                    current, piece = (group, preds), piece[len(group) + 1:]\n                break",
+     "呼ぶ側の分岐: 別の組の分岐の名前を並べてもよい"),
+    ("別の節の添え書きを出さない", '            line += "。別の節を指す書き方（「…と同じ」）は認めない——この機能の分岐を書く"', "            pass",
+     "呼ぶ側の分岐: 別の節を指す書き方は認めない"),
+    ("読めない書き方を名指ししない", "            line += f\"。読めない分岐の書き方", "            line += f\"。分岐の書き方",
+     "呼ぶ側の分岐: 組の名前だけの項目は触れない"),
+    ("行ごと該当なしを読まない", "                if leading and plain.startswith(CALLER_NONE):\n                    whole_none = True",
+     "                if leading and plain.startswith(CALLER_NONE):\n                    pass", "呼ぶ側の分岐: 項目の行の行ごと該当なしは通す"),
+    ("中身の途中の該当なしでも行ごと該当なしにする", "                if leading and plain.startswith(CALLER_NONE):", "                if plain.startswith(CALLER_NONE):",
+     "呼ぶ側の分岐: 最初でない該当なしの文は行ごと該当なしでない"),
+    ("空の文も触れたと読む", "            elif text_of:\n", "            else:\n", "呼ぶ側の分岐: 空の文の項目は触れない"),
+    ("分岐の項目の文の別の節を触れたと読む", "            elif REFERS.search(text_of):\n                refers = True", "            elif False:\n                refers = True",
+     "呼ぶ側の分岐: 分岐の項目の文が別の節を指せば触れない"),
+    ("列見出しの表を読まない", 'if kind == "表" and follow < len(lines) and SEPARATOR.fullmatch(lines[follow].strip()):',
+     'if False:', "呼ぶ側の分岐: 列見出しが呼ぶ側の分岐の表を読む"),
+    ("中身のコードブロックで行を閉じる", "                if fenced:\n                    inner = fenced.group(1)\n                    follow += 1\n                    continue\n",
+     "                if fenced:\n                    break\n", "呼ぶ側の分岐: 中身のコードブロックを挟んでも行を閉じない"),
+    ("空行で項目の行を必ず閉じる", "if ahead >= len(lines) or not _is_branch_item(lines[ahead]):", "if True:",
+     "呼ぶ側の分岐: 項目の行は空行の後の分岐の項目も読む"),
+    ("空行の後の本文も項目の行に入れる", "if ahead >= len(lines) or not _is_branch_item(lines[ahead]):", "if ahead >= len(lines):",
+     "呼ぶ側の分岐: 項目の行は空行の後の本文で終わる"),
+    ("次の見出しで行を閉じない", '                if HEADING.match(unicodedata.normalize("NFKC", nxt)):\n                    break',
+     '                if HEADING.match(unicodedata.normalize("NFKC", nxt)):\n                    pass', "呼ぶ側の分岐: 次の見出しで行を閉じる"),
+    ("次の行の始まりで中身を閉じない", "                if nested is not None:\n                    break", "                if nested is not None:\n                    pass",
+     "呼ぶ側の分岐: 次の行の始まりで中身を閉じる"),
+    ("表の <br> で分けない", "for piece in BREAK.split(entry))", "for piece in [entry])", "呼ぶ側の分岐: 表の行の <br> で分けた項目を読む"),
+    ("見出しの下の表の見出しを別の行にする", "                    body, follow = _table_body(lines, follow + 2)\n                    content += body\n                    continue\n",
+     "                    break\n", "呼ぶ側の分岐: 見出しの下の表の見出しの形の表はその行の中身"),
+    ("表の見出し行のセルも中身に入れる", "            content, follow = _table_body(lines, follow + 1)", "            content, follow = _table_body(lines, follow)",
+     "呼ぶ側の分岐: 表の見出しの形の行ごと該当なし"),
+    ("分岐の項目があっても行ごと該当なしにする", "        whole_none = whole_none and not labelled\n", "",
+     "呼ぶ側の分岐: 該当なしで始まる文があっても分岐の項目を数える"),
+    ("名指しの無い「と同じ」も別の節と読む", "(?:\\]\\([^)]*\\)|[\\]」』])\\s*と同じ", "と同じ",
+     "呼ぶ側の分岐: 名指しの無い「と同じ」は触れる"),
+    ("後ろの括弧書きを許さない", "\\s*(?:[。.]|[（(][^）)]*[）)])?$", "$", "呼ぶ側の分岐: 文の途中の名指しの「と同じ」も触れない"),
+    ("名指しの後に文が続いても別の節と読む", "\\s*(?:[。.]|[（(][^）)]*[）)])?$", "", "呼ぶ側の分岐: 鉤括弧の引用の後に文が続けば触れる"),
+    ("リンクの名指しを読まない", "(?:\\]\\([^)]*\\)|[\\]」』])", "[\\]」』]", "呼ぶ側の分岐: リンクで名指した先と同じも触れない"),
+    ('書きかけの表の行も案内と読む', ' and pointed\n', '\n', '呼ぶ側の分岐: 書きかけの表の行はほかに行があっても名指す'),
+    ('語を含む書きかけの表の行も案内と読む（#1389 の前の判定）', ' and pointed\n', ' and CALLER_LABEL in own\n', '呼ぶ側の分岐: 語を含む書きかけの表の行もほかに行があっても名指す'),
+    ('案内をセルごとに見ない', '            pointed = pointed or _caller_pointer(part)\n', '            pointed = pointed or _caller_pointer(own)\n', '呼ぶ側の分岐: 語と言い回しが別のセルの表の行は名指す'),
+    ('案内を <br> の項目ごとに見ない', '            pointed = pointed or _caller_pointer(part)\n', '            pointed = pointed or _caller_pointer(BREAK.sub(" ", own))\n', '呼ぶ側の分岐: 語と言い回しが別の項目の表の行は名指す'),
+    ('語が無くても言い回しがあれば案内と読む', '    if CALLER_LABEL not in part:\n        return False\n', '', '呼ぶ側の分岐: 語の無い案内の言い回しの書きかけの表の行は名指す'),
+    ('鉤括弧の名指しだけを案内と読まない', '(CALLER_NAMED.fullmatch(part) is not None or ', '(', '呼ぶ側の分岐: 二重鉤括弧の名指しだけの表の行は数えない'),
+    ('鉤括弧があれば後ろに文が続いても案内と読む', 'CALLER_NAMED.fullmatch(part)', 'CALLER_NAMED.search(part)', '呼ぶ側の分岐: 鉤括弧の後ろに文が続く書きかけの表の行は名指す'),
+    ('リンクの名指しを案内と読まない', 'CALLER_LINK.search(part) is not None\n            or ', '', '呼ぶ側の分岐: リンクで名指す表の行は数えない'),
+    ('リンクの中の飾りを許さない', 'rf"\\[{CALLER_DECOR}{CALLER_LABEL}{CALLER_DECOR}\\]', 'rf"\\[{CALLER_LABEL}\\]', '呼ぶ側の分岐: 飾りのあるリンクで名指す表の行は数えない'),
+    ('参照形式のリンクを読まない', '\\](?:\\(|\\[)', '\\]\\(', '呼ぶ側の分岐: 参照形式のリンクで名指す表の行は数えない'),
+    ('節の言い回しを案内と読まない', 'r"(?<![一-龥々])節(?![一-龥々])|', 'r"', '呼ぶ側の分岐: 節を伴って名指す表の行は数えない'),
+    ('節の後ろの漢字を見ない', '節(?![一-龥々])', '節', '呼ぶ側の分岐: 節目の表の行は名指す'),
+    ('節の前の漢字を見ない', '(?<![一-龥々])節', '節', '呼ぶ側の分岐: 調節の表の行は名指す'),
+    ('参照の言い回しを案内と読まない', '|(?<![一-龥々])参照(?![元先す])|', '|', '呼ぶ側の分岐: 参照を伴って名指す表の行は数えない'),
+    ('参照するも案内と読む', '参照(?![元先す])', '参照', '呼ぶ側の分岐: 参照するの表の行は名指す'),
+    ('後述の言い回しを案内と読まない', '|(?<![一-龥々])[後前]述', '', '呼ぶ側の分岐: 後述を伴って名指す表の行は数えない'),
+    ('上下の前の漢字を見ない', '(?<![一-龥々])[上下](?:', '[上下](?:', '呼ぶ側の分岐: 目下にの表の行は名指す'),
+    ('下のの後ろを見ない', 'の(?:節|表|項|見出し|行|「|『)', 'の', '呼ぶ側の分岐: 下の担当の表の行は名指す'),
+    ('下にの言い回しを案内と読まない', '記|に|の(?:', '記|の(?:', '呼ぶ側の分岐: 下にを伴って名指す表の行は数えない'),
+    ('次のの言い回しを案内と読まない', '|次の(?:節|表|項|見出し|行)|', '|', '呼ぶ側の分岐: 次の表を伴って名指す表の行は数えない'),
+    ('次のの後ろを見ない', '次の(?:節|表|項|見出し|行)', '次の', '呼ぶ側の分岐: 次の版の表の行は名指す'),
+    ('見よの言い回しを案内と読まない', '|見よ(?!う)|', '|', '呼ぶ側の分岐: 飾りのある鉤括弧の名指しに見よを伴う表の行は数えない'),
+    ('見てからも案内と読む', '見て(?!から|い)', '見て(?!い)', '呼ぶ側の分岐: 見てからの表の行は名指す'),
+    ('見ようも案内と読む', '見よ(?!う)', '見よ', '呼ぶ側の分岐: 見ようの表の行は名指す'),
+    ('見ていないも案内と読む', '見て(?!から|い)', '見て(?!から)', '呼ぶ側の分岐: 見ていないの表の行は名指す'),
+    ('名指しだけのセルの句読点・括弧を許さない', '（）()。.、', '', '呼ぶ側の分岐: 句読点つきの鉤括弧の名指しだけの表の行は数えない'),
+    ('名指しだけのセルの括弧を許さない', '（）()', '', '呼ぶ側の分岐: 括弧の中の鉤括弧の名指しだけの表の行は数えない'),
+    ('次の行の言い回しを読まない', '見出し|行)|見よ', '見出し)|見よ', '呼ぶ側の分岐: 次の行を伴って名指す表の行は数えない'),
+    ('前述の言い回しを読まない', '[後前]述', '後述', '呼ぶ側の分岐: 前述を伴って名指す表の行は数えない'),
+    ('のとおりの言い回しを案内と読まない', '|[」』]の(?:とおり|通り)', '', '呼ぶ側の分岐: のとおりを伴って名指す表の行は数えない'),
+    ('鉤括弧の無いのとおりも案内と読む', '[」』]の(?:とおり|通り)', 'の(?:とおり|通り)', '呼ぶ側の分岐: 鉤括弧の無いのとおりの表の行は名指す'),
+    ('下の字なら案内と読む', '[上下](?:記|に|の(?:節|表|項|見出し|行|「|『))', '[上下]', '呼ぶ側の分岐: 言い回しでない下の字の表の行は名指す'),
+    ("分岐の項目のある表の行も案内と読む", "        pointer = kind == \"表\" and not labelled and ", "        pointer = kind == \"表\" and ",
+     "呼ぶ側の分岐: 欠けた表の行はほかに行があっても名指す"),
+    ("チェックボックスを外さない", "(?:\\[[ xX]\\]\\s+)?", "", "呼ぶ側の分岐: チェックボックスの行と項目を読む"),
+    ("表の行をセルごとに分けない", '            content = [cell for cell in own.split("|") if cell.strip()]', "            content = [own]",
+     "呼ぶ側の分岐: 表の行のセルごとの項目を読む"),
+    ("案内の表の行も行に数える", "    if any(not row[4] for row in rows):\n", "    if False:\n", "呼ぶ側の分岐: ほかの行を指す表の行は数えない"),
+    ("ほかに行が無くても案内の表の行を外す", "    if any(not row[4] for row in rows):\n", "    if True:\n", "呼ぶ側の分岐: ほかに行が無ければ案内の表の行も名指す"),
+    ("見出しの節の番号を外さない", '        title = re.sub(r"^[0-9]+(?:\\.[0-9]+)*\\.?\\s+", "", _bare(title))', "        pass",
+     "呼ぶ側の分岐: 節の番号の付いた見出しも読む"),
+    ("呼ぶ側の分岐のコードブロックの中も読む",
+     "        if fence:\n            if fence_closes(opened, fence, line):\n                fence = None\n            at += 1\n            continue\n        if opened:\n            fence = opened.group(1)\n            at += 1\n            continue\n",
+     "", "呼ぶ側の分岐: コードブロックの中の行は見ない"),
+    ("飾りを外さない", '    return text.strip().strip("*`_ ").strip()', "    return text.strip()", "呼ぶ側の分岐: 全角のコロンと強調の飾りを外して読む"),
+    ("項目の全角のコロンを畳まない", '    text = unicodedata.normalize("NFKC", line).strip()\n    if text.startswith("|"):\n        if SEPARATOR',
+     '    text = line.strip()\n    if text.startswith("|"):\n        if SEPARATOR', "呼ぶ側の分岐: 全角のコロンと強調の飾りを外して読む"),
+    (".md 以外の行も見る", "                numbers.setdefault(case, []).append((path, number))\n            if callers:\n                problems += caller_problems(path, text)\n",
+     "                numbers.setdefault(case, []).append((path, number))\n        if callers:\n            problems += caller_problems(path, text)\n", "呼ぶ側の分岐: .md 以外のファイルの行は見ない"),
     ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "巨大なセル"),
 ]
@@ -415,6 +906,28 @@ def reference_case_number(markdown: str) -> str | None:
     return found.group(1) if found else None
 
 
+def reference_caller_groups(markdown: str) -> list[tuple[str, str]]:
+    """「呼ぶ側の分岐の行の形」の組と分岐の表の行（組, 分岐を `・` で並べた文）。"""
+    if "#### 呼ぶ側の分岐の行の形" not in markdown:
+        return []
+    section = markdown.split("#### 呼ぶ側の分岐の行の形", 1)[1].split("\n### ", 1)[0]
+    table = section.split("| 組 | 分岐（組の名前に続ける形） |", 1)[1] if "| 組 | 分岐（組の名前に続ける形） |" in section else ""
+    return re.findall(r"^ *\| ([^|`]+?) \| ([^|`]+?) \|$", table.split("\n\n", 1)[0], flags=re.MULTILINE)[1:]
+
+
+def reference_branch_names(markdown: str) -> list[str]:
+    """spec-ir.md の「分岐の名前」の表のセル。"""
+    section = markdown.split("### 分岐の名前", 1)[1].split("\n## ", 1)[0] if "### 分岐の名前" in markdown else ""
+    return re.findall(r"^\| `([^`]+)` \|$", section, flags=re.MULTILINE)
+
+
+def load_module(path: Path):
+    spec = importlib.util.spec_from_file_location("check_spec_exit_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def merged_cases(scripts: Path, work: Path) -> list[tuple[str, int, str, int, str]]:
     """(名前, 実際の終了コード, 出力, 期待する終了コード, 出力に含まれるべき文字列)。版（`docs/v<n>/`）を `merge-versions.py` で重ねた全体に当てる。
     後の版が同じファイルを置き換えたら重複でない。別のファイルに同じ番号を置けば前の版の行が残るので重複（#1297）。"""
@@ -486,12 +999,44 @@ def main() -> int:
         check("本体に CASE_HEADER が見つからない", code_header is not None)
         if code_header:
             check("CASE_HEADER が references/spec-exit.md と違う", f"`{code_header.group(1)}`" in reference, code_header.group(1))
+        code_id = re.search(r'^ID_HEADER = re.compile\(r"(.*)", re.IGNORECASE\)$', source, flags=re.MULTILINE)
+        check("本体に ID_HEADER が見つからない", code_id is not None)
+        if code_id:
+            check("ID_HEADER が references/spec-exit.md と違う", f"`ID_HEADER`: `{code_id.group(1)}`" in reference, code_id.group(1))
+        code_section = re.search(r'^SECTION_HEADER = re.compile\(r"(.*)", re.IGNORECASE\)$', source, flags=re.MULTILINE)
+        check("本体に SECTION_HEADER が見つからない", code_section is not None)
+        if code_section:
+            check("SECTION_HEADER が references/spec-exit.md と違う", f"`SECTION_HEADER`。大文字小文字を区別しない）に当たる見出しから" in reference
+                  and f": `{code_section.group(1)}`（" in reference, code_section.group(1))
         check("本体に CASE_NUMBER が見つからない", code_number is not None)
         check("references/spec-exit.md の「テストケースの番号の重複」に番号の形が見つからない", ref_number is not None)
         if code_number and ref_number:
             check("CASE_NUMBER が references/spec-exit.md と違う", code_number.group(1) == ref_number, f"{code_number.group(1)} vs {ref_number}")
         broken_number = reference.replace("`[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+`", "`[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+`")
         check("番号の形の写しを崩しても不一致にならない", reference_case_number(broken_number) != ref_number)
+
+        # 呼ぶ側の分岐の行の形（#1340）——組と分岐の表は spec-exit.md、分岐の名前の表は spec-ir.md が原本
+        spec_ir = (PLUGIN / "references" / "spec-ir.md").read_text(encoding="utf-8")
+        module = load_module(SCRIPTS / TARGET)
+        groups = reference_caller_groups(reference)
+        code_groups = [(group, "・".join(f"{particle}{predicate}" for particle, predicate in preds)) for group, preds in module.CALLER_GROUPS]
+        check("CALLER_GROUPS が references/spec-exit.md の「呼ぶ側の分岐の行の形」の組と分岐の表と違う", code_groups == groups, f"{code_groups} vs {groups}")
+        check("references から組と分岐を読めない（読み方が壊れている）", len(groups) == 3, str(groups))
+        ir_names = reference_branch_names(spec_ir)
+        check("CALLER_BRANCHES が references/spec-ir.md の分岐の名前の表と違う", list(module.CALLER_BRANCHES) == ir_names and len(ir_names) == 8,
+              f"{module.CALLER_BRANCHES} vs {ir_names}")
+        check("組と分岐の写しを崩しても不一致にならない",
+              reference_caller_groups(reference.replace("| 量 | が上限を超える・が重なる |", "| 量 | が上限を超える |")) != groups)
+        check("CALLER_LABEL が references/spec-exit.md の行の形の見出しと違う", f"`### {module.CALLER_LABEL}`" in reference, module.CALLER_LABEL)
+
+        # check(callers=False) は揃いを見ない（scaffold.py の前の版の時点の --upto。#1340 の 1 パス目の指摘）
+        gap_dir = tmp_path / "callers-off"
+        (gap_dir / "spec").mkdir(parents=True)
+        (gap_dir / "qa.csv").write_text(HEADER, encoding="utf-8")
+        (gap_dir / "spec" / "order.md").write_text(CALLER_HEAD + CALLER_GROUPED[0] + "\n", encoding="utf-8")
+        on_code, _ = module.check(gap_dir / "qa.csv", gap_dir / "spec")
+        off_code, _ = module.check(gap_dir / "qa.csv", gap_dir / "spec", callers=False)
+        check("check(callers=False) が呼ぶ側の分岐の揃いを見ている／既定で見ていない", on_code == 1 and off_code == 0, f"{on_code} {off_code}")
 
         # 版を重ねた全体（#1297）
         for name, got, output, want, needle in merged_cases(scripts, tmp_path / "mergework"):

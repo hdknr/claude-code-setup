@@ -40,7 +40,7 @@ docs/v<n>/
 │   ├── qa-dev.csv           # 内部の層の Q&A 表：開発者が決めて記録する質問（列は qa-csv.md。shared/ に置かない）
 │   ├── formal/              # 形式検査のモデル（対象ごとの <対象>/。spec-review が残す写し。下の「形式検査のモデル」）
 │   └── spec_ir.json         # 仕様の中間表現（scaffold が書き起こす。形は spec-ir.md）
-├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り
+├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り・テストの工数の突き合わせ（test-effort.md）
 │   ├── schedule.csv         # スケジュールの正本（列は feasibility-csv.md）
 │   └── estimate.csv         # 見積りの正本（同上）
 ├── proposal/                # 決裁者向け提案書の手書き部分
@@ -884,7 +884,7 @@ scaffold が Issue の本文に載せ、dev-loop が見た目を確かめる。
 | ガントチャート | `build/feasibility/gantt.svg` | `feasibility` |
 | 提案書 | `build/proposal/proposal.md`（と同じ場所の `gantt.svg`。`--pptx` なら `proposal.pptx` と別紙の `decisions.xlsx`） | `proposal` |
 | 仕様書 | `build/proposal/spec.md`（と同じ場所の `spec-figure-NN.svg`。`--pptx` なら `spec.pptx`。下の「仕様書」） | `proposal` |
-| Issue の本文 | `build/scaffold/issues/<機能の id>.md`（`--bundle` でまとめた機能は `bundle-<機能の id>-<機能の id>.md`。と同じ場所の `issues.json`） | `scaffold` |
+| Issue の本文 | `build/scaffold/issues/<機能の id>.md`（`--bundle` でまとめた機能は `bundle-<機能の id>-<機能の id>.md`、`--foundation` の土台の本文は `foundation.md`。と同じ場所の `issues.json`） | `scaffold` |
 | 課題一覧（案） | `build/scaffold/issues/proposals.md`（Issue の本文ではない。登録しない——`spec-ir.md` の「呼ぶ側の分岐」） | `scaffold` |
 | サイト | `site/`（MkDocs の出力。下の「ドキュメントのツール」） | `mkdocs build` |
 

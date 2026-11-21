@@ -3,8 +3,10 @@
 
 usage: python3 parent-checklist.py --index build/scaffold/issues/issues.json --issues <Issue の一覧の JSON>
 
-**依存の連鎖は `scaffold.py` が `issues.json` に書く**——項目ごとの `depends`（依存先の機能の id。呼ぶ機能の Issue は、
-呼ばれる機能の Issue に依存する）。Issue の番号は登録の後にしか無いので、このスクリプトが登録した Issue の一覧から番号を引いて、
+**依存の連鎖は `scaffold.py` が `issues.json` に書く**——項目ごとの `depends`（依存先の機能の id。呼ぶ機能の Issue は呼ばれる機能の Issue に、
+Red テストが前提・後の状態・トレースでほかの機能の入口を呼ぶ機能の Issue はその機能の Issue に依存する。決まりの正は `references/handoff-issue.md` の「依存の連鎖」）。
+**一から作る案件で `scaffold.py --foundation` が足した土台の項目**（`"foundation": true`。#1347）は、id `foundation` の項目として読む——
+ほかの項目の `depends` がそれを指し、出す行の題も `foundation` になる（`references/handoff-issue.md` の「土台の本文」）。Issue の番号は登録の後にしか無いので、このスクリプトが登録した Issue の一覧から番号を引いて、
 dev-loop の cruise の親 Issue に貼れる行にする（書式の正は dev-loop の `skills/cruise/scripts/parent-issue.py` の docstring）。
 入力の Issue の一覧は、登録した先のリポジトリから決まった 1 行で取る（**このスクリプトは `gh` を呼ばない**。`rebuild-scope.py` と同じ形）:
 
@@ -43,6 +45,7 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 - **同じ本文の Issue が 2 件以上あれば 1**——どちらの番号を親に書くかを決めない（同じ機能を 2 度登録している）。
 - **本文の Issue が無い項目があれば 1 で、一覧を出さない**——その項目への依存が黙って落ちた一覧を、親 Issue に貼らせない。
 - **依存は機能の id から、その機能を持つ項目の番号に引く**——まとめた本文（`features`）の機能への依存も、まとめた Issue の番号になる。
+- **土台の項目（`"foundation": true`）は id `foundation` の項目として読む**——ほかの項目の `depends` の `foundation` を、土台の Issue の番号に引く。
 - **`depends` が `issues.json` に無い機能を指せば 2**——依存の行を黙って落とさない。
 - **依存が循環すれば 2**——`parent-issue.py` が拒む台帳を、貼るまで気づかせない。
 - **依存先が先に来る順で出す**（同じ段は `issues.json` の順）。
@@ -80,6 +83,8 @@ def _load(name: str, filename: str):
 
 rebuild = _load("rebuild_scope", "rebuild-scope.py")
 CLOSED = "CLOSED"
+# 土台の項目の id（`scaffold.py` の `FOUNDATION_ID` の写し。`scripts/test-parent-checklist.py` が突き合わせる）
+FOUNDATION_ID = "foundation"
 
 
 class Bad(Exception):
@@ -100,12 +105,15 @@ def read_index(path: Path) -> list[dict]:
         raise Bad(f"{path}: 項目の配列でない（scaffold.py が書いた issues.json を渡す）")
     entries = []
     for index, item in enumerate(data):
-        ids = [item.get("feature")] if isinstance(item, dict) and "feature" in item else (
-            item.get("features") if isinstance(item, dict) else None)
+        if isinstance(item, dict) and item.get("foundation") is True:
+            ids = [FOUNDATION_ID]  # 土台の項目（`scaffold.py --foundation`。#1347）——ほかの項目の depends が指す
+        else:
+            ids = [item.get("feature")] if isinstance(item, dict) and "feature" in item else (
+                item.get("features") if isinstance(item, dict) else None)
         depends = item.get("depends", []) if isinstance(item, dict) else None
         if not (isinstance(ids, list) and ids and all(isinstance(i, str) for i in ids) and isinstance(item.get("body"), str)
                 and isinstance(depends, list) and all(isinstance(d, str) for d in depends)):
-            raise Bad(f"{path}: {index} 番目が項目の形でない（feature か features・body・depends を持つ）")
+            raise Bad(f"{path}: {index} 番目が項目の形でない（feature か features か foundation・body・depends を持つ）")
         body = path.parent / item["body"]
         try:
             text = body.read_text(encoding="utf-8")
