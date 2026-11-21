@@ -16,8 +16,16 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
    - **`graders:` のブロック（次の最上位のキーまで）の中に** `- name:` が 1 つ以上ある
    **ただし、HEAD の台帳の別の行の `統合元` に挙がり、その行が base にも在って、同じファイルで、同じ `同趣旨`（空でない）を持っていた行は、統合なので eval を求めない**
    （同じ受け手の文面に同じ趣旨の行が残るため）。
-3. **生き残る行の ID のファイルを変えない**（別の受け手の文面へ移さない）。**ID を別の既存の項に付け替えない**——base と HEAD の両方にある ID の引きが変わり、新しい引きが base のそのファイルの**元の項とは別の項の頭**に当たれば 1
-   （同じ項の言い換え——頭の飾りを外す・本文の文を頭に上げる・頭を縮める——は通る。項を本文ごと別の新しい文面に差し替えて ID を付け替える形は見ない）。
+3. **生き残る行の ID のファイルを変えない**（別の受け手の文面へ移さない）。**ただし base から作業ツリーまでの差分で git が改名と見たファイル（`git diff -M`）は同じファイルと読む**（#1423 の R1。
+   中身を大きく変えて改名と見られなかったもの・索引に載せていない新しいファイルは「ファイルを変えた」で 1 のまま——止まる向き）。
+   **ID を別の既存の項に付け替えない**——base と HEAD の両方にある ID の引きが変わったら、次のどちらかで 1:
+   - 新しい引きが、**HEAD に項の頭のまま残る** base の別の項の頭に前方一致する（言い換えない付け替え）。HEAD に残った頭だけを照らすので、
+     同じ PR で外した別の項の base の頭に縮めた引きが前方一致しても 1 にしない（#1423 の S5）。
+   - HEAD でその引きが当たる項（頭の行と、その下の字下げした行。字下げの無い行で切る）に、飾り（`*`・`_`・`` ` ``）と空白を除いた形で**元の項の頭が残らず**、
+     base の別の項の頭が入っている——付け替え先の項を同じ PR で言い換えても当たる（#1423 の S1・S2）。
+   元の項の頭が残る言い換え（頭の飾りを外す・本文の文を頭に上げる・頭を縮める）は通る。後者の照らしでは、**その ID の `統合元` に挙がった行の項の頭**（統合で取り込んだ文面）と、
+   **元の項が base の時点から本文（字下げした行）で引いていた別の項の頭**は照らさない（前者は統合の言い換え、後者は同じ項の頭の言い換えを付け替えと見ないため）。
+   **項を本文ごと別の新しい文面に差し替えて ID を付け替える形・付け替え先の頭も言い換えたうえで元の項の頭の文面をその字下げした行か字下げの無い続きの行に写して付け替える形は見ない**（守られているのは項の頭だけ）。
 
 ## 守らないもの
 
@@ -25,6 +33,7 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
   通ったことは PR に `run-dev-loop-evals.py` の要約を貼って人間が見る（`references/prune.md`）。
 - **承認**——外す PR を人間が承認したかは見ない。
 - **台帳の無い base**（導入の PR）——外した行が定義できないので 2 を飛ばす。
+- **改名と同じ PR で受け手を変えること**——改名を同じファイルと読むのは、SKILL.md がそのファイルを渡す体を変えていないと仮定してである（SKILL.md の参照の変化は見ない）。
 
 ## 終了コード
 
@@ -65,6 +74,42 @@ def parse_registry_text(effects, text: str) -> list[dict]:
     if not rows or rows[0] != effects.HEADER:
         raise ValueError("base の台帳のヘッダが違う")
     return [dict(zip(effects.HEADER, r)) for r in rows[1:] if len(r) == len(effects.HEADER)]
+
+
+def flat(text: str) -> str:
+    """項の頭と項を照らす形——飾り（`*`・`_`・`` ` ``）と空白（改行を含む）を除く。頭の飾りを外す・本文の文を頭に上げる言い換えでも、元の頭の文面が残る。"""
+    return re.sub(r"[\s*_`]+", "", text)
+
+
+def own_lines(body: str) -> str:
+    """項の頭の行と、その下の字下げした行（と空行）だけ。字下げの無い行（段落・見出し・コードブロック・別の印の項）で切る。"""
+    lines = body.split("\n")
+    out = lines[:1]
+    for line in lines[1:]:
+        if line.strip() and not line[:1].isspace():
+            break
+        out.append(line)
+    return "\n".join(out)
+
+
+def renames(root: Path, base: str) -> dict[str, str]:
+    """base から作業ツリーまでで git が改名と見た prompts のファイル——スキルのディレクトリからの相対パスで 旧 → 新（#1423 の R1）。
+    台帳と原文を作業ツリーから読むので、改名も作業ツリーまで見る（コミットの前に回しても同じ答え。追跡していない新しいファイルは改名と見えない）。読めなければ空（改名を追わない——止まる向き）。"""
+    r = git(root, "diff", "-z", "--name-status", "-M", base, "--", f"{SKILL_REL}/prompts/")
+    if r.returncode != 0:
+        return {}
+    parts = r.stdout.split("\0")
+    out: dict[str, str] = {}
+    i = 0
+    while i < len(parts) and parts[i]:
+        status = parts[i]
+        if status[:1] in ("R", "C"):
+            if status[:1] == "R" and i + 2 < len(parts):
+                out[parts[i + 1][len(SKILL_REL) + 1:]] = parts[i + 2][len(SKILL_REL) + 1:]
+            i += 3
+        else:
+            i += 2
+    return out
 
 
 def case_ok(text: str, line_id: str, base_incident: str) -> str | None:
@@ -128,21 +173,42 @@ def main(argv: list[str]) -> int:
             merged_from[src] = r
     removed = [r for r in base_rows if r["ID"] not in head_ids]
     head_by_id = {r["ID"]: r for r in head_rows}
+    renamed = renames(root, base)
     for b in base_rows:
         h = head_by_id.get(b["ID"])
-        if h is None or (h["引き"] == b["引き"] and h["ファイル"] == b["ファイル"]):
+        if h is None:
+            continue
+        moved = renamed.get(b["ファイル"]) == h["ファイル"]
+        if h["引き"] == b["引き"] and (h["ファイル"] == b["ファイル"] or moved):
             continue
         if h["ファイル"] != b["ファイル"]:
-            problems.append(f"{b['ID']}: ファイルを {b['ファイル']} から {h['ファイル']} に変えた（別の受け手の文面へ移さない。外すなら ID ごと外して eval を付ける）")
-            print(f"NG: {problems[-1]}")
-            continue
-        old_text = git(root, "show", f"{base}:{SKILL_REL}/{h['ファイル']}")
+            if not moved:
+                problems.append(f"{b['ID']}: ファイルを {b['ファイル']} から {h['ファイル']} に変えた（別の受け手の文面へ移さない。外すなら ID ごと外して eval を付ける）")
+                print(f"NG: {problems[-1]}")
+                continue
+        old_text = git(root, "show", f"{base}:{SKILL_REL}/{b['ファイル']}")
         if old_text.returncode != 0:
             continue
-        # 別の項の頭に付け替えた形だけを見る。同じ項の言い換え（頭の飾りを外す・本文の文を頭に上げる・頭を縮める）は項の頭に当たらないか、元の項の頭に当たる
-        heads = [first for _, first, _ in effects.items_of(old_text.stdout)]
-        prev = next((f for f in heads if f.startswith(b["引き"])), None)
-        clash = [f for f in heads if f.startswith(h["引き"]) and f != prev]
+        # HEAD で新しい引きが当たる項（本文を含む）が、base のどの項の頭を持っているかで見る。元の項の頭が残れば同じ項（言い換え・統合）、
+        # 残らずに base の別の項の頭を持てば付け替え。HEAD に残った項だけを照らすので、同じ PR で外した項の頭は当たらない
+        base_items = effects.items_of(old_text.stdout)
+        prev = next((f for _, f, _ in base_items if f.startswith(b["引き"])), None)
+        prev_own = next((flat(own_lines(body)) for _, f, body in base_items if f == prev), "")
+        new_file = root / SKILL_REL / h["ファイル"]
+        new_items = effects.items_of(new_file.read_text(encoding="utf-8")) if new_file.is_file() else []
+        new_heads = {f for _, f, _ in new_items}
+        cur = next((flat(own_lines(body)) for _, f, body in new_items if f.startswith(h["引き"])), None)
+        if cur is None:
+            continue  # 引きが HEAD の項の頭に当たらない——上の check が名指す
+        merged = [x["引き"] for x in base_rows if x["ID"] in h["統合元"].split(";") and x["ファイル"] == b["ファイル"]]
+        others = [f for _, f, _ in base_items if f != prev]
+        # 新しい引きが、HEAD に項の頭のまま残る base の別の項の頭に前方一致する（言い換えない付け替え）
+        clash = [f for f in others if f.startswith(h["引き"]) and f in new_heads]
+        # 元の項の頭が新しい引きの項に残らず、base の別の項の頭が入っている（付け替え先を言い換えた付け替え）
+        if not (prev is not None and flat(prev) in cur):
+            # 統合元の項の頭（取り込んだ文面）と、元の項が base の時点から本文で引いていた別の項の頭は照らさない
+            clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash
+                      and not any(f.startswith(m) for m in merged) and flat(f) not in prev_own]
         if clash:
             problems.append(f"{b['ID']}: 引きを base に既にある別の項の頭「{clash[0][:30]}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")
             print(f"NG: {problems[-1]}")
