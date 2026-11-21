@@ -123,7 +123,7 @@ Issue の「決めたいこと（未決定）」の 4 つ。確認の Issue は�
   取り込みで変わった検査: `check-gates.py`・`merge-pr.py`・`check-spec-exit.py` とそのテスト（#1365・#1405）——足した検査は無い。
   式を当て直した base: `28b24099c25c24d29c571ac8573a9945ed9475c5`（`check-deps-declared.py`・`check-spec-writeback.py`・`formal-sync.py` に渡し、3 本とも 0。関門の記録の `周の base` は関門に渡した値のまま）。
   取り込み後の `check-all.py`（run-serial 越し。HEAD `4054cb2`）: 69/101 本を回し失敗 0（32 本は CACHED）。`check-gates.py --absent`（取り込んだ版）: 照合を通った。
-- 外部レビュー: PR を作った後に `external-reviews.py` で見る。
+- PR #1438 を作った。PR 側の CI（`e62d6e2`）は全部 pass（deploy は skipping）。外部レビュー: 該当なし（`external-reviews.py 1438` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。
 
 ```dev-loop-gates
 周の base: e7074c4d1917d2d067d8f7f6105f7d8ec1c84e85
