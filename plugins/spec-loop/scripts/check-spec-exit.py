@@ -421,11 +421,14 @@ CALLER_POINTER_WORDS = re.compile(
 # 一覧に無い言い回しの案内（#1415）——部分がこの形だけのときに限る。語の前の矢印（`→ 呼ぶ側の分岐`・`→「呼ぶ側の分岐」`）と、
 # 語（鉤括弧の閉じ・強調・等幅を含む——`CALLER_CLOSE`）の直後で部分が終わる `を見る`・`に記載`（`呼ぶ側の分岐を見る`・`「呼ぶ側の分岐」に記載`。後ろの句読点は許す）。
 # 後ろに文が続く（`呼ぶ側の分岐を見るのは後で`・`→ 呼ぶ側の分岐は後で書く`）・語の後ろに別の語や句読点・括弧が挟まる（`呼ぶ側の分岐は後で見る`・`呼ぶ側の分岐。に記載`）は書きかけとして名指す。
-# 行のほかの空でない部分が案内でなければ（`→ 呼ぶ側の分岐<br>後で書く`）、この形の部分があっても案内と読まない（`caller_rows`）
+# 行のほかの空でない部分が案内でなければ（`→ 呼ぶ側の分岐<br>後で書く`）、この形の部分があっても案内と読まない（`caller_rows`）。
+# 形の前は鉤括弧の開き・強調・等幅・空白（`CALLER_OPEN`）、形の終わりは句読点・空白（`CALLER_PUNCT`）だけで、括弧は許さない（`→ 呼ぶ側の分岐（）` は書きかけ）
+CALLER_OPEN = r"[*_`「『\s]*"
 CALLER_CLOSE = r"[*_`」』]*"
+CALLER_PUNCT = r"[。.、\s]*"
 CALLER_POINTER_FORM = re.compile(
-    rf"{CALLER_EDGE}→{CALLER_EDGE}{CALLER_LABEL}{CALLER_EDGE}"
-    rf"|{CALLER_EDGE}{CALLER_LABEL}{CALLER_CLOSE}(?:を見る|に記載){CALLER_EDGE}")
+    rf"{CALLER_OPEN}→{CALLER_OPEN}{CALLER_LABEL}{CALLER_CLOSE}{CALLER_PUNCT}"
+    rf"|{CALLER_OPEN}{CALLER_LABEL}{CALLER_CLOSE}(?:を見る|に記載){CALLER_PUNCT}")
 
 
 def _caller_pointer(part: str) -> bool:
