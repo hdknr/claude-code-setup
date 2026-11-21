@@ -47,6 +47,11 @@ jobs:
         if: github.event_name == 'pull_request'
         run: python3 scripts/check-plan-scope.py "origin/${{ github.base_ref }}"
 
+      # 委譲文の行の台帳と原文の整合、台帳から行を外す PR に元の事故を再現する eval が付いているか（#1194）。PR 限定（base と比べる）。
+      - name: 委譲文の行の台帳と、行を外す PR の eval をチェック
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-prompt-lines.py "origin/${{ github.base_ref }}"
+
       # 歯止め自体が「置いてあるが何も見ていない」状態に退化していないかを確かめる
       - name: check-plan-scope.py のテスト
         run: python3 scripts/test-check-plan-scope.py
@@ -167,6 +172,9 @@ jobs:
 
       - name: 読んだ成果物の集計のテスト（#1157）
         run: python3 scripts/test-artifact-reads.py
+
+      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194）
+        run: python3 scripts/test-line-effects.py
 
       - name: 外部レビュー bot のコメントの取り出しのテスト（#997）
         run: python3 scripts/test-external-reviews.py
