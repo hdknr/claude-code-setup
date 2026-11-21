@@ -406,8 +406,15 @@ BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?")  # タスク�
 BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 # 別の節を指す書き方（「[価格照会書を出力する] と同じ」）——文の末尾が「と同じ」
 REFERS = re.compile(r"(?:\]\([^)]*\)|[\]」』])\s*と同じ\s*(?:[。.]|[（(][^）)]*[）)])?$")  # 角括弧・鉤括弧・リンクで名指した先と「同じ」で文が終わる（後ろの句点・括弧書きは許す）
-# ほかの行を指す案内の表の行の中身（#1389）——`呼ぶ側の分岐` を鉤括弧で名指すか、`呼ぶ側の分岐` と「節」「参照」「下」（`下書き` は除く）の語を同じ中身に持つ
-CALLER_POINTER = re.compile(rf"[「『]{CALLER_LABEL}[」』]|(?=.*{CALLER_LABEL})(?=.*(?:節|参照|下(?!書)))")
+# ほかの行を指す案内の表の行（#1389）——セル・`<br>` で分けた 1 つの部分の中に、`呼ぶ側の分岐` の語と、リンクの名指し（`[呼ぶ側の分岐](…)`）か案内の言い回しの両方があるもの。
+# 鉤括弧は問わない（`「**呼ぶ側の分岐**」を見よ` も案内）。鉤括弧だけ・単漢字だけ（`下さい`・`下限`・`節目`）は案内でない
+CALLER_LINK = re.compile(rf"\[{CALLER_LABEL}\]\(")
+CALLER_POINTER_WORDS = re.compile(r"節(?!目)|参照|後述|前述|下の|下記|下に|上の|次の|見よ|見て|のとおり|の通り")
+
+
+def _caller_pointer(part: str) -> bool:
+    """表の行の中身の 1 つの部分が、ほかの行を指す案内か（#1389）。"""
+    return CALLER_LABEL in part and (CALLER_LINK.search(part) is not None or CALLER_POINTER_WORDS.search(part) is not None)
 
 
 def _bare(text: str) -> str:
@@ -556,7 +563,9 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
         refers = False
         first = True  # 中身の最初の空でない部分か——行ごと該当なしは、中身が `該当なし` で始まり、分岐の項目を持たないときだけ
         labelled = False  # 分岐の書き方の項目を 1 つでも持つか
+        pointed = False  # ほかの行を指す案内の部分を持つか（#1389）
         for part in (piece for entry in content for piece in BREAK.split(entry)):
+            pointed = pointed or _caller_pointer(part)
             item = _caller_item(part)
             plain = _bare(BULLET.sub("", unicodedata.normalize("NFKC", part).strip()).strip("|"))
             if not plain:
@@ -580,10 +589,11 @@ def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
                 touched |= names
         whole_none = whole_none and not labelled
         missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
-        # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、中身が「呼ぶ側の分岐」を鉤括弧で名指すか、「節」「下」「参照」の語を伴って名指すもの
-        # （`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、ほかの行を指す案内——ほかに行があれば行に数えない
-        # （書きかけの行（`| 呼ぶ側の分岐 | 後で書く |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く |`）は案内でない。#1389）
-        pointer = kind == "表" and not labelled and not whole_none and not refers and CALLER_POINTER.search(own) is not None
+        # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、セル（`<br>` で分けた部分）の中で「呼ぶ側の分岐」をリンクで名指すか、
+        # 案内の言い回し（節・参照・下の・見よ など。`CALLER_POINTER_WORDS`）を伴って名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、
+        # ほかの行を指す案内——ほかに行があれば行に数えない
+        # （書きかけの行（`| 呼ぶ側の分岐 | 後で書く |`・`| 呼ぶ側の分岐 | 呼ぶ側の分岐は後で書く |`・`| 呼ぶ側の分岐 | 「呼ぶ側の分岐」は後で書く |`）は案内でない。#1389）
+        pointer = kind == "表" and not labelled and not whole_none and not refers and pointed
         rows.append((at + 1, missing, unread, refers, pointer))
         at = follow
     if any(not row[4] for row in rows):
