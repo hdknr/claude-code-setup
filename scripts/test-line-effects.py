@@ -279,7 +279,7 @@ def remove_v02(skill: Path):
 
 def case_guard(guard_text: str | None = None, effects_text: str | None = None) -> list[str]:
     bad: list[str] = []
-    def scenario(label, rc, word, setup, base_ref="main", pre_base=None, advance=None):
+    def scenario(label, rc, word, setup, base_ref="main", pre_base=None, advance=None, commit=True):
         with tempfile.TemporaryDirectory(prefix="line-guard-") as t:
             root, skill, g, env = guard_repo(Path(t), guard_text, effects_text)
             if pre_base:
@@ -287,7 +287,9 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
             g("add", "."), g("commit", "-q", "-m", "base")
             g("checkout", "-q", "-b", "feat")
             setup(root, skill)
-            g("add", "-A"), g("commit", "-q", "--allow-empty", "-m", "feat")
+            g("add", "-A")
+            if commit:
+                g("commit", "-q", "--allow-empty", "-m", "feat")
             if advance:
                 g("checkout", "-q", "main")
                 advance(root, skill)
@@ -464,6 +466,26 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
                                                         + "".join(f"\n段落 {i}: 改名と見られないほど中身を変えた。\n" for i in range(40)))
         (skill / "references" / "line-registry.csv").write_text(registry_text([r[:1] + ["prompts/verifier-x.md"] + r[2:] for r in ROWS]))
     scenario("G34 改名と見られないほど中身を変えたファイルへ移せば、今までどおり 1（止まる向き）", 1, "ファイルを", s_rename_rewrite)
+    scenario("G39 改名をコミットする前（索引に載せただけ）に回しても 0（台帳と原文と同じく作業ツリーまで見る）", 0, "問題 0 件", s_rename, commit=False)
+    # #1423 の 1 パス目の /code-review（CR1・CR2）
+    def s_merge_reword(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("2. **BBB ふたつめの行です**\n", "").replace(
+            "1. **AAA ひとつめの行です**\n   - 入れ子は数えない", "1. **AAA と BBB をまとめた行**\n   - 入れ子は数えない\n   - **BBB ふたつめの行です**"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA と BBB", "#10", "2026-01-01", "t", "V-02", "指摘"], ROWS[2]]))
+    scenario("G35 統合して頭の文面も変えた（元の頭が残らない）ときも 0——取り込んだ統合元の項の頭は付け替え先と見ない", 0, "V-02 は V-01 に統合", s_merge_reword)
+    def s_keep_removed_text(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("2. **BBB ふたつめの行です**\n", "").replace(
+            "   - 入れ子は数えない", "   - 入れ子は数えない\n   - **BBB ふたつめの行です**（外した項の文面を残す）"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA ひ"] + ROWS[0][3:], ROWS[2]]))
+        add_eval(root, eval_case("V-02", "x"))
+    scenario("G36 外した項の文面を別の項の入れ子に残し、その項の引きを縮めても 0（元の項の頭が残る）", 0, "問題 0 件", s_keep_removed_text)
+    def s_demote_reassign(root, skill):
+        drop_v01_with_eval(root, skill, PROMPT.replace("2. **BBB ふたつめの行です**\n", "**BBB ふたつめの行です**（項でなくした）\n2. **BBB ふたつめの行です**\n"), "**AAA ひとつめ")
+    scenario("G37 元の項を段落にして、すぐ上の項へ付け替えれば 1", 1, "付け替えた", s_demote_reassign)
+    def s_demote_reassign_destar(root, skill):
+        drop_v01_with_eval(root, skill, PROMPT.replace("1. **AAA ひとつめの行です**", "1. AAA ひとつめの行です").replace(
+            "2. **BBB ふたつめの行です**\n", "**BBB ふたつめの行です**（項でなくした）\n2. **BBB ふたつめの行です**\n"), "AAA ひとつめ")
+    scenario("G38 元の項を段落にし、すぐ上の付け替え先の頭の飾りも外して付け替えれば 1（項は字下げの無い行で切る）", 1, "付け替えた", s_demote_reassign_destar)
     return bad
 
 
@@ -533,11 +555,12 @@ MUTATIONS = [
     ("base の先端と比べる", "guard", "base = mb.stdout.strip()", "pass", "guard"),
     # #1423
     ("改名を追わない", "guard", 'moved = renamed.get(b["ファイル"]) == h["ファイル"]', "moved = False", "guard"),
-    ("付け替え先を base の頭の前方一致でしか照らさない（言い換えを見ない）", "guard", "and flat(f) in cur]", 'and f.startswith(h["引き"])]', "guard"),
-    ("元の項の頭が残っていても別の項の頭を付け替えと見る", "guard", "[] if prev is not None and flat(prev) in cur else ", "", "guard"),
-    ("前の版の照らし方（base の全部の頭との前方一致）に戻す", "guard",
-     "[] if prev is not None and flat(prev) in cur else [f for _, f, _ in base_items if f != prev and flat(f) and flat(f) in cur]",
-     '[f for _, f, _ in base_items if f.startswith(h["引き"]) and f != prev]', "guard"),
+    ("付け替え先を言い換えた付け替えを見ない（前方一致だけで照らす）", "guard", "            clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash]\n", "            pass\n", "guard"),
+    ("元の項の頭が残っていても別の項の頭を付け替えと見る", "guard", "        if not (prev is not None and flat(prev) in cur):", "        if True:", "guard"),
+    ("HEAD に残った項に限らない（外した項の頭も照らす）", "guard", "and f in new_heads]", "]", "guard"),
+    ("統合した項の頭も照らす", "guard", "and not any(f.startswith(m) for m in merged)]", "]", "guard"),
+    ("項の続きの段落まで項に含める", "guard", "if line.strip() and not line[:1].isspace():", "if False:", "guard"),
+    ("改名をコミットした履歴でだけ見る", "guard", '"-M", base, "--"', '"-M", f"{base}...HEAD", "--"', "guard"),
 ]
 
 
