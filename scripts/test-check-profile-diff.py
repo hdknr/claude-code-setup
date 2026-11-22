@@ -126,8 +126,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("指していない ID も比べる", "    for where, item, ids in refs:\n        for rid in ids:\n            if rid not in old_rows:",
      "    for where, item, ids in refs + [(\"x\", \"x\", sorted(old_rows))]:\n        for rid in ids:\n            if rid not in old_rows:", "候補"),
     ("候補に番号を振る", "self.notes.append(f\"{CANDIDATE}{where}:", "self.notes.append(f\"{CANDIDATE}Q-F-901 {where}:", "候補"),
-    ("--new を使わない", "new = self.new if self.new is not None else self.newest(clone, name)", "new = self.newest(clone, name)", "--new で名指す"),
+    ("--new を使わない", "new = self.new if self.new is not None else self.newest(clone, name, old)", "new = self.newest(clone, name, old)", "--new で名指す"),
     ("版の順で並べない", "\"--sort=-v:refname\"", "\"--sort=-refname\"", "候補"),
+    ("名前の形で絞らない", "            if not shape.fullmatch(tag):\n                continue\n", "", "候補"),
     ("profile を持たないタグも数える", "            if want in ext.list_files(clone, commit):\n                return tag", "            return tag", "候補"),
     ("タグと同じでも比べる", "            if new in (old, checked):", "            if new == checked:", "--new がタグと同じ"),
     ("確かめたタグと同じでも比べる", "            if new in (old, checked):", "            if new == old:", "確かめたタグ"),
@@ -168,7 +169,7 @@ LAYER_B = (HEAD + "LANG-1,Python 3.13,docs/guide.md,言語\nHOST-1,AWS ECS,docs/
 
 
 def make_profile(root: Path, env: dict) -> Path:
-    """タグ v1（A）・v2（B）・v9（A）・v10（B）・nolayer・fmt2・badhead（見出しに列を足した B）・zz-noprofile（profile を持たない）。"""
+    """タグ v1（A）・v2（B）・v9（A）・v10（B）・nolayer・fmt2・badhead（見出しに列を足した B）・zz-screen-v1（A。名前の形が違う）・v12-rc1（A。プレリリース）・v11（profile を持たない）。"""
     assert_in_tmp(root)
     root.mkdir(parents=True)
     git(root, env, "init", "-q", "-b", "main")
@@ -197,7 +198,9 @@ def make_profile(root: Path, env: dict) -> Path:
     commit("badhead", PROFILE, LAYER_B.replace("ID,要約,リンク,項目\n", "ID,要約,リンク,項目,備考\n").replace(",言語\n", ",言語,x\n")
            .replace(",ホスティング環境\n", ",ホスティング環境,x\n").replace(",監視\n", ",監視,x\n").replace(",認証基盤\n", ",認証基盤,x\n")
            .replace(",DBMS\n", ",DBMS,x\n"))
-    commit("zz-noprofile", None, None)
+    commit("zz-screen-v1", PROFILE, LAYER_A)  # 名前の形が違う（別の層の版名）——profile を持つが数えない
+    commit("v12-rc1", PROFILE, LAYER_A)  # プレリリース——名前の形が違う
+    commit("v11", None, None)  # 名前の形は同じだが profile を持たない
     git(root, env, "checkout", "-q", "v1")
     return root
 
