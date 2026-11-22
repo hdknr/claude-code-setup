@@ -89,6 +89,8 @@ CASES: list[tuple[str, dict, list[str], int, str, str]] = [
     ("設定の見出し", with_(OK, settings="key,value\nリポジトリ,org/guide\nprofile,org\nタグ,v1\n"), [], 1,
      "shared/platform/settings.csv:1: 見出しの行が `項目,値` でない", ""),
     ("設定の外の項目", with_(OK, settings=settings(extra="版,1\n")), [], 1, "項目 '版' は決まりの外", ""),
+    ("設定の確かめたタグ", with_(OK, settings=settings(extra="確かめたタグ,v2\n")), [], 0, "照らした ID 3 件", "違反: "),
+    ("設定の確かめたタグの形", with_(OK, settings=settings(extra="確かめたタグ,v2~1\n")), [], 1, "確かめたタグ 'v2~1' がタグの名前に使えない形", ""),
     ("設定の同じ項目", with_(OK, settings=settings(extra="タグ,v2\n")), [], 1, "項目 タグ が 2 行ある", ""),
     ("設定の空の値", with_(OK, settings=settings(profile="")), [], 1, "profile の値が空", ""),
     ("設定の足りない項目", with_(OK, settings="項目,値\nリポジトリ,org/guide\nprofile,org\n"), [], 1, "項目 タグ の行が無い", ""),
@@ -127,7 +129,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("設定が無いのを通す", '                self.violations.append(f"{where}: {item} が {self.column} を指しているのに、案件の設定（{SETTINGS}）が無い")',
      "                pass", "設定が無い"),
     ("設定の見出しを見ない", "        if not rows or rows[0][1] != SETTINGS_COLUMNS:", "        if not rows:", "設定の見出し"),
-    ("設定の外の項目を通す", "            if key not in SETTING_KEYS:", "            if False:", "設定の外の項目"),
+    ("設定の外の項目を通す", "            if key not in SETTING_KEYS + SETTING_OPTIONAL:", "            if False:", "設定の外の項目"),
+    ("確かめたタグを決まりの外にする", "            if key not in SETTING_KEYS + SETTING_OPTIONAL:", "            if key not in SETTING_KEYS:", "設定の確かめたタグ"),
     ("設定の同じ項目を通す", "            if key in found:", "            if False:", "設定の同じ項目"),
     ("設定の空の値を通す", "            if not value:\n                self.violations.append(f\"{where}: {key} の値が空\")",
      "            if False:\n                self.violations.append(f\"{where}: {key} の値が空\")", "設定の空の値"),
@@ -138,6 +141,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("profile の形を見ない", '        if name and ("/" in name or name in (".", "..")):', "        if False:", "設定の profile の形"),
     ("タグの形を見ない", '        if tag and subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], capture_output=True).returncode != 0:',
      "        if False:", "設定のタグの形"),
+    ("確かめたタグの形を見ない", "        for key in (SETTING_TAG, SETTING_CHECKED):", "        for key in (SETTING_TAG,):", "設定の確かめたタグの形"),
     ("タグのハイフンと HEAD を見ない", '        elif tag and (tag.startswith("-") or tag == "HEAD"):', "        elif False:", "設定のタグがハイフンで始まる"),
     ("値が無ければ profile を読まない", "        known = self.layer_ids(settings)", "        known = self.layer_ids(settings) if refs else set()",
      "設定があれば値が無くても読む"),
@@ -308,8 +312,8 @@ def reference_mismatches(module, infra_md: str, spec_loop_md: str) -> list[str]:
             problems.append(f"設定の置き場所 {module.SETTINGS} が原本に無い")
         if f"見出しの行は `{','.join(module.SETTINGS_COLUMNS)}`" not in setting:
             problems.append("設定の見出しが原本と違う")
-        if tuple(first_cells(setting)) != module.SETTING_KEYS:
-            problems.append(f"設定の項目が違う（原本 {first_cells(setting)} ／ 本体 {module.SETTING_KEYS}）")
+        if tuple(first_cells(setting)) != module.SETTING_KEYS + module.SETTING_OPTIONAL:
+            problems.append(f"設定の項目が違う（原本 {first_cells(setting)} ／ 本体 {module.SETTING_KEYS + module.SETTING_OPTIONAL}）")
         if f"複数は `{module.ID_SEPARATOR}` で区切る" not in section(infra_md, "## `profile の行` の書き方"):
             problems.append(f"区切り {module.ID_SEPARATOR} が原本に無い")
         shown = tuple(".".join(map(str, v)) for v in (module.SPEC_LOOP_MIN, module.SPEC_LOOP_BELOW))
@@ -329,6 +333,7 @@ REFERENCE_MUTATIONS = [  # (ファイル, 崩す前, 崩した後)
     ("infra", "`shared/platform/settings.csv` に置く", "`shared/platform.csv` に置く"),
     ("infra", "見出しの行は `項目,値`", "見出しの行は `キー,値`"),
     ("infra", "| `タグ` | 読む版", "| `版` | 読む版"),
+    ("infra", "| `確かめたタグ` | 任意", "| `見たタグ` | 任意"),
     ("infra", "複数は `・` で区切る", "複数は `,` で区切る"),
     ("spec-loop", "| `0.133.0` | `1.0.0` |", "| `0.132.0` | `1.0.0` |"),
     ("spec-loop", "2. 環境変数 `PLATFORM_SPEC_SPEC_LOOP`", "2. 環境変数 `PLATFORM_SPEC_LOOP`"),

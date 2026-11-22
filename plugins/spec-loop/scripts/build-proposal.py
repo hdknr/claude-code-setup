@@ -29,6 +29,10 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   同梱の `check-infra-csv.py` を当てる——**形式の違反・未決定は 1、暫定は 3、読めなければ 2 で書かない**（予算の決裁を、誰も決めていない
   基盤で進めない）。暫定は、根拠の Q&A が `暫定反映` なので照合の 3 が先に止める。**表が無ければ止めず、標準エラーに警告して書く**
   （前からの正本は表を持たない）。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」。
+- **外部の profile の関門（#1457）**: 基盤要件のゲートの後に、`signoff/v<n>/req-<k>` の時点の `docs/` の写し（前の版との比較と同じ一時ディレクトリ）に
+  同梱の `profile-gate.py` を当てる（clone の探し方の `CLAUDE.md` は正本の根のもの）——**基盤要件の表の `profile の行` が外部の profile を指していれば、
+  platform-spec の版の差分の起票の候補か違反で 1、判定していない・platform-spec が無い（などで止めた）で 2 で書かない**。値が無ければ何も足さない。
+  判定・platform-spec の見つけ方は `profile-gate.py` の docstring を正とする。
 - **目的と成功の判定（#1154）**: `signoff/v<n>/req-<k>` の時点の重ねた全体に目的の表（`requirements/purposes.csv`）があれば、手書き部分の後ろに
   「目的と成功の判定」の節としてその表を載せる（手書きの背景と目的に、目的と指標を二重に書かせない）。**表が無ければ節を出さない**（前と同じバイト）。
   **見出しの行・列の数が決まり（`check-design-csv.py` の `PURPOSES_COLUMNS`。写さない）と違えば 1 で書かない**——中身の検査（結び付け・未決定）は
@@ -74,8 +78,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 終了コード:
 
 - 0: 書いた
-- 1: 照合が一致しない・表が決まりに反する（目的の表の見出しの行・列の数を含む。#1154）・材料（表・手書き部分）が無い・基盤要件が決まっていない（#950）——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ。目的の表の空のファイルを含む——#1154）・手書き部分のフォルダの綴りが書いた綴りと大文字小文字だけ違う（#514）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
+- 1: 照合が一致しない・表が決まりに反する（目的の表の見出しの行・列の数を含む。#1154）・材料（表・手書き部分）が無い・基盤要件が決まっていない（#950）・外部の profile の版の差分の起票の候補か違反がある（#1457）——書いていない
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ。目的の表の空のファイルを含む——#1154）・外部の profile の関門を判定していない・platform-spec が見つからない（#1457）・手書き部分のフォルダの綴りが書いた綴りと大文字小文字だけ違う（#514）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
   印に無いファイルが出力の名前で在る・印が読めない（書き換えない。#512）・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440。
   印が名指しする出力が先の在る symlink のときを含む——#512）・
   想定外の例外（128KB を超えるセルの `csv.Error` など。#286。前の出力は作り始める前に消してあり、書いている途中なら書きかけを消す）——書いていない。
@@ -122,6 +126,8 @@ ppt = _load("proposal_pptx", "proposal-pptx.py")
 diagrams = _load("render_diagrams", "render-diagrams.py")
 # 基盤要件の表の検査とゲートの判定（#950。写さない）
 infra = _load("check_infra_csv", "check-infra-csv.py")
+# 外部の profile の関門は `profile-gate.py` のもの（写さない——#1457）
+profiles = _load("profile_gate", "profile-gate.py")
 # 目的の表の置き場所と見出しの行（#1154。写さない）
 design = _load("check_design_csv", "check-design-csv.py")
 
@@ -310,8 +316,8 @@ def drop_internal(docs: Path) -> None:
 
 
 def compare_at(top: Path, commit: str, tag: str, version: int):
-    """`commit` の時点の v1〜v<version> を重ねた全体と、v2 以降なら v<version-1> との比較と、重ねた全体のバイト（根からのパス → 中身）を返す。
-    作れなければ Stop。
+    """`commit` の時点の v1〜v<version> を重ねた全体と、v2 以降なら v<version-1> との比較と、重ねた全体のバイト（根からのパス → 中身）と、
+    外部の profile の関門（#1457。`profile-gate.py` の `check` を同じ写しの `docs/` に当てた (終了コード, 行)）を返す。作れなければ Stop。
 
     全体は仕様書の材料、比較は「前の版からの変更」の節（提案書と仕様書）。**v1 でも重ね合わせの決まりを通す**（#374）。
     バイトは基盤要件のゲート（#950）が読む——`whole.files` は Q&A 表など構造ファイル（`merge-versions.py` の `STRUCTURED`）を持たない。
@@ -327,10 +333,13 @@ def compare_at(top: Path, commit: str, tag: str, version: int):
                 problems, diff = diffs.compare(Path(tmp) / signoff.DOCS, version)
         except diffs.merge_versions.Unreadable as e:
             raise Stop(2, [f"{tag}: {str(e).replace(prefix, '')}"])
+        # clone の探し方の `CLAUDE.md` は正本の根のもの（写しの親ではない）
+        code, lines = (0, []) if problems else profiles.check(Path(tmp) / signoff.DOCS, version, None, top)
+        gate = (code, [line.replace(prefix, "") for line in lines])
     if problems:
         raise Stop(1, [f"{tag}: {line.replace(prefix, '')}" for line in problems]
                    + ["仕様書・前の版との比較を作れない（重ね合わせが決まりに反する）"])
-    return whole, diff, rendered
+    return whole, diff, rendered, gate
 
 
 def changes_section(diff, tag: str) -> list[str]:
@@ -751,6 +760,16 @@ def infra_gate(files: dict[str, bytes], tag: str) -> None:
                    + ["関門（基盤要件。references/tree.md の「基盤要件」の「ゲート」）を通らない"])
 
 
+def profile_gate(gate: tuple[int, list[str]], tag: str) -> None:
+    """外部の profile の関門（#1457。`profile-gate.py` の docstring を正とする）。1 は Stop(1)、2・4 は Stop(2)。通れば出力を標準エラーに写す。"""
+    code, lines = gate
+    if code:
+        raise Stop(1 if code == profiles.EXIT_FAIL else 2, [f"{tag}: {line}" for line in lines]
+                   + ["関門（外部の profile。profile-gate.py）を通らない"])
+    for line in lines:
+        print(f"{tag}: {line}", file=sys.stderr)
+
+
 def build(args, out: Path) -> dict[Path, bytes | list]:
     """書くもの（出力先 → 中身。PPTX は部品の一覧）を返す。作れなければ Stop——1 つでも作れなければ何も書かない。"""
     code, lines, info = signoff.resolve(args.repo, args.req, args.budget, args.version)
@@ -772,8 +791,9 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
         raise Stop(1, [f"{info['budget']}:{schedule_path}: 工程が 1 行も無い。提案書の材料が無い"])
     if not estimate:
         raise Stop(1, [f"{info['budget']}:{estimate_path}: 費用が 1 行も無い。提案書の材料が無い"])
-    whole, diff, rendered = compare_at(top, info["req_commit"], info["req"], info["version"])
+    whole, diff, rendered, gate = compare_at(top, info["req_commit"], info["req"], info["version"])
     infra_gate(rendered, info["req"])
+    profile_gate(gate, info["req"])
     purposes = read_purposes(whole.files, info["req"])
     hand_dir = top / in_version(info["version"], HAND_DIR)
     hand = read_hand(hand_dir)

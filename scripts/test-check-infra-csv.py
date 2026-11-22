@@ -21,6 +21,7 @@
 8. **末尾の任意の列 `profile の行`（#1456）**——7 列の後ろに置いた表を通し（中身は見ない）、その後ろにさらに列・別の名前の 8 列目は違反のまま、
    行の列の数は見出しの数と比べる。**spec-loop の `scripts/` だけを写した一時ディレクトリで通る**（platform-spec を置かない案件）ことと、
    **spec-loop の `scripts/`・`templates/` が platform-spec の名前（`platform-spec`・`platform_spec`・`PLATFORM_SPEC`）を探す・求める先に持たない**こと（探さない・要求しない）も見る
+   （**例外は `scripts/profile-gate.py` だけ**——`profile の行` に値があるときだけ platform-spec を探す関門。#1457。値が無ければ探さないことは `test-profile-gate.py` が見る）
    ——Python は docstring とコメントの外の文字列と名前（説明の文に名前が出るのは探すことではない）、ほかのファイルは全文。名前を 1 つ植えると見つかる陽性対照つき。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -364,6 +365,14 @@ def platform_mentions(roots: list[Path]) -> list[str]:
     return sorted(set(hits))
 
 
+# platform-spec の名前を持ってよい spec-loop のファイル（#1457。`profile の行` に値があるときだけ探す関門）
+PLATFORM_ALLOWED = ("scripts/profile-gate.py",)
+
+
+def platform_outside_gate(hits: list[str]) -> list[str]:
+    return [hit for hit in hits if hit.rsplit(":", 1)[0] not in PLATFORM_ALLOWED]
+
+
 def copy_scripts(dest: Path) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -409,13 +418,15 @@ def main() -> int:
         check("言語の判定が期待どおりでない", not problems, "; ".join(problems))
 
         # platform-spec を探さない・要求しない（#1456）。写した scripts/ だけで「profile の行を足す」が 0 なのは上の試料で見た
-        hits = platform_mentions([SCRIPTS, TEMPLATES])
-        check("spec-loop のスクリプトか雛形が platform-spec の名前を持つ", not hits, ", ".join(hits))
+        found = platform_mentions([SCRIPTS, TEMPLATES])
+        hits = platform_outside_gate(found)
+        check("spec-loop のスクリプトか雛形が platform-spec の名前を持つ（profile-gate.py の外）", not hits, ", ".join(hits))
+        check("profile-gate.py が platform-spec の名前を持たない（例外が空振り）", any(h.startswith("scripts/profile-gate.py:") for h in found))
         planted = tmp_path / "planted"
         shutil.copytree(TEMPLATES, planted / "templates", ignore=shutil.ignore_patterns("__pycache__"))
         (planted / "templates" / "x.py").write_text('ROOT = "plugins/platform-spec"\n', encoding="utf-8")
-        check("platform-spec の名前を植えても見つからない（見張りが空振り）", platform_mentions([copy_scripts(planted / "scripts"), planted / "templates"])
-              == ["templates/x.py:1"])
+        check("platform-spec の名前を植えても見つからない（見張りが空振り）",
+              platform_outside_gate(platform_mentions([copy_scripts(planted / "scripts"), planted / "templates"])) == ["templates/x.py:1"])
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):

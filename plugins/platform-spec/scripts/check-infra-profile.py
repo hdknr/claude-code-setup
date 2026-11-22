@@ -31,6 +31,7 @@ usage: python3 check-infra-profile.py <docs ディレクトリ> [--upto <n>] [--
 - `profile の行` を指しているのに設定が無ければ 1
 - 設定の見出しが `項目,値` でなければ 1
 - 設定に決まりの外の項目があれば 1
+- 設定の任意の項目 `確かめたタグ` を決まりの外にしない（#1457）
 - 設定に同じ項目が 2 行あれば 1
 - 設定の値が空なら 1
 - 設定に決まりの項目が足りなければ 1
@@ -39,6 +40,7 @@ usage: python3 check-infra-profile.py <docs ディレクトリ> [--upto <n>] [--
 - 設定の `profile` が profile の名前の形（`/` を含まない・`.`・`..` でない）でなければ 1
 - 設定の `タグ` がタグの名前に使えない形（`git check-ref-format` が通さない。`v1~1` など）なら 1
 - 設定の `タグ` が `-` で始まるか `HEAD` なら 1（`git check-ref-format` は通すが、git はタグにしない）
+- 設定の `確かめたタグ` も `タグ` と同じ形で見る（使えない形・`-` で始まる・`HEAD` なら 1）
 - 設定があれば、`profile の行` の値が無くても profile を読む（設定の誤りを 0 にしない）
 - profile に基盤の層が無ければ 4（「無い」の 3 にしない）
 - 基盤の層の表の見出しが形式の版 1 の 4 列（`ID,要約,リンク,項目`）でなければ 4
@@ -97,6 +99,8 @@ SETTING_REPO = "リポジトリ"
 SETTING_PROFILE = "profile"
 SETTING_TAG = "タグ"
 SETTING_KEYS = (SETTING_REPO, SETTING_PROFILE, SETTING_TAG)
+SETTING_CHECKED = "確かめたタグ"  # 任意の項目（#1457。版の差分を見て、採らないと決めた新しい版）
+SETTING_OPTIONAL = (SETTING_CHECKED,)
 LAYER = "基盤"
 LAYER_COLUMNS = ["ID", "要約", "リンク", "項目"]
 FORMAT_LOW = "1"   # この版を含む
@@ -274,8 +278,8 @@ class Checker:
                 self.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(SETTINGS_COLUMNS)}）")
                 continue
             key, value = fields[0].strip(), fields[1].strip()
-            if key not in SETTING_KEYS:
-                self.violations.append(f"{where}: 項目 {key!r} は決まりの外（{'・'.join(SETTING_KEYS)} のどれか）")
+            if key not in SETTING_KEYS + SETTING_OPTIONAL:
+                self.violations.append(f"{where}: 項目 {key!r} は決まりの外（{'・'.join(SETTING_KEYS + SETTING_OPTIONAL)} のどれか）")
                 continue
             if key in found:
                 self.violations.append(f"{where}: 項目 {key} が 2 行ある")
@@ -291,17 +295,21 @@ class Checker:
 
     def setting_forms(self, found: dict[str, str]) -> None:
         """設定の値の形。違えば violations に足す（外部の profile を読む前に、書き間違いを 1 にする）。"""
-        repo, name, tag = (found.get(key, "") for key in SETTING_KEYS)
+        repo, name = (found.get(key, "") for key in (SETTING_REPO, SETTING_PROFILE))
         if repo and not REPO_FORM.fullmatch(repo):
             self.violations.append(f"{SETTINGS}: {SETTING_REPO} {repo!r} が `<持ち主>/<名前>` の形でない")
         elif repo and any(part in (".", "..") for part in repo.split("/")):
             self.violations.append(f"{SETTINGS}: {SETTING_REPO} {repo!r} の持ち主か名前が `.`・`..`")
         if name and ("/" in name or name in (".", "..")):
             self.violations.append(f"{SETTINGS}: {SETTING_PROFILE} {name!r} が profile の名前の形でない（`/` を含まない・`.`・`..` でない）")
+        for key in (SETTING_TAG, SETTING_CHECKED):
+            self.tag_form(key, found.get(key, ""))
+
+    def tag_form(self, key: str, tag: str) -> None:
         if tag and subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], capture_output=True).returncode != 0:
-            self.violations.append(f"{SETTINGS}: {SETTING_TAG} {tag!r} がタグの名前に使えない形")
+            self.violations.append(f"{SETTINGS}: {key} {tag!r} がタグの名前に使えない形")
         elif tag and (tag.startswith("-") or tag == "HEAD"):
-            self.violations.append(f"{SETTINGS}: {SETTING_TAG} {tag!r} がタグの名前に使えない形（`-` で始まる名前と `HEAD` は git がタグにしない）")
+            self.violations.append(f"{SETTINGS}: {key} {tag!r} がタグの名前に使えない形（`-` で始まる名前と `HEAD` は git がタグにしない）")
 
     def layer_ids(self, settings: dict[str, str]) -> set[str]:
         """設定のタグの時点の基盤の層の ID。判定できなければ Stop。"""

@@ -5,8 +5,8 @@ description: "提案書のループを 1 回分進める。利用者の要求確
 
 # proposal スキル
 
-<!-- skill-version: 0.133.0 -->
-> **このスキルの版: 0.133.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.134.0 -->
+> **このスキルの版: 0.134.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -145,6 +145,9 @@ python3 <このスキルの base ディレクトリ>/../../scripts/build-proposa
   利用者と予算の責任者の判断なので `/spec-loop:feasibility`（質問の起票）と `/spec-loop:req-loop`（回答の反映）を案内し、決まってから承認を取り直してもらう
   （表は `shared/` にあるので、直せば 2 つの承認の取り直しになる）。**表が無いという警告（0）では作られる**——決裁者に渡す前に、基盤要件が決まっていないことを人間に伝える。
   段ごとの扱いは `../../references/tree.md` の「基盤要件」の「ゲート」を正とする。
+- **外部の profile の関門で止まったら（1・2。出力に「関門（外部の profile」）**（#1457）、起票の候補を推測で片付けず・設定のタグを書き換えて通さない——
+  `/spec-loop:feasibility` で候補を共有の Q&A 表に起票し、発注者の回答で設定のタグを上げるか `確かめたタグ` を書いて、2 つの承認を取り直す（設定は `shared/` にある）。
+  platform-spec が見つからない（2）なら、platform-spec を入れるか `SPEC_LOOP_PLATFORM_SPEC` で渡すよう案内する。判定は `../../references/tree.md` の「基盤要件」の「外部の profile の関門」を正とする。
 - **「上書きしない」で 2 になったら、出力の場所に印の無いファイルがある**（「上書きしない」と言われるのは最初にぶつかった 1 つだけだが、ほかに残った出力の名前のファイルはすべて「今回の出力ではない」と名指しされる——同じファイルは 1 度だけ）——手で置いたものなら別の `--out` を選ぶ。
   **spec-loop 0.25.0 までが作った出力なら、消してから作り直す**（`../../references/tree.md` の「前の出力の印（spec-loop 0.26.0）」）。
   **どちらかを推測で決めずに人間に確かめる。**
