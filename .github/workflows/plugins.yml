@@ -448,7 +448,7 @@ jobs:
         run: python3 scripts/test-check-feasibility-csv.py
 
   # spec-loop のシステム設計書の成果物・基盤要件・指摘の表と仕様レビューの記録の検査と、
-  # spec-loop の重ね方を読み込む screen-spec の表の検査・書き込み・UI モック・MkDocs のフックと画面の表の関門（#1465）
+  # spec-loop の重ね方を読み込む screen-spec の表の検査・書き込み・UI モック・MkDocs のフックと画面の表の関門と、platform-spec の照合（#1465・#1456）
   spec-loop-tables:
     runs-on: ubuntu-latest
     steps:
@@ -464,6 +464,10 @@ jobs:
       # 本体は plugins/spec-loop/scripts/ にある（feasibility がゲートに当て、scaffold・build-proposal が読み込む）。
       - name: spec-loop の基盤要件の表の検査のテスト（#950）
         run: python3 scripts/test-check-infra-csv.py
+
+      # 本体は plugins/platform-spec/scripts/ にある（spec-loop の重ね方と外部の profile の読み方を読み込むので、本物の spec-loop と並べて回す。profile は一時の git リポジトリ）。
+      - name: platform-spec の infra.csv と外部の profile の基盤の層の照合のテスト（#1456）
+        run: python3 scripts/test-check-infra-profile.py
 
       # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 6 が指摘の表に当てる）。
       - name: spec-loop の指摘の表の検査のテスト（#982）

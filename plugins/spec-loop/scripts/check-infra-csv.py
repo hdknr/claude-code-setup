@@ -11,7 +11,7 @@ usage: python3 check-infra-csv.py <版のディレクトリ（docs/v<n>）か重
 渡したディレクトリの `shared/infra.csv` を読み、根拠に指した `shared/qa.csv` の行と、水準に指した `shared/nfr.csv` の行を照らして、
 見つけたものを **4 つに分けて**出す:
 
-- **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足）・列の数・項目が重複・状態の値・根拠の形（共有の表の `Q-` でない。
+- **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。**末尾の任意の列 `profile の行` は過ぎた列に数えない**——#1456）・列の数・項目が重複・状態の値・根拠の形（共有の表の `Q-` でない。
   内部の表の `D-` も違反——基盤要件は発注者が決める）・根拠が Q&A 表に無い・Q&A 表が無い・**表の状態と根拠の行の状態が対応しない**
   （`決定` ↔ `反映済み`・`暫定` ↔ `暫定反映`・`未決定` ↔ `確認中`）・水準の形（`N-` の番号を `・` で区切る）・水準が非機能要求の表に無い・非機能要求の表が無い
 - **未決定**——**表が無い**・必須の項目（言語・DBMS・ホスティング環境）の行が無い・状態が `未決定` の行・`決定`／`暫定` の行の必須の欄が空・
@@ -38,6 +38,7 @@ usage: python3 check-infra-csv.py <版のディレクトリ（docs/v<n>）か重
 | 守らないもの | なぜ |
 | --- | --- |
 | **欄の中身**（その言語・DBMS が要求に合うか・理由が正しいか・費用への影響の額） | 判断であって、一意に決まらない |
+| **末尾の任意の列 `profile の行` の中身**（ID の形・未決定の印・その ID が外部の profile に在るか） | 列を置けることだけを決め、中身はこのプラグインの外の決まり（外部の profile を使う側のプラグインが照らす。`references/tree.md` の「基盤要件」）。列を置かない 7 列の表も前のまま通す |
 | **根拠の Q&A の行が、その項目の質問か**（言語の行が DBMS の質問を指している） | 質問の文の意味は機械で決められない。見るのは在ることと状態だけ |
 | **指した水準が決まっているか**（`nfr.csv` の水準の行の未決定） | 水準の行は `check-design-csv.py` が見る。ここは在ることだけ |
 | **構成の図があるか・図が新しいか** | 図は drawio で、表の検査の外（図の鮮度は `render-diagrams.py --check`） |
@@ -75,6 +76,8 @@ INFRA = "shared/infra.csv"
 QA = "shared/qa.csv"
 NFR = design.NFR
 COLUMNS = ["項目", "決定", "理由", "費用への影響", "水準", "根拠", "状態"]
+# 末尾に置いてよい任意の列（外部の profile の行 ID を指す。中身は見ない——#1456）
+PROFILE_COLUMN = "profile の行"
 # 必ず置く項目（無ければ未決定）
 REQUIRED_ITEMS = ("言語", "DBMS", "ホスティング環境")
 LANGUAGE = "言語"
@@ -232,7 +235,7 @@ def check_rows(read: Callable[[str], str | None], report: Report) -> None:
         report.missing = True
         return
     header, rows = rows_of(text, INFRA)
-    if header != COLUMNS:
+    if header != COLUMNS and header != COLUMNS + [PROFILE_COLUMN]:
         report.violations.append(f"{INFRA}:1: 見出しの行が決まりと違う（期待: {','.join(COLUMNS)} ／ 実際: {','.join(header)}）")
         return
     answers: dict[str, dict[str, str]] | None | bool = False  # 読むまでは False（根拠を指す行が無ければ Q&A 表を読まない）
@@ -240,10 +243,10 @@ def check_rows(read: Callable[[str], str | None], report: Report) -> None:
     items: dict[str, int] = {}
     for line, fields in rows:
         where = f"{INFRA}:{line}"
-        if len(fields) != len(COLUMNS):
-            report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(COLUMNS)}）")
+        if len(fields) != len(header):
+            report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(header)}）")
             continue
-        row = dict(zip(COLUMNS, fields))
+        row = dict(zip(header, fields))
         state = row["状態"].strip()
         state_known = cell_state(report, where, "状態", row["状態"], False)
         if state_known and state not in INFRA_STATES:
