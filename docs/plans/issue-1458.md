@@ -1,0 +1,131 @@
+# Issue #1458 — screen-spec: 外部の profile を web-spa の上に重ねて読む（settings.csv・語彙・種別ごとの既定）（#1314）
+
+**不在の周**（`/dev-loop:cruise 1461 --absent` の起動・2026-11-22T03:12Z）。利用者には訊かない。親（cruise #1461）から委譲文で受けた子。
+確かめた線（出所: 利用者の確認（起動時・2026-11-22T03:12:23Z、配布を見せて確かめた）＋利用者の確認（周の途中・2026-11-22T03:19:55Z）。cruise の確かめた線（台帳 `issue-1461`））:
+`直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 台帳に足して直す`・`マージ前の判断 = 推奨で決めて起票（後退・未達を含む）`。実機確認の線は無い。
+台帳（`.claude/plans/cruise-issue-1461.json`）は書かない（親だけ）。手順 7 のマージはしない（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+読み込んだ dev-loop は 2.20.1（`SKILL.md` 1957 行を読んだ）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1461`））。
+版の上げ方: `screen-spec` を **minor**（0.7.0 → 0.8.0。外部の profile の上乗せを読む——能力の追加）。spec-loop は触らない（`external-profile.py` を読み込むだけ）。
+マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から上げ直す（cruise の `references/parallel.md` の「版とマージの順」。取り込みの後は CLAUDE.md の #831 の例外どおり軽い 2 本と PR 側の CI）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.20.1/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
+割り目: 割らない（cruise の周）。
+
+Issue 本文（外部入力）から読んだ要件: `settings.csv` に上乗せする外部の profile（名前・版（タグ）・置き場所）を書けるようにし、外部の profile の画面の層（`spec-profile/<名前>/screens/*.csv`）を
+spec-loop の共通の部分（`external-profile.py`）を読み込んで読む。`profile.csv` の `重ねる先` が `settings.csv` の `profile` と食い違えば検査が止める。
+重ねるもの: 値の語彙（セルが語彙の中にあるか）と種別ごとの既定の値（既定と違う値に根拠の Q&A の番号があるか）を `check-screens.py` で見る。
+列を足すことを許すかを推奨で決める。受け付ける形式の版の範囲を screen-spec の `references/` に表で置く。
+親 Issue #1461 の「先に決めたこと」と、#1467〜#1470・#1472 で推奨に決めた値（環境変数 `SPEC_PROFILE_CLONE`・`CLAUDE.md` の行・`gh` で取らない・リンクの数え方）は今の main の実装どおりに使う。
+
+## 変更範囲
+
+触る:
+
+- `plugins/screen-spec/scripts/check-screens.py` — 外部の profile を読む（`settings.csv` の行・spec-loop の `external-profile.py` の読み込み・`重ねる先` の照合・列の上乗せ・語彙・既定）。守る／守らないは docstring
+- `plugins/screen-spec/references/profiles.md` — 決まりの原本に「外部の profile」の節（設定の行・画面の層の表の形・形式の版の範囲・足す列と見出し行・語彙・既定・読めないとき）
+- `plugins/screen-spec/references/tables.md` — 案件ごとの設定の表に `外部の profile` の行、検査の表と終了コードの 4 に外部の profile
+- `plugins/screen-spec/references/spec-loop.md` — 読み込む spec-loop のスクリプトに `external-profile.py`
+- `plugins/screen-spec/README.md` — 「いまは」の 1 文と中身の表の profiles の行
+- `scripts/test-check-screens.py` — 外部の profile の試料（一時の git リポジトリの profile）・変異・原本との突き合わせ
+- `CLAUDE.md` — プロジェクト構成の `check-screens.py` と `test-check-screens.py` の項に 1 句ずつ
+- `plugins/screen-spec/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行（2 本）
+- `docs/plans/issue-1458.md` — この計画ファイル
+
+触らない:
+
+- `plugins/spec-loop/`（`external-profile.py` は読み込むだけ。並行の周 #1471 が触る）
+- `plugins/screen-spec/scripts/write-screens.py`・`build-mock.py`・`mkdocs-pages.py`——外部の profile が足した列を知らない（見出し行が決まりと違うとして断る）。`init` の初期値は #1460、起票の候補は #1459
+- 既定の答え（節の既定の答え）と起票の候補——#1459
+- 外部の profile のリンクの検査——spec-loop の `external-profile.py check` が持つ（`check-screens.py` は呼ばない）
+- plugin.json・marketplace.json の description（中身を変えない。共変の検査を起こさない）
+
+依存の追加・更新: なし
+
+## 設計の判断
+
+- `check-screens.py` は、`settings.csv` に外部の profile の行があるときだけ spec-loop の `external-profile.py` を `importlib` で読み込む（写さない）。**行が無い案件は、今と同じコードの道を通る**（受入基準 B1——外部の profile を書いていない案件で結果が同じ）。
+  行があるのに spec-loop に `external-profile.py` が無ければ（古い spec-loop）、検査の前に止める（4）——対応する spec-loop の版の下限は上げない（行の無い案件を古い spec-loop で止めない）。
+- 探し方は `external-profile.py` の `find_clone` に任せる（環境変数 `SPEC_PROFILE_CLONE` → 案件の `CLAUDE.md` の行）。案件の根は **`docs` ディレクトリの親**（`build-mock.py` の出力の `<docs の親>/build/` と同じ根）。
+- **外部の profile が読めない・決まりに合わないときは、検査の前に止める（4）**——clone が見つからない・タグが無い・形式の版が範囲の外・層が無い・`重ねる先` が `settings.csv` の `profile` と食い違う・画面の層の行が決まりに合わない（`種類` の値・表・列・種別）。
+  Issue の「`重ねる先` が食い違えば検査が止める」に合わせ、外部の profile の側の誤りは案件の表の違反（1）と分ける。
+- **案件の表の側**の誤り（語彙の外の値・根拠の無い既定と違う値・設定の行の形・足した列の無い見出し行）は違反（1）。
+- 語彙と既定は、`check-screens.py` が既に持つ「印のあるセルは値の決まりに当てない」「`N/A。実現方式が未定` は値の決まりに当てない」をそのまま使う。
+- 既定と違う値の根拠は、その画面の行の `根拠` の列に Q&A の番号があるか（`references/tables.md` の「`根拠` はどの行でも空にしない。Q&A の番号…を書く」の列。番号が Q&A 表に在るかは今の `根拠` の検査が見る）。
+- 複製の数: 決まりの原本（`references/profiles.md` の節）1・本体の定数と docstring 1（テストが原本と突き合わせる）・`tables.md` の設定の行と検査の表 1・README の 1 文・CLAUDE.md の 1 句——**分けない理由**: 原本以外は指すだけにし、定数の写しはテストが見る（screen-spec の既存の形）。
+
+### 仕様の穴（不在の線で推奨により決めた。確認の Issue は下の「未解決の判断」）
+
+| # | 穴 | 選択肢 | 決めた値（推奨） | 理由 |
+| --- | --- | --- | --- | --- |
+| G1 | `settings.csv` に足す項目の名前と書き方（外部の profile の名前・版・置き場所） | A: 1 行 `外部の profile` に `<持ち主>/<リポジトリ> <名前> <タグ>` を空白で区切って書く（案件に 1 つまで）／B: 3 行（`外部の profile のリポジトリ`・`外部の profile`・`外部の profile のタグ`）に分ける／C: `profile` の行の値に `web-spa+org/guide/org@v1` のように書き足す | A | 1 行なら半端に書いた状態（リポジトリだけ・タグだけ）が無く、spec-loop の `CLAUDE.md` の行（`<持ち主>/<名前> <パス>`）と同じ並べ方で読める。C は今の `profile` の値の検査（このプラグインの profile か `未設定`）を変えることになる |
+| G2 | 外部の profile に列を足すことを許すか（許すなら宣言の形） | A: 許す——画面の層の行の `種類` を `列` にして宣言し、core と組み込みの profile の列の後ろに宣言の順で足す（見出し行に入るので、表を置く最初の版で決める）／B: 許さない——語彙と既定は今ある列だけに掛ける | A | Issue の例（レイアウトの ID）は今の列に入る場所が無く、B では語彙も既定も掛けられない。足した列を `init`・`add`・`build-mock.py` はまだ知らない（見出し行が違うとして断る）ことは原本に書く |
+| G3 | 外部の profile の画面の層の表の形（先頭の `ID,要約,リンク` の後ろの列）と層の名前・形式の版 | A: 層の名前 `画面`、後ろの列 `種類,表,列,種別,値`（`種類` は `列`・`語彙`・`既定`）、受け付ける形式の版は `1` 以上 `2` 未満／B: 種類ごとにファイルを分け（`screens/columns.csv`・`vocabulary.csv`・`defaults.csv`）、ファイルの名前で読み分ける | A | 1 つの形なら、層のファイルをどう分けても（`screens/*.csv`）読み方が変わらない。B はファイルの名前の決まりが増え、`external-profile.py` の `ファイル` の glob と二重になる |
+
+## デプロイ経路
+
+プラグイン（`marketplace.json` のカタログ）と公開サイトの再ビルド。**マージの反映: ドキュメントとプラグインの配布**（`.claude/dev-loop.md` の宣言どおり）。
+
+## 受入基準
+
+不変条件 × 経路（経路は本体の入口一覧から数える——CLI `check-screens.py <docs> [--upto] [--spec-loop]` と、本体を読み込む `build-mock.py`・`mkdocs-pages.py`（`Checker` を作って `read_profile` を呼ぶ）と、
+spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部の profile の入口は `settings.csv` の行・spec-loop の `external-profile.py`（clone の探し方: 環境変数・案件の `CLAUDE.md`）・profile のリポジトリのタグの時点の `profile.csv` と画面の層の表）。
+
+| # | 不変条件 | 経路 | 証明手段 |
+| --- | --- | --- | --- |
+| B1 | 外部の profile を書いていない案件で、`check-screens.py` の終了コードと出力が変更の前（周の base）と同じ。spec-loop に `external-profile.py` が無くても同じ | CLI（`screen-gate.py` の子のプロセスを含む）・`Checker` を読み込む `build-mock.py`・`mkdocs-pages.py` | 今ある試料が全部そのまま緑（回帰テスト）と、差分テスト（旧 = 周の base の木の `check-screens.py`・新 = 成果物。同じ入力の終了コードと出力を比べる）。`external-profile.py` を外した spec-loop で外部の profile の無い案件が 0 の試料 |
+| B2 | 語彙の外の値（core の列・組み込みの profile の列・足した列のどれでも）が、表のパス・鍵・列と外部の profile の名前つきで違反（1）になる。印のあるセル・`N/A。実現方式が未定` のセル・空のセルは当てない | CLI | 一時の git リポジトリの profile に当てる試料と変異 |
+| B3 | 種別ごとの既定と違う値で、その画面の行の `根拠` に Q&A の番号が無いものが違反（1）になる（既定の行の ID を名指し）。番号があれば通る | CLI | 同上 |
+| B4 | `profile.csv` の画面の層の `重ねる先` が `settings.csv` の `profile` と食い違えば（`未設定` を含む）、検査の前に止めて（4）両方の値を名指しする | CLI | 同上 |
+| B5 | 画面の層の形式の版が受け付ける範囲（screen-spec の `references/profiles.md` の表）の外なら、検査の前に止めて（4）名指しする | CLI | 同上 |
+| B6 | 外部の profile が読めない（clone が見つからない・タグが無い・画面の層が無い・spec-loop に `external-profile.py` が無い）・画面の層の行が決まりに合わない（`種類`・表・列・種別・重なり）なら、検査の前に止める（4）——黙って外部の profile を外して検査しない | CLI | 同上 |
+| B7 | 外部の profile が `種類` `列` で宣言した列が、core と組み込みの profile の列の後ろに宣言の順で見出し行に求められる（無ければ見出し行の違反 1） | CLI | 同上 |
+| B8 | `settings.csv` の `外部の profile` の行が決まりの形（3 つの値・1 行まで）でなければ違反（1） | CLI | 同上 |
+| B9 | 外部の profile の本文を写さない——検査はファイルを書かず、出力に profile のリンク先の本文が出ない（出すのは profile の名前・行の ID・値だけ） | CLI | 本文に目印の文字列を置いた profile の試料で、出力に目印が無いことと、正本・走らせた場所・profile の clone・読み込んだプラグインのファイルが変わらないこと |
+| B10 | 決まりの原本が screen-spec の `references/` に在り（形式の版の範囲の表・設定の行・画面の層の列と `種類` の値・層の名前）、本体の定数と一致する | references・本体 | テストが原本と定数を突き合わせ、原本を崩すと不一致になることを見る |
+| B11 | 変異テスト: B2〜B8 の判定を 1 箇所ずつ壊すと、名指しした試料が期待どおりでなくなる | テスト | `test-check-screens.py` の変異 |
+| B12 | 版: screen-spec を minor で上げ、3 種類（marketplace.json・plugin.json・SKILL.md 2 本の 2 行）が揃う | 版の行 | `check-plugin-versions.py`・`check-version-bump.py origin/main` |
+| B13 | 掛け算: B1〜B12 を Verifier と `/code-review` の両方に、1 パス目と 2 パス目（あれば）で渡す（4 つの受け渡し。2 パス目が該当なしなら 2 つ） | 関門の委譲 | 計画ファイルの関門の記録 |
+
+- B1 の受入基準の行（差分テスト）: 旧（周の base）と新（差分テストを回した成果物）に同じ入力を与えた出力が、正規化したあと、承認済みの変更の一覧に無い違いを 1 件も持たず、新側に挙動の変更を 1 か所入れると差分テストが差分を検出する（Verifier が示す）。
+- **生成物**: なし——図（drawio）も `SKILL.md` の測定値の生成ブロックも触らない（`SKILL.md` は版の 2 行だけで、screen-spec の SKILL.md は §8.2 の測定の対象外——`skill-metrics.py --check` で確かめる）。
+- プロパティテスト: なし（語彙は集合の所属、既定は値の等しさで、入力の空間が広く例を手で選ぶと偏る型（往復・冪等性・数値の境界）に当たらない。形式の版の境界は spec-loop の `external-profile.py` のプロパティテスト（#1455）が持つ）
+- 仕様の振る舞い: 正本なし（このリポジトリは spec-loop の正本ではない。`check-spec-writeback.py` で確かめる）
+- **未証明**: 本物の組織の開発ガイド（非公開）の profile に当てたときの読み方——この環境に無い。試料は一時のリポジトリで作る（人間のレビューへ）。
+
+### 差分テスト
+
+差分テスト: あり
+
+| 項目 | 書くもの |
+| --- | --- |
+| 旧 | `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`（周の base） |
+| 新 | （回した時点で書く） |
+| 入力の出どころ | サンプル——`scripts/test-check-screens.py` の試料のうち外部の profile を持たないもの全部（周の base の時点の試料と、この周で足した外部の profile の無い試料）。件数は回した時点で書く |
+| 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので、`<tmp>` に揃える——比較に関係ない置き場所の違い） |
+| 結果 | （回した時点で書く） |
+| 回した場所 | リポジトリの外（scratchpad。旧は `git archive <旧> plugins/screen-spec plugins/spec-loop` で取り出した木） |
+
+#### 承認済みの変更の一覧
+
+承認済みの変更: なし
+
+## 未解決の判断・確認待ち
+
+- 仕様の穴 G1〜G3 は推奨で決めた（上の表）。確認の Issue を穴ごとに立てる（番号は下の手順 8 の記録に書く）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1458-screen-spec-external-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1458`・起点 `b37059d0`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`
+- 関門: まだ
+- 交絡を潰した手順: まだ
+- 割り目: 割らない（cruise の周）
+
+## 既知の限界・決着済みの論点
+
+- 足した列を `init`・`add`・`build-mock.py`・MkDocs のフックは知らない（見出し行が決まりと違うとして断る）——Issue の範囲の外（G2。`init` の初期値は #1460）。
+- 外部の profile のリンクが切れているかは見ない（spec-loop の `external-profile.py check` が見る）。
+- 語彙はセルの値をそのまま比べる（`、` で区切らない）。
+- 外部の profile は案件に 1 つまで（G1）。
