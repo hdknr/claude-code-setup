@@ -75,6 +75,9 @@
 - `/code-review` 1 パス目: 指摘 6 件（nit 5・pre_existing 1）。受入基準を破るものは無いので、既定の線ではすべて残課題（下の採否の表）
 - 2 パス目: 該当なし——1 パス目の指摘対応の差分は 0 行（`git diff d1dba89 -- ':(top)' ':(top,exclude)docs/plans/issue-1463.md'` が空・`git status --porcelain` に出るのは計画ファイルだけ）
 - 狭いパス: 該当なし
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）
+- PR #1464 の CI（run 44982486405）: 全ジョブ緑。`dev-loop` 5 分 1 秒・`dev-loop-commit-gate` 3 分 45 秒・`dev-loop-cruise` 4 分 47 秒——最長 301 秒で、878 秒から下がった（受入基準 3）。
+  run 全体は 878 秒から 757 秒。律速は `spec-loop-generate`（12 分 37 秒。前回の 608 秒より長い——ランナーのばらつきで、この周の変更は触っていない）
 
 ```dev-loop-gates
 周の base: f1e12efad2c2fb7e91ba24b1f66a14316e393b6a
