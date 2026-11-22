@@ -171,6 +171,12 @@ Red テストのケースの半分以上が使う seed は土台で作ること�
 どちらでも何も作らない**。画面の表が無ければ何も足さない。**`--upto` で前の版の時点を確かめるときは当てない**（上の関門と同じ条件）。
 画面の表とは何か・screen-spec の見つけ方・終了コードの読み替えは `screen-gate.py` の docstring を正とする。
 
+**外部の profile（#1457）**: 書く生成と `--dry-run`（`--upto` なし）では、仕様レビューの記録を読んだ後に、同梱の `profile-gate.py` を正本の `docs` に当てる——
+**基盤要件の表の `profile の行` が外部の profile を指していれば、platform-spec の版の差分の起票の候補か違反で 1、判定していない・platform-spec が無い
+（などで止めた）で 2、どちらでも何も作らない**（書く生成なら前の本文を消す）。値が無ければ何も足さない。`--check`・`--red-check`・`--upto` には当てない
+（新しい版が出たかは profile の手元の clone のタグで決まる——別リポジトリの CI が当てる `--check` を clone に依らせない）。
+profile を使っているとは何か・platform-spec の見つけ方・終了コードの読み替えは `profile-gate.py` の docstring を正とする。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定し直さない**——代わりに、**書く生成と `--dry-run`（`--upto` なし）では、作業中の版の
 仕様レビューの記録（正本の根の `spec-review/v<n>.csv`）の最後の実行の行（`結果` が `抜けた`／`抜けていない`）が `抜けた` であることを読む**（#1044。
@@ -218,10 +224,10 @@ Red テストのケースの半分以上が使う seed は土台で作ること�
 終了コード:
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
-- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・生成したモックの生成器が 1（#1099）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
+- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・外部の profile の関門が 1（書く生成と `--dry-run`。#1457）・生成したモックの生成器が 1（#1099）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
   反する（全部を 1 行ずつ出す）・中間表現の機能どうしの依存が循環する（書く生成と `--dry-run`。#1347）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
-- 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・生成したモックを作れない（生成器の 1 のほか。#1099）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
+- 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・外部の profile の関門が 2 か 4（`profile の行` が profile を指すのに platform-spec が無いを含む。#1457）・生成したモックを作れない（生成器の 1 のほか。#1099）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
   まとめ方の誤り（上の「まとめた本文」。まとめ方でだけ起きる依存の循環を含む）・`--check`・`--red-check` との組み合わせ、v1 でない `--foundation` を含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
@@ -492,6 +498,8 @@ design = _load("check_design_csv", "check-design-csv.py")
 screens = spec_exit.screens
 # 基盤要件の表の検査とゲートの判定は `check-infra-csv.py` のもの（写さない——#950）
 infra = _load("check_infra_csv", "check-infra-csv.py")
+# 外部の profile の関門は `profile-gate.py` のもの（写さない——#1457）
+profiles = _load("profile_gate", "profile-gate.py")
 # 仕様レビューの記録の表の読み方は `check-review-record.py` のもの（写さない——#1044）
 review = _load("check_review_record", "check-review-record.py")
 REVIEW_DIR = "spec-review"
@@ -4136,6 +4144,14 @@ def run(repo: Path, args, writing: bool) -> int:
         if code:
             return fail(repo, writing, code, lines)
         passed = lines[0]
+        # 外部の profile の関門（#1457。`profile-gate.py` の docstring を正とする）——本文を作るモードの作業中の版だけ。
+        # 新しい版が出たかは clone のタグで決まるので、別リポジトリの CI が当てる `--check` には当てない
+        code, lines = profiles.check(repo / DOCS, None, None, repo)
+        if code:
+            return fail(repo, writing, 1 if code == profiles.EXIT_FAIL else 2, [line.replace(str(repo / DOCS), DOCS) for line in lines] + [
+                "関門（外部の profile。profile-gate.py）を通らない。生成しない"])
+        for line in lines:
+            print(line, file=sys.stderr)
 
     mock_missing: list[str] = []
     if loaded.screens:

@@ -7,7 +7,7 @@
 読み込んだ dev-loop は 2.20.1（`SKILL.md` 1957 行を読んだ）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1461`））。
-版の上げ方: `screen-spec` を **minor**（0.8.0 → 0.9.0。`init` が基盤の profile から初期値を引き、外部の profile を書ける——能力の追加）。spec-loop・platform-spec は触らない。
+版の上げ方: `screen-spec` を **minor**（マージ直前の取り込みで main の 0.9.0（#1459）から 0.10.0 に上げ直した。最初は 0.8.0 → 0.9.0。`init` が基盤の profile から初期値を引き、外部の profile を書ける——能力の追加）。spec-loop・platform-spec は触らない。
 並行の周 #1459 も screen-spec の版を上げる——マージの直前に親の依頼で取り込み、main の先端の版から上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.20.1/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 割り目: 割らない（cruise の周）。
