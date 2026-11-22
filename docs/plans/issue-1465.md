@@ -68,9 +68,16 @@
 
 ## 関門の進捗（再開点）
 
-- 実装: 済み
+- 実装: 済み（コミット `CI: plugins.yml の spec-loop・spec-loop-generate を 5 本に分けて…`）
+- 割り目 1（手順 4 の後）: `AskUserQuestion` で訊いた——**ここで割る**（2026-11-22）。再開は手順 5（1 パス目の Verifier と `/code-review`）から。関門はまだ 1 つも回していない
 - 実験: 分割前後のステップを全キーの JSON の多重集合で比べ、違いは足した checkout 3 つだけ（run ステップは 94 と 94）。
   陽性対照（`test-check-alloy.py` の行を抜いた写し）では、その 1 ステップが不一致として出た（run ステップは 94 と 93）
+
+- 関門の記録:
+
+```dev-loop-gates
+周の base: 266274d73504734eb84741ee4df7465edea6c96c
+```
 
 ## 手順 8
 
