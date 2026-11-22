@@ -82,7 +82,7 @@ Issue 本文（外部入力。先頭が `<!-- cruise-followup: #1425 -->`、2 �
 - 周の在り処: ブランチ `issue/1447-align-reverify-breaking`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1447`・起点 `1c8d445b`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `1c8d445b46b14b05c98b11e2de243c77b0dc65a6`
 - 関門: 1 パス目の Verifier（sonnet・dev-loop:dev-loop-verifier）を `4b313b78` に当てた——反証 2 件（V-1・V-2）。1 パス目の `/code-review`（high）を同じ `4b313b78` に当てた——指摘 6 件（CR-1〜CR-6）。採否は下の表。差し戻し: 1 パス目の指摘対応（手順 4 へ。`100d1940`）。
 - 2 パス目: Verifier（sonnet）を `100d1940` に当てた——反証 0 件（観察 O-1・O-2 は反証にしない）。`/code-review`（high）を `100d1940` に当てた——指摘 6 件（CR2-1〜CR2-6。採否は下の表）。割り目: 割らない（cruise の周）。
-- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `100d1940`
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `100d1940`・終点（指摘対応の最後のコミット）: `c7f5534b`
 - 1 パス目の指摘対応の起点（0 行の判定）: `4b313b78bea1d0d9119d65dd46060f2455799b26`
 - 交絡を潰した手順: 実験なし（読み比べと既存のテスト）
 - 割り目: 割らない（cruise の周）
