@@ -127,6 +127,8 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 - 2 パス目: 割り目——割らない（cruise の周）。Verifier（sonnet）を `ffc5d091` に当てた——反証 0 件（軽微な所見 2: 止めた理由の文言・語彙の文言。差分テストの陽性対照を取り直して 5 件以上の差分を検出）。`/code-review`（high）を `ffc5d091` に当てた——指摘 7 件（important 2・nit 5）。採否は下の表。
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `ffc5d09197c58c3d6bf1b88b55423e94e94dee62`・終点（指摘対応の最後のコミット）: `a1348a0f7062ded2a13320f5a26ebbd6bfde5671`。陽性対照: 新しい試料を起点の本体（`ffc5d091`）に当てると `ext-base-mismatch`・`ext-base-unset`・`ext-base-unset-both`（止めた理由の文言）と `ext-setting-empty-and-valued`（終了コード 0）の 4 件が赤、終点の本体で全部緑
 - check-all（run-serial 越し）: `ffc5d091` で 102 本 OK（失敗 0）
+- 狭いパス: Verifier（sonnet）を `ffc5d091`→`a1348a0f` に当てた——反証 0 件・所見 2 件（N-1: 空の `外部の profile,` の行が 2 つだけの試料が無く、「値つきの行と並んだときだけ数える」変異が素通りする／N-2: 空の行を 2 つ置いた settings が周の base で 0、終点で 1——B1 の「外部の profile を書いていない案件で同じ」から外れる）。自分で設計した変異 6 つのうち 5 つ赤。報告は起動元に届かず、記録（transcript）から読んだ。
+- マージ前の判断（線 `推奨で決めて起票（後退・未達を含む）`）: N-2 は狭いパスの指摘で、この周の受入基準 B1 を破る（この周の 2 パス目の直しが持ち込んだ後退）——推奨を決める前にまず直す（`references/absent-lines.md` の「満たしていない受入基準は、推奨を決める前にまず周が直す」）。N-1 は同じ直しの試料で埋まる。直しの起点: `9b8c4083d8e4bd144a4bf8a00285a6e39b28b12f`
 - check-all（run-serial 越し）: `fe3a6e3a` で 1 本落ちた（check-plan-counts——件数の行が無かった。`79d7f709` で足した。ほかの 99 本は OK・2 本 CACHED）。`test-check-screens.py`（run-serial 越し）は `5968a03b` の木で緑（試料 162・変異 130・references の崩し 35）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を取った。外部の profile の試料は走らせる場所（cwd）を案件の根と別にし、`CLAUDE.md` を docs の親で探すことが観測に効くようにした（変異「案件の根を docs の親にしない」が `ext-good` で落ちる）
 - 割り目: 割らない（cruise の周）
