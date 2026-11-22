@@ -39,10 +39,11 @@ requirements/screens/
 | --- | --- | --- |
 | `画面IDの接頭辞` | `add` が採る画面ID の頭。英大文字で始まり、英大文字と数字が続き、`-` で終わる（`S-`・`SCR-`）。spec-loop の成果物の表の番号の頭（`F-` など）と重ねず、画面ID が Q&A の番号の形（`Q-`・`D-`）や未決定の印（`TBD-`・`TODO-`）にならないもの | `S-` |
 | `profile` | 実現方式の profile の名前（このプラグインの `profiles/` にあるもの。`references/profiles.md`）か `未設定` | `未設定` |
+| `外部の profile` | 組み込みの profile の上に重ねる外部の profile。`<持ち主>/<リポジトリ> <名前> <タグ>` を空白で区切って書く（案件に 1 つまで。`references/profiles.md` の「外部の profile」） | 行を置かない（外部の profile を使わない） |
 
 - `profile` の初期値は、`init` のスキルが spec-loop の基盤要件（`shared/infra.csv`）のフロントエンドの行（`項目` が `frontend`・`フロントエンド`）から推し、利用者に確かめて決める。
   profile を選ぶと、表の見出し行に profile の列が入り、仕様書と共通仕様に profile の節が要る（`references/profiles.md`）。**profile は表を置く最初の版で決める**——見出し行は版の間で変えない。
-- 検査（`check-screens.py`）は設定のうち `profile` だけを読む（設定が無ければ `未設定`）——画面ID が接頭辞で始まるかは見ない（手で置いた画面ID を止めない）。
+- 検査（`check-screens.py`）は設定のうち `profile` と `外部の profile` を読む（設定が無ければ `未設定` で、外部の profile は使わない）——画面ID が接頭辞で始まるかは見ない（手で置いた画面ID を止めない）。
 
 ## `init` と `add`
 
@@ -165,6 +166,7 @@ v1〜v<n>（省略すると作業中の版まで）を spec-loop の重ね方で
 | 未決定の印 | — | 表のセル・散文に spec-loop の未決定の印がある | `⚠️` だけで印の無いセル・行 |
 | 散文 | `references/prose.md` のとおり | — | — |
 | profile | 設定の `profile` がこのプラグインの profile でも `未設定` でもない・profile の列の値（`references/profiles.md`）・仕様書と共通仕様の profile の節（無い・2 つある・仕様書の末尾にない・小見出しが無い・空・理由の無い `N/A`） | — | — |
+| 外部の profile | 設定の `外部の profile` の行の形（3 つの値・1 行まで）・語彙の外の値・種別の既定と違う値で `根拠` に Q&A の番号が無い・外部の profile が足した列の無い見出し行（`references/profiles.md` の「外部の profile」） | — | — |
 
 - 未決定の印の判定は spec-loop の `check-spec-exit.py` の `find_markers` を、Q&A の番号の形は spec-loop の `check-qa-csv.py` を読み込む（写さない）。
   `N/A。実現方式が未定` は伏せてから印を探す（`references/profiles.md` の「方式が未定のとき」）。
@@ -179,4 +181,4 @@ v1〜v<n>（省略すると作業中の版まで）を spec-loop の重ね方で
 | 1 | 違反がある（未決定も併せて出す）。重ね合わせが決まりに反する（spec-loop の重ね方の違反）ときも 1 |
 | 3 | 違反は無いが、未決定の印か必須の欄の空がある |
 | 2 | 判定していない——引数の誤り・`docs` が無い・読めない・想定外の例外 |
-| 4 | 検査の前に止めた——spec-loop が見つからない・spec-loop の版が対応の範囲の外（`references/spec-loop.md`） |
+| 4 | 検査の前に止めた——spec-loop が見つからない・spec-loop の版が対応の範囲の外（`references/spec-loop.md`）・設定が名指した外部の profile を読めないか決まりに合わない（`references/profiles.md` の「外部の profile」の「読めないとき」） |
