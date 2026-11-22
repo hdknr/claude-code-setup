@@ -149,7 +149,7 @@ C1 に足す行（プロパティテスト）: 候補の集合について、ラ
 - 1 パス目の指摘対応の終点: `0db99fbf`（差分は 0 行でない——2 パス目を回す）。割り目: 割らない（cruise の周）。
 - check-all（run-serial 越し・出力 `checkall-1457-2.txt`）: `0db99fbf` の木で 105 本のうち失敗 0。
 - 2 パス目: Verifier（sonnet）を `8fa2c5ff`（`0db99fbf` から計画ファイルだけ進めた先端）に当てた——反証 0 件。/code-review（high）を同じ先端に当てた——指摘 6 件（重要 1・nit 5。CR2-1〜CR2-6）。採否は下の表。
-- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `8fa2c5ff6bc5feda8d55b7cbfe9b7b5fe10c60b5`
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `8fa2c5ffe106d599418b0c09e78e15e19aca02c4`
 - 1 パス目の指摘対応の起点（0 行の判定）: `068e030b332c59d6b8042fbafd3f51b58c6e5e62`
 - check-all（run-serial 越し・出力 `checkall-1457-1.txt`）: `159f37fc` の木で失敗 2（`check-plan-counts.py`・`check-plan-scope.py`——計画ファイルの件数の行と 1 行 2 パターン。`a48f932f` で直し、2 本を単独で回して緑）
 - 割り目: 割らない（cruise の周）
