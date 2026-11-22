@@ -53,7 +53,8 @@ MUTATIONS = {
     "同じリポジトリの行が 2 行でも先頭を使う": [("    if len(hits) > 1:\n", "    if False:\n")],
     "フェンスの中の行も宣言と読む": [("tlc.scan_declarations(text, (DECL_KEY,))[DECL_KEY]",
                                  "[l[len(DECL_KEY):] for l in text.splitlines() if l.startswith(DECL_KEY)]")],
-    "行の ~ をホームに展開しない": [("        path = Path(hits[0]).expanduser()", "        path = Path(hits[0])")],
+    "行の ~ をホームに展開しない": [("        path = _expand(Path(hits[0]), source)", "        path = Path(hits[0])")],
+    "~ を展開できないと RuntimeError のまま投げる": [("    except RuntimeError as e:\n        raise Undetermined(", "    except ZeroDivisionError as e:\n        raise Undetermined(")],
     "タグが無ければブランチに落ちる": [('f"refs/tags/{tag}^{{commit}}"', 'f"{tag}^{{commit}}"')],
     "版の記法をたどる": [('    if _git(clone, "check-ref-format", f"refs/tags/{tag}").returncode != 0:\n', "    if False:\n")],
     "HEAD の中身を読む": [('f"{commit}:{path}"', 'f"HEAD:{path}"')],
@@ -319,6 +320,15 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
         o["引数（~/）"] = find("--clone", "~/declclone")
         o["環境変数（~/）"] = find(env="~/declclone")
         o["行（~/ が git でない）"] = find(decl=f"外部の profile の clone: {R} ~/plain\n")
+        # 無い利用者の名前（`~<名前>`）は passwd を引くだけで、利用者の実ホームを読まない
+        o["行（~<無い名前>/）"] = find(decl=f"外部の profile の clone: {R} ~nosuchuser-1471zz/prof\n")
+        o["引数（~<無い名前>/）"] = find("--clone", "~nosuchuser-1471zz/prof")
+        md.write_text(f"外部の profile の clone: {R} ~nosuchuser-1471zz/prof\n", encoding="utf-8")
+        try:
+            mod.find_clone(R, project=str(project), env={})
+            o["find_clone（~<無い名前>/）"] = "例外なし"
+        except Exception as exc:
+            o["find_clone（~<無い名前>/）"] = type(exc).__name__
     finally:
         if saved_home is None:
             os.environ.pop("HOME", None)
@@ -431,6 +441,11 @@ def main() -> int:
         check("行の ~/ は引数・環境変数と同じ clone を指す（#1471）",
               o["引数（~/）"][0] == 0 and o["環境変数（~/）"][0] == 0
               and all("<tmp>/correct/declclone（" in src(k) for k in ("引数（~/）", "環境変数（~/）")))
+        check("行の ~<無い名前>/ は出所とパスを名指して 4（#1471）", o["行（~<無い名前>/）"][0] == 4
+              and "CLAUDE.md の `外部の profile の clone:` の行 のパス ~nosuchuser-1471zz/prof の `~` をホームに展開できない" in o["行（~<無い名前>/）"][1])
+        check("引数の ~<無い名前>/ も出所を名指して 4（#1471）", o["引数（~<無い名前>/）"][0] == 4
+              and "引数 --clone のパス ~nosuchuser-1471zz/prof の `~` をホームに展開できない" in o["引数（~<無い名前>/）"][1])
+        check("find_clone を直に呼ぶと ~<無い名前>/ は Undetermined（RuntimeError ではない。#1471）", o["find_clone（~<無い名前>/）"] == "Undetermined")
         check("行の ~/ が git でなければ、展開した先を名指して 4（#1471）",
               o["行（~/ が git でない）"][0] == 4 and "<tmp>/correct/plain は git" in o["行（~/ が git でない）"][1]
               and "project/~" not in o["行（~/ が git でない）"][1])

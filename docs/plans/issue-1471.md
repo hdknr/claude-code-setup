@@ -71,18 +71,32 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 周の在り処: ブランチ `issue/1471-profile-clone-tilde`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1471`・
   起点 `b37059d0`・base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: まだ
+- 関門: 1 パス目を通した（Verifier 反証 0 件・/code-review 指摘 2 件——採否は下の表）。2 パス目に渡す（Verifier・/code-review）。割り目（手順 6）: 割らない（cruise の周）。1 パス目の指摘対応の起点: `dbd27f367ea6378101342047516e74c8ba82e412`（実装のコミット。先に当てた関門に渡した時点の HEAD）
+- 歯止め: 最初の `check-all.py` の出力ファイルは並行の周と名前が重なり上書きされたので根拠にしない。`dbd27f36` の木（未コミットは計画ファイルだけ）で回し直した: 56 本を回して失敗 0・46 本は CACHED（入力が前回の緑から変わっていない）・`END rc=0`（出力 `checkall-1471-dbd27f36.txt`）
+- 1 パス目の指摘対応の歯止め: `run-serial.py` 越しの `check-all.py` が 102/102 本・失敗 0・`END rc=0`（出力 `checkall-1471-fix1.txt`。指摘対応のコミットの直前の木）。`test-external-profile.py` は全部合格（「守る」46 行・変異 46 件）
 - 交絡を潰した手順: 直す前の本体（`git show b37059d0:…`）と直した後の本体を、同じ一時 HOME・同じ `CLAUDE.md`（`外部の profile の clone: o/r ~/prof`）で走らせ、前は 4（`<案件>/~/prof は git のリポジトリ（の根）でない`）・後は 0（`<HOME>/prof`）。陽性対照は引数 `--clone ~/prof` が同じ HOME で 0
 
 ```dev-loop-gates
 周の base: b37059d0d0f6ff317fddadfd2cd866eab10e5cd9
+関門: Verifier 1 dbd27f367ea6378101342047516e74c8ba82e412 反証=0
+関門: /code-review 1 dbd27f367ea6378101342047516e74c8ba82e412 指摘=2
 ```
 
 ## 既知の限界・決着済みの論点
 
 - `$HOME` などの環境変数の展開はしない（決着: 採らない。理由: Issue は `~` だけを求め、引数・環境変数の側も `expandvars` をしていない——入口の間で揃えるのが目的）。
 - `~<名前>` はテストしない（決着: 採らない。理由: 試すと利用者の実ホームを読む。展開は `Path.expanduser()` が引数・環境変数と同じ形でする）。
-- `~` を展開できない環境（HOME も passwd も無い）では `Path.expanduser()` が `RuntimeError` を投げ、本体の想定外の例外として 4 になる（決着: 採る。引数・環境変数の側と同じ）。
+- ~~`~` を展開できない環境（HOME も passwd も無い）では `Path.expanduser()` が `RuntimeError` を投げ、本体の想定外の例外として 4 になる（決着: 採る）~~——**理由が誤っていた**（/code-review 1 パス目 CR1-1）: 無い利用者の名前（`~<打ち間違い>/…`）でふつうの環境でも起き、`find_clone` を直に呼ぶと `Undetermined` でなく `RuntimeError` が出て docstring の約束を破る。1 パス目の指摘対応で `_expand` が `Undetermined` に変える（下の採否の表）。
+
+### 1 パス目の採否（直す線: 既定）
+
+Verifier 1 パス目: 反証 0 件（報告は宛先がずれて親経由で届いた。基準 5 の新しい変異の個別の行と基準 8 は「未確認」——基準 8 は親が `checkall-1471-dbd27f36.txt` で回し直した結果で埋める）。
+/code-review 1 パス目: 指摘 2 件。
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1 行の `~<無い名前>/…` で `expanduser()` が `RuntimeError`。CLI は汎用の「想定外の例外」で 4、`find_clone` を直に呼ぶと `Undetermined` でなく `RuntimeError`。既知の限界 3 の理由が誤り | 示せる——行 `外部の profile の clone: o/r ~nosuchuserzz/prof` で CLI `判定できなかった（想定外の例外）: RuntimeError: Could not determine home directory.`（rc 4）。直す前の本体（b37059d0）では同じ行が `<案件>/~nosuchuserzz/prof は git のリポジトリ（の根）でない` の `Undetermined` だった——この周が持ち込んだ後退 | 4（既存の振る舞い：行が git のリポジトリでなければ `Undetermined` で出所とパスを名指す）・2（入口の間の食い違い） | 直す——`_expand` を足し、行と `_named`（引数・環境変数）の両方で `RuntimeError` を出所とパスを名指した `Undetermined` に変える。「守る」に 1 行・変異 1 件・試料 3 件（行・引数・直の呼び出し） |
+| CR1-2（nit）`find_clone` の `env` 引数が `~` の展開に効かない（`os.environ` の HOME を読む。`_named` の既存の展開も同じ） | 示せる（`env={'HOME':…}` でも実の HOME に解決）——ただし受入基準は「引数・環境変数と同じく展開する」で、引数・環境変数の側も `os.environ` を読む | 無し | 残課題（PR コメント）。`env` は `SPEC_PROFILE_CLONE` を差し替える口で、HOME の差し替えを約束していない |
 
 ## 手順 8 の記録
 
