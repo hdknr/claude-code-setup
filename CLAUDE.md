@@ -155,7 +155,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-infra-csv.py` - 基盤要件の表（`shared/infra.csv`。言語・DBMS・ホスティング環境など）の検査とゲートの判定（#950。
       **形式の違反（1）・未決定（3。表が無いときも）・暫定（4）を分けて出し、表の状態と根拠の Q&A の行の状態の対応も照らす**。
       feasibility がゲートに当て（止めない）、`scaffold.py`（未決定・暫定・Python でない言語で止める）と `build-proposal.py`（未決定で 1・暫定で 3）が読み込んで当てる。
-      表が無ければ両方とも警告して進む。決まりの原本は `references/tree.md` の「基盤要件」、守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-csv.py`）
+      表が無ければ両方とも警告して進む。**末尾の任意の列 `profile の行`（外部の profile の行 ID。中身は見ない）を置いた表も、置かない 7 列の表も通す**（#1456）。
+      決まりの原本は `references/tree.md` の「基盤要件」、守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-csv.py`）
     - `scripts/check-findings-csv.py` - 仕様レビューの**指摘の表**（`spec-review/v<n>-findings.csv`。1 指摘 1 行）の形式の検査（#982。
       **振り分けの列は `references/spec-scope.md` の区分の名前だけ**・数える列の値・`回` が隣の実行の記録（`v<n>.csv`）の実行の行を指し日付が同じこと・**`確かめられない` の行の `結果` が `-`**（#986）を見る。
       spec-review の手順 6 が実行の行と一緒に足して当てる。決まりの原本は `references/spec-exit.md` の「指摘の表」、守る／守らないは docstring を正とする。テストは `scripts/test-check-findings-csv.py`）
@@ -300,6 +301,13 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       本体は画面の表の行を仕様書の「表で持つ」節に表として出し（共有の層だけ・未決定のセルに `⚠️` の飾り）、ビルドのときに版ごとのモックを `build-mock.py` の `build` で作って（**基準の時点（`--since`）は渡さない**——サイトのモックに前回の会からの印は付かない）
       `build/mkdocs/mock/v<n>/`（`build-mock.py` の出力の `build/mock/` と分ける）に書いてサイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
       決まりの原本は `references/mkdocs.md`、守る／守らないは docstring を正とする。テストは `scripts/test-screen-spec-pages.py`）
+  - `platform-spec/` - spec-loop の基盤要件（`shared/infra.csv`）を、組織の開発ガイドのような外部の設計パターン（profile）とつなぐプラグイン（#1312。**spec-loop は platform-spec に依存しない**——
+    置かなければ今の `infra.csv` と `check-infra-csv.py` のまま動く。いまは基盤の層の形と照合まで（#1456）。スキルはまだ持たない）
+    - `references/` - **決まりの原本**（基盤の層の表の形・形式の版の範囲・案件の設定（版の中の `shared/platform/settings.csv`）・`profile の行` の書き方・照合は `infra-profile.md`、
+      spec-loop との境目・対応する spec-loop の版・spec-loop の見つけ方は `spec-loop.md`）。profile の置き場所と読み方は spec-loop の `references/external-profile.md` を正とし、写さない
+    - `scripts/check-infra-profile.py` - 案件の `infra.csv` の末尾の任意の列 `profile の行` が、案件の設定のタグの時点の基盤の層に在るかを照らし、無い ID（別のタグにだけ在る ID も）を名指しする（#1456。
+      **spec-loop の重ね方（`merge-versions.py`）・列の名前（`check-infra-csv.py` の `PROFILE_COLUMN`）・外部の profile の読み方（`external-profile.py`）を読み込む——写さない**。読むだけ。
+      spec-loop の見つけ方は screen-spec と同じ順の写し（platform-spec は screen-spec に依存しない）。守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-profile.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -490,7 +498,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     「性能のほかの種類」の表と一致することも見る**（`test-check-qa-csv.py` と同じ形）
   - `test-check-infra-csv.py` - spec-loop の基盤要件の表の検査（#950）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数が `references/tree.md` の「基盤要件」の表と一致すること・
-    根拠の Q&A の状態の名前が `check-qa-csv.py` の状態にあることも見る**（`test-check-design-csv.py` と同じ形）
+    根拠の Q&A の状態の名前が `check-qa-csv.py` の状態にあることも見る**（`test-check-design-csv.py` と同じ形）。
+    **末尾の任意の列 `profile の行` の試料と、spec-loop の `scripts/`・`templates/` が platform-spec の名前を探す・求める先に持たないこと（名前を植える陽性対照つき）も見る**（#1456）
+  - `test-check-infra-profile.py` - platform-spec の `infra.csv` と外部の profile の基盤の層の照合（#1456）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/platform-spec/scripts/` にある**。**一時ディレクトリに本物の spec-loop と platform-spec の写しを並べ、profile は一時の git リポジトリにタグを付けて作る**（ネットワークに出ない）。
+    在る ID・無い ID・タグの外の ID・止まり方（1・4・2）・読むだけ（clone と正本が変わらない）と、**本体の定数が `plugins/platform-spec/references/` と一致すること**を見る。
+    **変異の数は docstring の「守ること」の行の数と同じ**（壊さない写しの陰性対照つき）
   - `test-check-screens.py` - screen-spec の画面・項目・遷移の表の検査（#1092）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べて走らせ**（spec-loop の重ね方を読み込むので）、
     #1092 の受入基準の陽性対照・陰性対照・実行の前後で正本が変わらないこと（Q&A の番号を振らない）と、**本体の定数が `plugins/screen-spec/references/` の原本と一致すること**を見る。
