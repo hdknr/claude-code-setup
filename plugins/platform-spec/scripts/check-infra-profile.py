@@ -35,12 +35,15 @@ usage: python3 check-infra-profile.py <docs ディレクトリ> [--upto <n>] [--
 - 設定の値が空なら 1
 - 設定に決まりの項目が足りなければ 1
 - 設定の `リポジトリ` が `<持ち主>/<名前>` の形でなければ 1
+- 設定の `リポジトリ` の `<持ち主>`・`<名前>` が `.`・`..` なら 1
 - 設定の `profile` が profile の名前の形（`/` を含まない・`.`・`..` でない）でなければ 1
 - 設定の `タグ` がタグの名前に使えない形（`git check-ref-format` が通さない。`v1~1` など）なら 1
+- 設定の `タグ` が `-` で始まるか `HEAD` なら 1（`git check-ref-format` は通すが、git はタグにしない）
 - 設定があれば、`profile の行` の値が無くても profile を読む（設定の誤りを 0 にしない）
 - profile に基盤の層が無ければ 4（「無い」の 3 にしない）
 - 基盤の層の表の見出しが形式の版 1 の 4 列（`ID,要約,リンク,項目`）でなければ 4
-- 基盤の層の表の見出しは、空の行を飛ばした最初の行で読む（spec-loop の読み方と同じ）
+- 基盤の層の表の見出しは、空の行を飛ばした最初の行で読む
+- 基盤要件の表の見出しも、空の行を飛ばした最初の行で読む（先頭が空の行でも `profile の行` を照らす）
 - 名指した spec-loop が spec-loop でなければ、ほかを探さずに 4
 - spec-loop の版が対応の範囲の外なら、照らす前に 4
 - 重ね合わせが spec-loop の決まりに反すれば 1
@@ -236,7 +239,9 @@ class Checker:
         text = self.text(whole, INFRA)
         if text is None:
             return []
-        rows = self.rows(text, INFRA)
+        rows = [(line, fields) for line, fields in self.rows(text, INFRA)]
+        while rows and not any(f.strip() for f in rows[0][1]):
+            rows.pop(0)
         if not rows or self.column not in rows[0][1]:
             return []
         header = rows[0][1]
@@ -289,10 +294,14 @@ class Checker:
         repo, name, tag = (found.get(key, "") for key in SETTING_KEYS)
         if repo and not REPO_FORM.fullmatch(repo):
             self.violations.append(f"{SETTINGS}: {SETTING_REPO} {repo!r} が `<持ち主>/<名前>` の形でない")
+        elif repo and any(part in (".", "..") for part in repo.split("/")):
+            self.violations.append(f"{SETTINGS}: {SETTING_REPO} {repo!r} の持ち主か名前が `.`・`..`")
         if name and ("/" in name or name in (".", "..")):
             self.violations.append(f"{SETTINGS}: {SETTING_PROFILE} {name!r} が profile の名前の形でない（`/` を含まない・`.`・`..` でない）")
         if tag and subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], capture_output=True).returncode != 0:
             self.violations.append(f"{SETTINGS}: {SETTING_TAG} {tag!r} がタグの名前に使えない形")
+        elif tag and (tag.startswith("-") or tag == "HEAD"):
+            self.violations.append(f"{SETTINGS}: {SETTING_TAG} {tag!r} がタグの名前に使えない形（`-` で始まる名前と `HEAD` は git がタグにしない）")
 
     def layer_ids(self, settings: dict[str, str]) -> set[str]:
         """設定のタグの時点の基盤の層の ID。判定できなければ Stop。"""
