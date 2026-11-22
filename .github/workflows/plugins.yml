@@ -469,6 +469,14 @@ jobs:
       - name: platform-spec の infra.csv と外部の profile の基盤の層の照合のテスト（#1456）
         run: python3 scripts/test-check-infra-profile.py
 
+      # 本体は plugins/platform-spec/scripts/ にある（版の差分から起票の候補を出す。check-infra-profile.py と spec-loop を読み込むので、本物の spec-loop と並べて回す）。
+      - name: platform-spec の profile の版の差分の候補のテスト（#1457）
+        run: python3 scripts/test-check-profile-diff.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（外部の profile の関門と scaffold・build-proposal の口。platform-spec は本物の写しか偽物を隣に置く）。
+      - name: spec-loop の外部の profile の関門のテスト（#1457）
+        run: python3 scripts/test-profile-gate.py
+
       # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 6 が指摘の表に当てる）。
       - name: spec-loop の指摘の表の検査のテスト（#982）
         run: python3 scripts/test-check-findings-csv.py
