@@ -260,9 +260,8 @@ jobs:
       - name: cruise の外側のループのテスト（#791）
         run: python3 scripts/test-outer-loop.py
 
-  # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分、作り直しの範囲と量、
-  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と Alloy の確かめと、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
-  # （下の spec-loop-generate のテストと、autopilot の外側のループ以外）
+  # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフの照合、版の重ね合わせと、
+  # 版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ（#1465 で分けた残り）
   spec-loop:
     runs-on: ubuntu-latest
     steps:
@@ -308,6 +307,20 @@ jobs:
           sudo chown "$(id -u):$(id -g)" /mnt/casefold/tmp
           TMPDIR=/mnt/casefold/tmp MERGE_VERSIONS_TEST_REQUIRE_CASE_FOLD=1 python3 scripts/test-merge-versions.py
           TMPDIR=/mnt/casefold/tmp MKDOCS_TEST_REQUIRE_CASE_FOLD=1 python3 scripts/test-init-mkdocs.py
+
+      # 本体は plugins/spec-loop/scripts/init-mkdocs.py と templates/mkdocs/（正本リポジトリへ写す雛形）。
+      - name: spec-loop の MkDocs の雛形のテスト（#266）
+        run: python3 scripts/test-init-mkdocs.py
+
+  # spec-loop のテストのうち、作り直しの範囲と量、持ち込まれたコードの取り込み、レビュー会の記録、親 Issue の一覧、緑のケースの一覧、
+  # 書き起こし前の見積もり、版の差分と凍結、autopilot の台帳と点検、形式検査（モデルの置き場所・TLC・Alloy）の道具（#1465）
+  spec-loop-tools:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # 本体は plugins/spec-loop/scripts/rebuild-scope.py（仮回答と推奨で決めた事項の台帳から作り直す範囲を引く。本文は本物の scaffold.py で作る）。
       - name: spec-loop の作り直す範囲を引くスクリプトのテスト（#875）
@@ -376,12 +389,7 @@ jobs:
       - name: spec-loop の Alloy の確かめのテスト（#922）
         run: python3 scripts/test-check-alloy.py
 
-      # 本体は plugins/spec-loop/scripts/init-mkdocs.py と templates/mkdocs/（正本リポジトリへ写す雛形）。
-      - name: spec-loop の MkDocs の雛形のテスト（#266）
-        run: python3 scripts/test-init-mkdocs.py
-
-  # spec-loop のテストのうち、表の検査（Q&A 表・スケジュールと見積りの表）と仕様レビューを抜ける条件の判定と、
-  # ガントチャート・図の書き出し・Red テストと Issue の本文の生成と、spec-loop の重ね方を読み込む screen-spec の表の検査（ジョブの名前より広い）
+  # spec-loop の Red テストと Issue の本文の生成と、scaffold の画面の表の参考資料のテスト（1 本ずつ重い。#1465）
   spec-loop-generate:
     runs-on: ubuntu-latest
     steps:
@@ -389,6 +397,39 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      # 本体は plugins/spec-loop/scripts/ にある（scaffold が使う）。
+      - name: spec-loop の Red テストと Issue の本文の生成のテスト（#219）
+        run: python3 scripts/test-scaffold.py
+
+      # 本体は plugins/spec-loop/scripts/scaffold.py（画面の表の参考資料と生成したモック。本物の screen-spec の写しを隣に置いて回す）。
+      - name: spec-loop の scaffold の画面の表の参考資料のテスト（#1099）
+        run: python3 scripts/test-scaffold-screens.py
+
+  # spec-loop のテストのうち、ガントチャート・図の書き出し・保存した TLC のモデルの走らせ直しと状態遷移図と、
+  # Q&A 表・スケジュールと見積りの表の検査と仕様レビューを抜ける条件の判定（#1465。ジョブの名前より広い）
+  spec-loop-render:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: spec-loop のガントチャート生成のテスト（#218）
+        run: python3 scripts/test-schedule-to-gantt.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
+      - name: spec-loop の図の書き出しのテスト（#268）
+        run: python3 scripts/test-render-diagrams.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（保存した TLC のモデルを走らせ直す。偽の TLC で回す）。
+      - name: spec-loop の形式検査のモデルの走らせ直しのテスト（#1044）
+        run: python3 scripts/test-check-formal-rerun.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（保存した TLC のモデルを状態遷移図にする。本物の TLC で取った出力を返す偽の TLC で回す）。
+      - name: spec-loop の形式検査のモデルの状態遷移図のテスト（#1177）
+        run: python3 scripts/test-formal-statechart.py
 
       # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリで使う）。
       - name: spec-loop の Q&A 表の検査のテスト（#215）
@@ -402,8 +443,15 @@ jobs:
       - name: spec-loop のスケジュールと見積りの表の検査のテスト（#218）
         run: python3 scripts/test-check-feasibility-csv.py
 
-      - name: spec-loop のガントチャート生成のテスト（#218）
-        run: python3 scripts/test-schedule-to-gantt.py
+  # spec-loop のシステム設計書の成果物・基盤要件・指摘の表と仕様レビューの記録の検査と、
+  # spec-loop の重ね方を読み込む screen-spec の表の検査・書き込み・UI モック・MkDocs のフックと画面の表の関門（#1465）
+  spec-loop-tables:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # 本体は plugins/spec-loop/scripts/ にある（req-loop・spec-review・scaffold が使う）。
       - name: spec-loop のシステム設計書の成果物の表の検査のテスト（#957）
@@ -413,6 +461,18 @@ jobs:
       - name: spec-loop の基盤要件の表の検査のテスト（#950）
         run: python3 scripts/test-check-infra-csv.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 6 が指摘の表に当てる）。
+      - name: spec-loop の指摘の表の検査のテスト（#982）
+        run: python3 scripts/test-check-findings-csv.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 1・6 が記録の表と指摘の表から条件 2・3 と上限を数え直す）。
+      - name: spec-loop の仕様レビューの記録の数え直しのテスト（#1044）
+        run: python3 scripts/test-check-review-record.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（指摘の表から機能ごとの指摘の件数を数える。check-findings-csv.py を読み込む）。
+      - name: spec-loop の指摘の機能ごとの数え方のテスト（#1045）
+        run: python3 scripts/test-findings-by-feature.py
+
       # 本体は plugins/screen-spec/scripts/ にある（spec-loop の重ね方を読み込むので、本物の spec-loop と並べて回す）。
       - name: screen-spec の画面・項目・遷移の表の検査のテスト（#1092）
         run: python3 scripts/test-check-screens.py
@@ -420,10 +480,6 @@ jobs:
       # 本体は plugins/spec-loop/scripts/ にある（画面の表の関門。本物の screen-spec の写しを隣に置いて回す）。
       - name: spec-loop の画面の表の関門のテスト（#1097）
         run: python3 scripts/test-screen-gate.py
-
-      # 本体は plugins/spec-loop/scripts/scaffold.py（画面の表の参考資料と生成したモック。本物の screen-spec の写しを隣に置いて回す）。
-      - name: spec-loop の scaffold の画面の表の参考資料のテスト（#1099）
-        run: python3 scripts/test-scaffold-screens.py
 
       # 本体は plugins/screen-spec/scripts/ にある（init・add のスキルが呼ぶ。spec-loop の重ね方を読み込むので、本物の spec-loop と並べて回す）。
       - name: screen-spec の init・add の書き込みと雛形のテスト（#1093）
@@ -438,34 +494,6 @@ jobs:
       # 本物の spec-loop の雛形のフックと init-mkdocs.py と並べて回す。mkdocs build は CI に無いので、フックを直に呼ぶ）。
       - name: screen-spec の MkDocs のフックのテスト（#1098）
         run: python3 scripts/test-screen-spec-pages.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 6 が指摘の表に当てる）。
-      - name: spec-loop の指摘の表の検査のテスト（#982）
-        run: python3 scripts/test-check-findings-csv.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 1・6 が記録の表と指摘の表から条件 2・3 と上限を数え直す）。
-      - name: spec-loop の仕様レビューの記録の数え直しのテスト（#1044）
-        run: python3 scripts/test-check-review-record.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（指摘の表から機能ごとの指摘の件数を数える。check-findings-csv.py を読み込む）。
-      - name: spec-loop の指摘の機能ごとの数え方のテスト（#1045）
-        run: python3 scripts/test-findings-by-feature.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（保存した TLC のモデルを走らせ直す。偽の TLC で回す）。
-      - name: spec-loop の形式検査のモデルの走らせ直しのテスト（#1044）
-        run: python3 scripts/test-check-formal-rerun.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（保存した TLC のモデルを状態遷移図にする。本物の TLC で取った出力を返す偽の TLC で回す）。
-      - name: spec-loop の形式検査のモデルの状態遷移図のテスト（#1177）
-        run: python3 scripts/test-formal-statechart.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
-      - name: spec-loop の図の書き出しのテスト（#268）
-        run: python3 scripts/test-render-diagrams.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（scaffold が使う）。
-      - name: spec-loop の Red テストと Issue の本文の生成のテスト（#219）
-        run: python3 scripts/test-scaffold.py
 
   # spec-loop の autopilot の外側のループのテスト（1 本で重い）
   spec-loop-autopilot-loop:
