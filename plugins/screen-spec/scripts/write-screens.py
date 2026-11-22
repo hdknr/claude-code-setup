@@ -2,16 +2,20 @@
 """screen-spec の `init`・`add` のスキルが呼ぶ機械の部分——画面の表と雛形を正本の作業中の版に置く。
 
 usage: python3 write-screens.py hint <docs ディレクトリ> [--spec-loop <spec-loop のプラグインの根>]
-       python3 write-screens.py init <docs ディレクトリ> [--prefix <画面IDの接頭辞>] [--profile <profile>] [--spec-loop <…>]
+       python3 write-screens.py init <docs ディレクトリ> [--prefix <画面IDの接頭辞>] [--profile <profile>] [--external <外部の profile>|なし] [--spec-loop <…>]
        python3 write-screens.py add <docs ディレクトリ> --name <画面名> --kind <種別> --user <主たる利用者> --purpose <目的と背景>
                                     --can <できること> --basis <根拠> [--parent <画面ID>] [--features <機能>] [--reports <帳票>]
                                      [--refs <参考資料>] [--path <パス>] [--spec-loop <…>]
        python3 write-screens.py mkdocs <docs ディレクトリ> [--spec-loop <…>]
 
-- `hint`: 何も書かない。`shared/infra.csv` のフロントエンドの行と、このプラグインにある profile の一覧を出す（`init` のスキルが profile を推す材料）。
+- `hint`: 何も書かない。`shared/infra.csv` のフロントエンドの行と、このプラグインにある profile の一覧と、基盤の profile（重ねた全体の `shared/platform/settings.csv`）が
+  名指す画面の profile を出す（`init` のスキルが profile を推す材料。#1460）。
 - `init`: 作業中の版の `requirements/screens/` に、3 つの表（見出し行だけ）・案件ごとの設定（`settings.csv`）・共通仕様（`common.md`）・
   仕様書の雛形（`templates/spec.md`）を置く。profile を選べば、表の見出し行に profile の列を入れ、共通仕様と仕様書の雛形の末尾に
-  profile の節の雛形（このプラグインの `profiles/<profile>/`）を足す。
+  profile の節の雛形（このプラグインの `profiles/<profile>/`）を足す。`--external <持ち主>/<リポジトリ> <名前> <タグ>` で外部の profile を `settings.csv` に書き、
+  外部の profile が足す列を見出し行に入れる（`--external なし` なら書かない）。
+  **`--profile` と `--external` を両方省いたときの初期値は、基盤の profile の画面の層の `重ねる先`**（名指しがあれば `profile` はそれ・外部の profile は同じ束。
+  基盤の profile が無い・名指しが無ければ今までどおり `未設定`・外部の profile なし。決まりは `references/profiles.md` の「基盤の profile から引く初期値」）。
 - `add`: 画面ID を採番し、作業中の版の画面の表に 1 行足し、仕様書（`<画面ID>.md`）とワイヤーフレーム（`wireframes/<画面ID>.drawio`）の雛形を置く。
   profile の列のうち `パス`（web-spa）は `--path` で渡す。
 - `mkdocs`: このプラグインの MkDocs のフック（`templates/mkdocs/screen_spec_pages.py`）を、spec-loop の `init-mkdocs.py --hook` で正本（`docs` の親）に登録する（#1098）。
@@ -19,8 +23,11 @@ usage: python3 write-screens.py hint <docs ディレクトリ> [--spec-loop <spe
   決まりは `references/mkdocs.md`。
 
 **決まりの正は `references/tables.md`（置き場所・設定・採番）と `references/prose.md`（雛形）と `references/profiles.md`（profile）である**（このプラグインの中にある）。
-表の置き場所・列・種別・設定の項目名・profile の列と言い回し・spec-loop の見つけ方と版の範囲は `check-screens.py` を読み込む（写さない）。
-spec-loop の決まりは spec-loop のスクリプトを読み込む——版の見つけ方と重ね方は `merge-versions.py`、成果物の表の番号の形は `check-design-csv.py`。
+表の置き場所・列・種別・設定の項目名・profile の列と言い回し・spec-loop の見つけ方と版の範囲・外部の profile の読み方は `check-screens.py` を読み込む（写さない）。
+spec-loop の決まりは spec-loop のスクリプトを読み込む——版の見つけ方と重ね方は `merge-versions.py`、成果物の表の番号の形は `check-design-csv.py`、
+外部の profile の探し方とタグの時点の `profile.csv` は `external-profile.py`。
+**platform-spec は読み込まない**——基盤の profile の設定の置き場所・見出し・項目名（`PLATFORM_*`）は platform-spec の `references/infra-profile.md` の「案件の設定」の写しで、
+このプラグインを置いているリポジトリのテスト（test-write-screens.py）が platform-spec の定数と突き合わせる。
 
 終了コード:
 
@@ -28,7 +35,9 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - 1: 重ね合わせが spec-loop の決まりに反する——書かない
 - 2: 引数の誤り・`docs` が無い・読めない・想定外の例外——書かない（`mkdocs` は spec-loop の `init-mkdocs.py` が 0 以外で終わったときも 2）
 - 3: 今の正本の状態では書けない——版が無い、`init` は置き済み、`add` は `init` の前・設定が読めない・同じ名前の仕様書かワイヤーフレームが在る。書かない
-- 4: spec-loop が見つからない・版が対応の範囲の外（`check-screens.py` と同じ）——書かない
+- 4: spec-loop が見つからない・版が対応の範囲の外（`check-screens.py` と同じ）——書かない。
+  `init` が書く外部の profile を読めない・決まりに合わない（`check-screens.py` と同じ）、引数を省いた `init` で基盤の profile から初期値を決められない
+  （設定の形が違う・spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・`profile.csv` が読めない・`重ねる先` がこのプラグインの profile でない）——書かない
 
 **守ること**:
 
@@ -47,6 +56,13 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - 書く前に全部を決め、決まらなければ 1 つも書かない（引数・状態・重ね合わせ・spec-loop の版・表の見出し行・置き場所の形・UTF-8 にできない値）。
   1 つのファイルは一時のファイルに書いてから置き換える（書いている途中で止まっても、前の中身を空にしない）
 - spec-loop を読み込むときの `__pycache__` を書かない
+- `init` は、`--profile` と `--external` を両方省いたときだけ基盤の profile を読む。どちらかを渡せば読まず（読めない基盤の profile があっても止まらない）、省いた方は `未設定`・外部の profile なし
+- 引数を省いた `init` は、基盤の profile の画面の層の `重ねる先` があれば、それを `profile` に、同じリポジトリ・名前・タグを外部の profile にする。
+  基盤の profile が無い・画面の層が無い・`重ねる先` が空なら `未設定`・外部の profile なしで、書くものと出力は基盤の profile を見る前と同じ
+- 引数を省いた `init` で基盤の profile から初期値を決められなければ、今の初期値に落とさずに 4 で止める（何も書かない）。
+  名指した画面の層は `load_external` で確かめ（形式の版・層の行）、設定の値が `外部の profile` の行に写せない形（`リポジトリ` に `/` が無い・profile とタグに空白）なら決められないとする——`hint` も同じ確かめを通った値だけを初期値として出す
+- `init` が外部の profile を書くときは、`check-screens.py` と同じ読み方（`load_external`）で読み、足す列を見出し行の profile の列の後ろに宣言の順で入れる（読めなければ 4）
+- platform-spec のファイルを読み込まない（基盤の profile の設定の項目名は写し、値は spec-loop の `external-profile.py` が読む）
 
 **守らないもの**:
 
@@ -58,6 +74,8 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 | **ワイヤーフレームの書き出し（SVG）** | spec-loop の `render-diagrams.py` が書き出す。`add` のスキルは書いた後にそれを走らせる |
 | **書いている途中の失敗**（ディスクが一杯・権限など） | 置き場所の形（途中がファイル・置き場所がディレクトリ）は書く前に確かめて 3 で止めるが、ほかの失敗では書いた分が残る。書いたものは 1 つずつ出力に名指しする |
 | **profile の選び直し** | `init` で選んだ profile は表の見出し行に入る。後の版で変えると spec-loop の重ね方が止める（`references/profiles.md` の「選び方」） |
+| **基盤の profile の設定の値の形の全部**（タグの名前に使える形・`.`・`..` の名前・ほかの項目） | platform-spec の `check-infra-profile.py` が見る。ここは 3 つの項目が 1 行ずつ値つきで在ることと、`外部の profile` の行に写せる形（`<持ち主>/<名前>`・空白なし）だけを見て、ほかは spec-loop の `external-profile.py` が読むときに判定する |
+| **外部の profile の足した列を `add` が知ること** | `add` は見出し行が決まり（core＋profile の列）と違えば断る（`references/profiles.md` の「足す列と見出し行」） |
 """
 
 from __future__ import annotations
@@ -107,6 +125,14 @@ SPEC_TEMPLATE = checks.SCREENS_DIR + "templates/spec.md"
 WIREFRAMES = checks.SCREENS_DIR + "wireframes/"
 FRONTEND = ("frontend", "フロントエンド")  # infra.csv の `項目` の綴り（NFKC・小文字で比べる）
 INFRA = "shared/infra.csv"
+EXTERNAL_KEY = checks.EXTERNAL_KEY
+EXTERNAL_NONE = "なし"  # `--external なし`——外部の profile を書かない（外部の profile の値は `/` を含むので重ならない）
+
+# ---- platform-spec の `references/infra-profile.md` の「案件の設定」の写し（#1460）。platform-spec は読み込まない——
+# このプラグインを置いているリポジトリのテストが platform-spec の `check-infra-profile.py` の定数と突き合わせる
+PLATFORM_SETTINGS = "shared/platform/settings.csv"
+PLATFORM_SETTINGS_COLUMNS = ["項目", "値"]
+PLATFORM_KEYS = ("リポジトリ", "profile", "タグ")
 # 雛形の差し込み
 ID_SLOT = "{{画面ID}}"
 NAME_SLOT = "{{画面名}}"
@@ -134,6 +160,7 @@ class Docs:
     """正本の `docs` と、spec-loop で重ねた全体。"""
 
     def __init__(self, spec_loop: Path, docs: Path) -> None:
+        self.spec_loop = spec_loop
         scripts = spec_loop / "scripts"
         try:
             self.versions = _load("merge_versions", scripts / "merge-versions.py")
@@ -281,23 +308,124 @@ def hint(docs: Docs) -> int:
         print(f"{INFRA}: フロントエンド: {entry.get('決定', '')}（状態: {entry.get('状態', '')}）")
     names = profiles()
     print(f"profile: {'・'.join(names) if names else 'このプラグインにはまだ無い——' + UNSET + ' にする'}")
+    try:
+        profile, external, note = base_initial(docs)
+    except checks.Stop as e:
+        print(f"基盤の profile: 読めない（{e}）——init の引数を省くと止まる（--profile と --external を明示して渡す）")
+        return 0
+    print(f"基盤の profile: {note}")
+    if external:
+        print(f"init の初期値（--profile と --external を省いたとき）: profile {profile}、外部の profile {' '.join(external)}")
     return 0
 
 
-def init(docs: Docs, prefix: str, profile: str) -> int:
+def platform_settings(docs: Docs) -> tuple[str, str, str] | None:
+    """基盤の profile の設定（`PLATFORM_SETTINGS`）の (リポジトリ, profile, タグ)。無ければ None、形が違えば Stop。"""
+    try:
+        rows = docs.rows(PLATFORM_SETTINGS)
+    except checks.Unreadable as e:
+        raise checks.Stop(f"基盤の profile の設定を読めない: {e}") from None
+    if rows is None:
+        return None
+    rows = [row for row in rows if any(cell.strip() for cell in row)]
+    where = f"基盤の profile の設定 {PLATFORM_SETTINGS}"
+    if not rows or [cell.strip() for cell in rows[0]] != PLATFORM_SETTINGS_COLUMNS:
+        raise checks.Stop(f"{where}: 見出しの行が `{','.join(PLATFORM_SETTINGS_COLUMNS)}` でない（platform-spec の check-infra-profile.py で確かめる）")
+    found: dict[str, list[str]] = {}
+    for row in rows[1:]:
+        if len(row) != len(PLATFORM_SETTINGS_COLUMNS):
+            raise checks.Stop(f"{where}: 列の数が見出しと違う行がある（{row}）")
+        found.setdefault(row[0].strip(), []).append(row[1].strip())
+    for key in PLATFORM_KEYS:
+        values = found.get(key, [])
+        if len(values) != 1 or not values[0]:
+            state = "無い" if not values else f"{len(values)} 行ある" if len(values) > 1 else "値が空"
+            raise checks.Stop(f"{where}: 項目 {key} の行が{state}（platform-spec の check-infra-profile.py で確かめる）")
+    repo, name, tag = (found[key][0] for key in PLATFORM_KEYS)
+    return repo, name, tag
+
+
+def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
+    """基盤の profile が名指す画面の profile——(profile, 外部の profile か None, 説明)。
+
+    名指し = 基盤の profile のタグの時点の `profile.csv` の層 `画面` の `重ねる先`。基盤の profile が無い・画面の層が無い・`重ねる先` が空なら (`未設定`, None, …)。
+    決められない（設定の形・spec-loop の `external-profile.py` が無い・clone・タグ・`profile.csv`・このプラグインに無い `重ねる先`）なら Stop。
+    """
+    setting = platform_settings(docs)
+    if setting is None:
+        return UNSET, None, f"{PLATFORM_SETTINGS} が無い（基盤の profile から画面の profile を引かない）"
+    repo, name, tag = setting
+    label = f"基盤の profile {repo} の {name}（タグ {tag}）"
+    path = docs.spec_loop / "scripts" / checks.EXTERNAL_SCRIPT
+    if not path.is_file():
+        raise checks.Stop(f"{label}: spec-loop に {checks.EXTERNAL_SCRIPT} が無い（spec-loop の版が古い）")
+    try:
+        ext = _load("spec_loop_external_profile", path)
+    except (OSError, SyntaxError, ImportError) as e:
+        raise checks.Stop(f"{path}: 読み込めない（{e}）") from None
+    try:
+        clone, _ = ext.find_clone(repo, project=docs.docs.resolve().parent)
+        commit = ext.resolve_tag(clone, tag)
+        layers = ext.read_profile(clone, commit, name)
+    except ext.Undetermined as e:
+        raise checks.Stop(f"{label} を読めない: {e}") from None
+    except Exception as e:  # noqa: BLE001 — git が無い・パスが読めないなど。今の初期値に落とさない
+        raise checks.Stop(f"{label} を読めない: {type(e).__name__}: {e}") from None
+    row = layers.get(checks.EXTERNAL_LAYER)
+    if row is None:
+        return UNSET, None, f"{label} に層 {checks.EXTERNAL_LAYER} が無い（画面の profile を名指していない）"
+    if not row.base:
+        return UNSET, None, f"{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先 が空（画面の profile を名指していない）"
+    if row.base not in profiles() or row.base not in checks.PROFILES:
+        raise checks.Stop(f"{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先 {row.base!r} はこのプラグインの profile でない"
+                          f"（あるもの: {'・'.join(profiles()) or 'なし'}）——--profile と --external を明示して渡す")
+    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):  # 名指しが在るときだけ（無ければ行に写さない）
+        raise checks.Stop(f"{label}: 画面の profile を名指しているが、`外部の profile` の行（`<持ち主>/<リポジトリ> <名前> <タグ>`。空白で区切る）に写せない形——"
+                          f"リポジトリが `<持ち主>/<名前>` でないか、profile かタグが空白を含む（--profile と --external を明示して渡す）")
+    checker = checks.Checker(docs.spec_loop, docs.docs, None)  # init が書く前に読むのと同じ読み方で、画面の層を確かめる（形式の版・層の行）
+    checker.profile = row.base
+    checker.load_external(repo, name, tag)
+    return row.base, (repo, name, tag), f"画面は {row.base} + 外部の profile {repo} {name} {tag}（{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先）"
+
+
+def parse_external(value: str) -> tuple[str, str, str] | None:
+    """`--external` の値。`なし` なら None。形は `settings.csv` の `外部の profile` の行と同じ（`references/profiles.md`）。"""
+    if value.strip() == EXTERNAL_NONE:
+        return None
+    parts = value.split()
+    if len(parts) != 3 or not checks.EXTERNAL_REPO.fullmatch(parts[0]):
+        raise ValueError(f"--external {value!r} は `<持ち主>/<リポジトリ> <名前> <タグ>` の形か {EXTERNAL_NONE} でない")
+    return parts[0], parts[1], parts[2]
+
+
+def init(docs: Docs, prefix: str, profile_arg: str | None, external_arg: str | None = None) -> int:
     check_prefix(prefix, docs)
+    explicit = profile_arg is not None or external_arg is not None
+    profile = UNSET if profile_arg is None else profile_arg
+    external = None if external_arg is None else parse_external(external_arg)
     if profile != UNSET and (profile not in profiles() or profile not in checks.PROFILES):
         raise ValueError(f"profile {profile!r} はこのプラグインに無い（あるもの: {'・'.join(profiles()) or 'なし'}。無ければ {UNSET}）")
     targets = [*checks.TABLES, SETTINGS, COMMON, SPEC_TEMPLATE]
     there = [path for path in targets if docs.placed(path)]
     if there:
         raise Refused("置き済み——init は何も書かない: " + "、".join(there))
-    files = {path: table(columns(path, profile), []) for path in checks.TABLES}
-    files[SETTINGS] = table(SETTINGS_COLUMNS, [[PREFIX_KEY, prefix], [PROFILE_KEY, profile]])
+    if not explicit:  # 初期値（#1460）——両方省いたときだけ基盤の profile を読む
+        profile, external, note = base_initial(docs)
+        if external:
+            print(f"基盤の profile から初期値を引いた: {note}")
+    added: dict[str, list[str]] = {}
+    if external:
+        checker = checks.Checker(docs.spec_loop, docs.docs, None)
+        checker.profile = profile
+        added = checker.load_external(*external).columns
+    files = {path: table(columns(path, profile) + added.get(path, []), []) for path in checks.TABLES}
+    settings = [[PREFIX_KEY, prefix], [PROFILE_KEY, profile]] + ([[EXTERNAL_KEY, " ".join(external)]] if external else [])
+    files[SETTINGS] = table(SETTINGS_COLUMNS, settings)
     files[COMMON] = with_profile((TEMPLATES / "common.md").read_text(encoding="utf-8"), profile, "common.md")
     files[SPEC_TEMPLATE] = with_profile((TEMPLATES / "spec.md").read_text(encoding="utf-8"), profile, "spec.md")
     docs.write(files)
-    print(f"版 v{docs.number} に置いた（画面IDの接頭辞: {prefix}、profile: {profile}）")
+    shown = f"、外部の profile: {' '.join(external)}" if external else ""
+    print(f"版 v{docs.number} に置いた（画面IDの接頭辞: {prefix}、profile: {profile}{shown}）")
     return 0
 
 
@@ -426,7 +554,7 @@ def main(argv: list[str]) -> int:
         if not argv or argv[0] not in ("hint", "init", "add", "mkdocs"):
             raise ValueError(usage())
         command = argv[0]
-        allowed = {"--spec-loop"} | ({"--prefix", "--profile"} if command == "init" else set(OPTIONS) if command == "add" else set())
+        allowed = {"--spec-loop"} | ({"--prefix", "--profile", "--external"} if command == "init" else set(OPTIONS) if command == "add" else set())
         positional, options = parse(argv[1:], allowed)
         if len(positional) != 1:
             raise ValueError(usage())
@@ -465,8 +593,11 @@ def main(argv: list[str]) -> int:
         if command == "hint":
             return hint(docs)
         if command == "init":
-            return init(docs, options.get("--prefix", DEFAULT_PREFIX), options.get("--profile", UNSET))
+            return init(docs, options.get("--prefix", DEFAULT_PREFIX), options.get("--profile"), options.get("--external"))
         return add(docs, {column: options.get(flag, "") for flag, column in OPTIONS.items()})
+    except checks.Stop as e:
+        print(f"止めた: {e}——書いていない", file=sys.stderr)
+        return 4
     except ValueError as e:
         print(f"{e}——書いていない", file=sys.stderr)
         return 2

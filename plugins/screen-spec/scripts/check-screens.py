@@ -578,7 +578,15 @@ class Checker:
             return setting
         if self.profile is None:
             return False  # profile の行の違反は read_profile が出している
-        repo, name, tag = setting
+        external = self.load_external(*setting)
+        print(f"{external.label}（{external.source}）を profile {self.profile} に重ねて検査する")
+        return external
+
+    def load_external(self, repo: str, name: str, tag: str) -> External:
+        """名指した外部の profile の画面の層を読み、`self.profile` に重ねられるかと行の決まりを見る。読めない・決まりに合わなければ Stop。
+
+        `settings.csv` の行に依らない——`write-screens.py` の `init` が、書く前に足す列を知るためにも読み込む（#1460）。
+        """
         path = self.scripts / EXTERNAL_SCRIPT
         if not path.is_file():
             raise Stop(f"{SETTINGS} が外部の profile を名指しているが、spec-loop に {EXTERNAL_SCRIPT} が無い（spec-loop の版が古い）")
@@ -641,7 +649,6 @@ class Checker:
         for target, column, rid in uses:
             if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:
                 raise Stop(f"{label} の行 {rid}: 列 {column} は {target.rsplit('/', 1)[1]} に無い（core・profile {self.profile}・足した列のどれでもない）")
-        print(f"{external.label}（{source}）を profile {self.profile} に重ねて検査する")
         return external
 
     def read_answer(self, external: External, rid: str, row: dict[str, str], where: str) -> None:
