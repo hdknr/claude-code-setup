@@ -123,7 +123,9 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼び、出力を
 - 1 パス目の指摘対応: `79c98e87`（CR1-1・CR1-2・CR1-3）。`test-check-screens.py`（run-serial 越し）は `79c98e87` の木で緑（試料 196・変異 161・references の崩し 41）。check-all（run-serial 越し）は `79c98e87` で全部 OK（rc=0）。差分テストを `79c98e87` で回し直した（167 件・差分 1 件——`ext-bad-kind`）。
 - 2 パス目: 割り目——割らない（cruise の周）。Verifier（sonnet）を `05d4a8e2` に当てた——反証 2 件（V2-1・V2-2。差し込み 11 は今回は全部当てた——merge-base 一致・陽性対照で差分 3 件・一覧の 6 本で確定 `e6d917df`・出所の無い行なし）。報告は起動元に届かず、記録（transcript）から読んだ。
   `/code-review`（high）を `05d4a8e2` に当てた——指摘 6 件（important 3・nit 3）。採否は下の表。
-- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `05d4a8e27df303210844983d7e7309e9d03c257b`
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `84bbf4748e05c7cc55bb092f38d7b0f8df8a5621`（計画ファイルの記録のコミット。`05d4a8e2` からは計画ファイルだけ）・終点（指摘対応の最後のコミット）: `45470c301b4762503dcb27cdaf6077674003493d`
+  陽性対照: 新しい試料を起点の本体（`84bbf474`）に当てると `ans-linesep-summary`・`ans-linesep-link`（終了コード 0）と `ans-newline-id`・`ans-qa-number-value`（止めた理由に番号が出る）の 4 件が期待と違い、終点の本体で全部期待どおり。`ans-id-in-answer` は両方で期待どおり（試料の穴を埋める試料）。
+  `test-check-screens.py`（run-serial 越し）は `45470c30` の木で緑（試料 201・変異 166・references の崩し 41）
 - 割り目: 割らない（cruise の周）
 
 ## 既知の限界・決着済みの論点
