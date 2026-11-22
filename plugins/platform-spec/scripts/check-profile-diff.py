@@ -7,7 +7,7 @@ usage: python3 check-profile-diff.py <docs ディレクトリ> [--upto <n>] [--n
 **写しがずれていないかは、このプラグインを置いているリポジトリの `scripts/test-check-profile-diff.py` が突き合わせる。**
 spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このスクリプトを子のプロセスで呼ぶ（spec-loop は platform-spec に依存しない）。
 
-- **古い版は案件の設定の `タグ`、新しい版は `--new` か**、手元の clone のタグのうち、設定のタグと名前の形（数字の並びを除いた綴り。`v3` なら `v<数字>`）が同じで、
+- **古い版は案件の設定の `タグ`、新しい版は `--new` か**、手元の clone のタグのうち、設定のタグと名前の形（最初の数字より前の綴りが同じで、続きが数字を `.` で区切った並びだけ。`v3`・`v1.0` なら `v10`・`v1.1.0`）が同じで、
   その profile の `profile.csv` を持つものの中で版の順（git の `v:refname`）が最も後ろのもの。
   **新しい版が `タグ` か任意の項目 `確かめたタグ` と同じなら、比べずに 0**（発注者が見て、採らないと決めた版）。
 - **候補**は、`profile の行` が指す ID のうち、2 つの版の間で**変わった**（どの列でも）・**消えた**（新しい版の基盤の層に無い。層ごと無い場合も）・
@@ -38,7 +38,10 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 - `--new` があれば、それを新しい版にする
 - `--new` が無ければ、その profile を持つタグのうち版の順が最も後ろのものを新しい版にする
 - その profile を持たないタグは、新しい版に数えない
-- 設定のタグと名前の形（数字の並びを除いた綴り）が違うタグ（別の profile・層の版名・プレリリース）は、新しい版に数えない
+- 設定のタグと名前の形（最初の数字より前の綴りが同じで、続きが数字を `.` で区切った並びだけ）が違うタグ（別の profile・層の版名・プレリリース）は、新しい版に数えない
+- 名前の形が違うので数えなかった、その profile を持つタグを出力に名指す
+- 設定のタグの接頭辞は文字どおりに比べる（`.` などを正規表現として読まない）
+- 新しい版の数字は `.` で区切った並び（`v1.0` の次の `v1.1.0`）も数える
 - 新しい版が `タグ` と同じなら比べずに 0
 - 新しい版が `確かめたタグ` と同じなら比べずに 0
 - 新しい版が `タグ`・`確かめたタグ` と同じでも、古い版の層と、指した ID が古い版に在るかは照らす
@@ -55,7 +58,7 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 
 | 守らないもの | なぜ |
 | --- | --- |
-| **名前の形を変えた版**（`v9` の次を `v10.0` にした・`release-` に変えた） | 設定のタグと同じ形のタグだけを新しい版に数える（別の profile・層の版名・プレリリースを拾わないため）。形を変えたら、設定のタグを上げるか `--new` で名指す |
+| **接頭辞を変えた版**（`v9` の次を `release-10` にした） | 接頭辞が同じで数字だけが続くタグを新しい版に数える（別の profile・層の版名・プレリリースを拾わないため）。数えなかった profile を持つタグは出力に名指すので、接頭辞を変えたなら設定のタグを上げるか `--new` で名指す |
 | **新しい版が古い版より前（タグを下げた）か** | 比べる 2 つを決めるだけで、向きは見ない（`--new` に古いタグを渡せば、その差分が出る） |
 | **古い版でリンクが切れていたか** | 新しい版で切れた行だけを候補にする（古い版のリンクは `external-profile.py check` が見る） |
 | **基盤の層の `項目` と案件の行の `項目` が合うか** | 照合の段（`check-infra-profile.py`）の守らないものと同じ |
@@ -95,9 +98,13 @@ Stop, Unreadable = base.Stop, base.Unreadable
 
 
 def name_shape(tag: str) -> "re.Pattern[str]":
-    """タグの名前の形——数字の並びを `[0-9]+` に置き換え、ほかの文字はそのまま（`v3` → `v[0-9]+`、`v1.2.0` → `v[0-9]+\\.[0-9]+\\.[0-9]+`）。
-    別の profile や層の版名（`zz-screen-v1`）・プレリリース（`v10-rc1`）は、設定のタグが `v3` なら当たらない。"""
-    return re.compile("".join("[0-9]+" if part.isdigit() and part.isascii() else re.escape(part) for part in re.split(r"([0-9]+)", tag)))
+    """タグの名前の形——最初の数字より前の綴り（接頭辞）がそのまま同じで、続きが数字を `.` で区切った並びだけのもの
+    （`v3`・`v1.0` → `v` の後ろに `10`・`1.1.0` などが続くタグ。数字の桁の数と区切りの数は問わない）。
+    別の profile や層の版名（`zz-screen-v1`）・プレリリース（`v10-rc1`）・接頭辞を変えた版（`release-4`）は当たらない。数字を持たないタグは自分だけに当たる。"""
+    prefix = re.match(r"[^0-9]*", tag).group(0)
+    if prefix == tag:
+        return re.compile(re.escape(tag))
+    return re.compile(re.escape(prefix) + r"[0-9]+(?:\.[0-9]+)*")
 
 
 def candidates(refs: list[tuple[str, str, list[str]]], old_rows: dict, new_rows: dict | None, broken: list[tuple[str, str, str]]) -> list[tuple[str, str, str, str, str]]:
@@ -130,25 +137,31 @@ class Differ(base.Checker):
         self.new = new
         self.project = project if project is not None else docs.resolve().parent
 
-    def newest(self, clone: Path, name: str, old: str) -> str:
-        """設定のタグと名前の形が同じで、その profile の `profile.csv` を持つタグのうち、版の順が最も後ろのもの。
-        無ければ設定のタグ（古い版の読み出しが先に止めるので、ふつうは古い版そのものが当たる）。"""
+    def newest(self, clone: Path, name: str, old: str) -> tuple[str, list[str]]:
+        """(新しい版, 名前の形が違うので数えなかった、その profile を持つタグ)。新しい版は、設定のタグと名前の形が同じで、
+        その profile の `profile.csv` を持つタグのうち版の順が最も後ろのもの。無ければ設定のタグ。"""
         ext = self.ext
         shape = name_shape(old)
         proc = ext._git(clone, "for-each-ref", "--sort=-v:refname", "--format=%(refname:strip=2)", "refs/tags/")
         if proc.returncode != 0:
             raise Stop(f"{clone} のタグを並べられない: {proc.stderr.decode('utf-8', 'replace').strip()}")
         want = f"{ext.PROFILE_ROOT}/{name}/{ext.PROFILE_FILE}"
+        found, skipped = None, []
         for tag in proc.stdout.decode("utf-8", "surrogateescape").split():
-            if not shape.fullmatch(tag):
+            matches = bool(shape.fullmatch(tag))
+            if matches and found is not None:
                 continue
             try:
                 commit = ext.resolve_tag(clone, tag)
             except ext.Undetermined:
                 continue
-            if want in ext.list_files(clone, commit):
-                return tag
-        return old
+            if want not in ext.list_files(clone, commit):
+                continue
+            if matches:
+                found = tag
+            else:
+                skipped.append(tag)
+        return (found if found is not None else old), skipped
 
     def layer(self, clone: Path, commit: str, name: str, tag: str, missing_ok: bool):
         ext = self.ext
@@ -207,10 +220,15 @@ class Differ(base.Checker):
                     self.violations.append(f"{where}: {item} の {self.column} {rid} が {repo} の {name}（タグ {old}）の{base.LAYER}の層に無い"
                                            "（照合の違反——check-infra-profile.py）")
         try:
-            new = self.new if self.new is not None else self.newest(clone, name, old)
+            new, skipped = (self.new, []) if self.new is not None else self.newest(clone, name, old)
+            if skipped:
+                self.notes.append(f"名前の形が設定のタグ {old} と違うので新しい版に数えなかった、profile {name} を持つタグ: {', '.join(skipped)}"
+                                  "（版の名前の形を変えたなら、設定のタグを上げるか --new で名指す）")
             if new in (old, checked):
                 which = base.SETTING_TAG if new == old else base.SETTING_CHECKED
-                self.notes.append(f"profile: {repo} の {name}——新しい版 {new} は設定の{which}と同じ。比べない（clone {clone}（出所: {source}））")
+                what = (f"設定のタグ {old} より後ろの、名前の形が同じタグが無い" if new == old and self.new is None
+                        else f"新しい版 {new} は設定の{which}と同じ")
+                self.notes.append(f"profile: {repo} の {name}——{what}。比べない（clone {clone}（出所: {source}））")
                 return self.finish()
             new_commit = ext.resolve_tag(clone, new)
         except ext.Undetermined as e:

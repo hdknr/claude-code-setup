@@ -92,7 +92,11 @@ BROKEN = "shared/infra.csv:4: ホスティング環境 の profile の行 HOST-1
 
 # (名前, 正本のファイル, 引数（{clone}・{project2} を置き換える）, 期待する終了コード, 含むべき文字列（全部）, 含んではならない文字列（どれも）)
 CASES: list[tuple[str, dict, list[str], int, tuple[str, ...], tuple[str, ...]]] = [
-    ("候補", OK, [], 1, (CHANGED, REMOVED, BROKEN, "起票の候補 4 件"), ("OTHER-1", "NEW-1", "MON-1", "違反: ")),
+    ("候補", OK, [], 1, (CHANGED, REMOVED, BROKEN, "起票の候補 4 件", "新しい版に数えなかった、profile org を持つタグ: ", "zz-screen-v1"),
+     ("OTHER-1", "NEW-1", "MON-1", "違反: ")),
+    ("区切った数字の版", with_(OK, settings=settings("rel1.0")), [], 1, ("タグ rel1.0 → rel1.1.0", "起票の候補 4 件"), ()),
+    ("接頭辞は文字どおり", with_(OK, settings=settings("r.e1")), [], 0, ("設定のタグ r.e1 より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
+    ("数字を持たないタグ", with_(OK, settings=settings("stable")), [], 0, ("設定のタグ stable より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
     ("--new で名指す", OK, ["--new", "v2"], 1, ("タグ v1 → v2", "起票の候補 4 件"), ("v10",)),
     ("--new がタグと同じ", OK, ["--new", "v1"], 0, ("新しい版 v1 は設定のタグと同じ。比べない",), ("起票の候補: ",)),
     ("確かめたタグ", with_(OK, settings=settings(extra="確かめたタグ,v10\n")), [], 0, ("新しい版 v10 は設定の確かめたタグと同じ。比べない",), ("起票の候補: ",)),
@@ -126,10 +130,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("指していない ID も比べる", "    for where, item, ids in refs:\n        for rid in ids:\n            if rid not in old_rows:",
      "    for where, item, ids in refs + [(\"x\", \"x\", sorted(old_rows))]:\n        for rid in ids:\n            if rid not in old_rows:", "候補"),
     ("候補に番号を振る", "self.notes.append(f\"{CANDIDATE}{where}:", "self.notes.append(f\"{CANDIDATE}Q-F-901 {where}:", "候補"),
-    ("--new を使わない", "new = self.new if self.new is not None else self.newest(clone, name, old)", "new = self.newest(clone, name, old)", "--new で名指す"),
+    ("--new を使わない", "new, skipped = (self.new, []) if self.new is not None else self.newest(clone, name, old)", "new, skipped = self.newest(clone, name, old)", "--new で名指す"),
     ("版の順で並べない", "\"--sort=-v:refname\"", "\"--sort=-refname\"", "候補"),
-    ("名前の形で絞らない", "            if not shape.fullmatch(tag):\n                continue\n", "", "候補"),
-    ("profile を持たないタグも数える", "            if want in ext.list_files(clone, commit):\n                return tag", "            return tag", "候補"),
+    ("名前の形で絞らない", "            matches = bool(shape.fullmatch(tag))", "            matches = True", "候補"),
+    ("数えなかったタグを名指さない", "            if skipped:\n                self.notes.append(", "            if False:\n                self.notes.append(", "候補"),
+    ("接頭辞を正規表現として読む", "re.compile(re.escape(prefix) + ", "re.compile(prefix + ", "接頭辞は文字どおり"),
+    ("区切った数字を数えない", "r\"[0-9]+(?:\\.[0-9]+)*\")", "r\"[0-9]+\")", "区切った数字の版"),
+    ("profile を持たないタグも数える", "            if want not in ext.list_files(clone, commit):\n                continue", "            if False:\n                continue", "候補"),
     ("タグと同じでも比べる", "            if new in (old, checked):", "            if new == checked:", "--new がタグと同じ"),
     ("確かめたタグと同じでも比べる", "            if new in (old, checked):", "            if new == old:", "確かめたタグ"),
     ("同じ版なら古い版を照らさない", "        old_layer = self.layer(clone, old_commit, name, old, missing_ok=False)\n        for where, item, ids in refs:",
@@ -200,6 +207,11 @@ def make_profile(root: Path, env: dict) -> Path:
            .replace(",DBMS\n", ",DBMS,x\n"))
     commit("zz-screen-v1", PROFILE, LAYER_A)  # 名前の形が違う（別の層の版名）——profile を持つが数えない
     commit("v12-rc1", PROFILE, LAYER_A)  # プレリリース——名前の形が違う
+    commit("rel1.0", PROFILE, LAYER_A)  # 数字を . で区切った版
+    commit("rel1.1.0", PROFILE, LAYER_B)  # 桁の数の違う次の版（接頭辞 rel が同じ）
+    commit("r.e1", PROFILE, LAYER_A)  # 接頭辞に . を持つ版
+    commit("rXe2", PROFILE, LAYER_B)  # . を正規表現として読むと当たってしまう名前
+    commit("stable", PROFILE, LAYER_A)  # 数字を持たないタグ
     commit("v11", None, None)  # 名前の形は同じだが profile を持たない
     git(root, env, "checkout", "-q", "v1")
     return root
