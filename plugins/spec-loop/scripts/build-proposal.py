@@ -334,7 +334,7 @@ def compare_at(top: Path, commit: str, tag: str, version: int):
         except diffs.merge_versions.Unreadable as e:
             raise Stop(2, [f"{tag}: {str(e).replace(prefix, '')}"])
         # clone の探し方の `CLAUDE.md` は正本の根のもの（写しの親ではない）
-        code, lines = (0, []) if problems else profiles.check(Path(tmp) / signoff.DOCS, version, None, top)
+        code, lines = (0, []) if problems else profiles.check(Path(tmp) / signoff.DOCS, version, None, top, top / signoff.DOCS)
         gate = (code, [line.replace(prefix, "") for line in lines])
     if problems:
         raise Stop(1, [f"{tag}: {line.replace(prefix, '')}" for line in problems]

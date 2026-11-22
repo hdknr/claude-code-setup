@@ -102,9 +102,12 @@ CASES: list[tuple[str, dict, list[str], int, tuple[str, ...], tuple[str, ...]]] 
     ("新しい版の形式の版", OK, ["--new", "fmt2"], 4, ("受け付ける範囲（1 以上 2 未満）の外",), ()),
     ("古い版に層が無い", with_(OK, settings=settings("nolayer")), ["--new", "v1"], 4, ("基盤の層が無い",), ()),
     ("古い版に無い ID", with_(OK, infra=infra("NOPE-1", "MON-1")), [], 1, ("NOPE-1 が org/guide の org（タグ v1）の基盤の層に無い",), ("起票の候補: ",)),
+    ("同じ版でも古い版に無い ID", with_(OK, infra=infra("NOPE-1")), ["--new", "v1"], 1, ("NOPE-1 が org/guide の org（タグ v1）の基盤の層に無い", "比べない"), ()),
+    ("同じ版でも古い版に層が無い", with_(OK, settings=settings("nolayer")), ["--new", "nolayer"], 4, ("基盤の層が無い",), ()),
+    ("新しい版の層の見出し", OK, ["--new", "badhead"], 4, ("形式の版 1 の `ID,要約,リンク,項目` でない: ID,要約,リンク,項目,備考",), ("起票の候補: ",)),
     ("使っていない", {I: I7_HEAD + "言語,x,y,z,,Q-F-001,決定\n"}, [], 0, ("比べるものが無い（platform-spec を使っていない）",), ("違反: ",)),
     ("設定の違反は clone を読む前", with_(OK, settings=settings("v1~1"), claude=None), [], 1, ("タグ 'v1~1' がタグの名前に使えない形",), ("止めた",)),
-    ("profile を持つタグが無い", with_(OK, settings=settings(profile="ghost")), [], 4, ("profile ghost を持つタグが 1 つも無い",), ()),
+    ("profile を持つタグが無い", with_(OK, settings=settings(profile="ghost")), [], 4, ("spec-profile/ghost/profile.csv がその時点に無い",), ()),
     ("前の版の時点", with_(OK, **{"docs/v2/shared/infra.csv": infra("NOPE-3")}), ["--upto", "1"], 1, (CHANGED, "起票の候補 4 件"), ("NOPE-3",)),
     ("--project", with_(OK, claude=None), ["--project", "{project2}"], 1, (CHANGED, "起票の候補 4 件"), ()),
     ("引数の clone", with_(OK, claude=None), ["--clone", "{clone}"], 1, ("出所: 引数 --clone", CHANGED), ()),
@@ -128,9 +131,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("profile を持たないタグも数える", "            if want in ext.list_files(clone, commit):\n                return tag", "            return tag", "候補"),
     ("タグと同じでも比べる", "            if new in (old, checked):", "            if new == checked:", "--new がタグと同じ"),
     ("確かめたタグと同じでも比べる", "            if new in (old, checked):", "            if new == old:", "確かめたタグ"),
+    ("同じ版なら古い版を照らさない", "        old_layer = self.layer(clone, old_commit, name, old, missing_ok=False)\n        for where, item, ids in refs:",
+     "        if self.new in (old, checked):\n            return self.finish()\n        old_layer = self.layer(clone, old_commit, name, old, missing_ok=False)\n        for where, item, ids in refs:",
+     "同じ版でも古い版に無い ID"),
+    ("層の見出しを見ない", "                if head != base.LAYER_COLUMNS:", "                if False:", "新しい版の層の見出し"),
     ("古い版に無い ID を通す", "                if rid not in old_layer.rows:", "                if False:", "古い版に無い ID"),
-    ("profile を持つタグが無いのを 4 にしない", "        raise Stop(f\"{clone} に profile {name} を持つタグが 1 つも無い（{want}）\")", "        return \"\"",
-     "profile を持つタグが無い"),
     ("古い版に層が無いのを 4 にしない", "old_layer = self.layer(clone, old_commit, name, old, missing_ok=False)",
      "old_layer = self.layer(clone, old_commit, name, old, missing_ok=True)", "古い版に層が無い"),
     ("新しい版の層を読めなくても通す", "        except ext.Undetermined as e:\n            raise Stop(f\"profile {name}（タグ {tag}）を読めない: {e}\") from None",
@@ -163,7 +168,7 @@ LAYER_B = (HEAD + "LANG-1,Python 3.13,docs/guide.md,言語\nHOST-1,AWS ECS,docs/
 
 
 def make_profile(root: Path, env: dict) -> Path:
-    """タグ v1（A）・v2（B）・v9（A）・v10（B）・nolayer・fmt2・zz-noprofile（profile を持たない）。"""
+    """タグ v1（A）・v2（B）・v9（A）・v10（B）・nolayer・fmt2・badhead（見出しに列を足した B）・zz-noprofile（profile を持たない）。"""
     assert_in_tmp(root)
     root.mkdir(parents=True)
     git(root, env, "init", "-q", "-b", "main")
@@ -189,6 +194,9 @@ def make_profile(root: Path, env: dict) -> Path:
     commit("v10", PROFILE, LAYER_B)
     commit("nolayer", "層,形式の版,ファイル,重ねる先\n画面,1,infra.csv,web-spa\n", LAYER_A)
     commit("fmt2", PROFILE.replace("基盤,1,", "基盤,2,"), LAYER_B)
+    commit("badhead", PROFILE, LAYER_B.replace("ID,要約,リンク,項目\n", "ID,要約,リンク,項目,備考\n").replace(",言語\n", ",言語,x\n")
+           .replace(",ホスティング環境\n", ",ホスティング環境,x\n").replace(",監視\n", ",監視,x\n").replace(",認証基盤\n", ",認証基盤,x\n")
+           .replace(",DBMS\n", ",DBMS,x\n"))
     commit("zz-noprofile", None, None)
     git(root, env, "checkout", "-q", "v1")
     return root

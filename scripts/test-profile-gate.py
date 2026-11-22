@@ -81,13 +81,15 @@ def env_for(tmp: Path) -> dict[str, str]:
     return env
 
 
-def copy_spec_loop(dest: Path, source: str | None = None, target: str = GATE) -> Path:
+def copy_spec_loop(dest: Path, source: str | None = None, target: str = GATE, gate_source: str | None = None) -> Path:
     assert_in_tmp(dest)
     dest.mkdir(parents=True)
     shutil.copytree(SPEC_LOOP / ".claude-plugin", dest / ".claude-plugin")
     shutil.copytree(SPEC_LOOP / "scripts", dest / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
     if source is not None:
         (dest / "scripts" / target).write_text(source, encoding="utf-8")
+    if gate_source is not None:
+        (dest / "scripts" / GATE).write_text(gate_source, encoding="utf-8")
     return dest
 
 
@@ -227,6 +229,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "陽性対照: 値があれば呼ぶ"),
     ("--spec-loop を渡さない", "str(docs), \"--spec-loop\", str(PLUGIN_ROOT)]", "str(docs)]", "引数を渡す"),
     ("重ね合わせの違反を通す", "        if problems:\n            return EXIT_FAIL, problems", "        if False:\n            return EXIT_FAIL, problems", "値があって重ね合わせの違反"),
+    ("キャッシュの projectPath に写しを当てる", "find_platform_spec(named, locate if locate is not None else docs)", "find_platform_spec(named, docs)",
+     "proposal: プラグインのキャッシュ（project）でも見つかる"),
     ("__pycache__ を書く", "sys.dont_write_bytecode = True", "sys.dont_write_bytecode = False", "使っていない"),
 ]
 
@@ -311,11 +315,22 @@ def scaffold_cases(work: Path, scaffold_source: str | None = None) -> dict[str, 
     return out
 
 
-def proposal_root(work: Path, profile: bool, code: int, proposal_source: str | None = None):
+def proposal_root(work: Path, profile: bool, code: int, proposal_source: str | None = None, cache: bool = False,
+                  gate_source: str | None = None):
+    """`cache` なら spec-loop をプラグインのキャッシュの形に置き、偽の platform-spec を `installed_plugins.json` の `scope: project`（`projectPath` は正本の根）で名指す。"""
     assert_in_tmp(work)
-    plugins = work / "plugins"
-    spec_loop = copy_spec_loop(plugins / "spec-loop", proposal_source, "build-proposal.py")
-    fake = fake_platform(plugins / "platform-spec", code)
+    root = work / "repo"
+    if cache:
+        config = work / "config"
+        spec_loop = copy_spec_loop(config / "plugins" / "cache" / "mkt" / "spec-loop" / "0.134.0", proposal_source, "build-proposal.py", gate_source)
+        fake = fake_platform(work / "elsewhere-fake", code)
+        (config / "plugins" / "installed_plugins.json").write_text(json.dumps(
+            {"version": 2, "plugins": {"platform-spec@mkt": [{"scope": "project", "projectPath": str(root.resolve()), "installPath": str(fake)}]}}),
+            encoding="utf-8")
+    else:
+        plugins = work / "plugins"
+        spec_loop = copy_spec_loop(plugins / "spec-loop", proposal_source, "build-proposal.py", gate_source)
+        fake = fake_platform(plugins / "platform-spec", code)
     infra_csv = (proposal_test.INFRA_OK.replace(proposal_test.INFRA_HEAD, I_HEAD).replace(",決定\n", ",決定,LANG-1\n", 1).replace(",決定\n", ",決定,\n")
                  if profile else proposal_test.INFRA_OK)
     steps = proposal_test.BASE[:-1] + [("w", proposal_test.INFRA, infra_csv), ("c",), ("t", proposal_test.R1), ("t", proposal_test.B1)]
@@ -324,18 +339,20 @@ def proposal_root(work: Path, profile: bool, code: int, proposal_source: str | N
     env = proposal_test.sandbox_env(home)
     for key in ("SPEC_LOOP_PLATFORM_SPEC", "CLAUDE_CONFIG_DIR", "PYTHONDONTWRITEBYTECODE"):
         env.pop(key, None)
-    root = work / "repo"
+    if cache:
+        env["CLAUDE_CONFIG_DIR"] = str(work / "config")
     proposal_test._build_repo(root, steps, env)
     return spec_loop, fake, root, env
 
 
-def proposal_cases(work: Path, proposal_source: str | None = None) -> dict[str, str | None]:
+def proposal_cases(work: Path, proposal_source: str | None = None, gate_source: str | None = None) -> dict[str, str | None]:
     out: dict[str, str | None] = {}
-    for label, profile, code, want, invoked in (("proposal: 関門の 1 で書かない", True, 1, 1, True),
-                                                ("proposal: 関門の 4 は 2 で書かない", True, 4, 2, True),
-                                                ("proposal: 関門の 0 なら書く", True, 0, 0, True),
-                                                ("proposal: 使わない正本では呼ばない", False, 1, 0, False)):
-        spec_loop, fake, root, env = proposal_root(work / label.replace(" ", "_").replace(":", ""), profile, code, proposal_source)
+    for label, profile, code, want, invoked, cache in (("proposal: 関門の 1 で書かない", True, 1, 1, True, False),
+                                                       ("proposal: 関門の 4 は 2 で書かない", True, 4, 2, True, False),
+                                                       ("proposal: 関門の 0 なら書く", True, 0, 0, True, False),
+                                                       ("proposal: 使わない正本では呼ばない", False, 1, 0, False, False),
+                                                       ("proposal: プラグインのキャッシュ（project）でも見つかる", True, 0, 0, True, True)):
+        spec_loop, fake, root, env = proposal_root(work / f"p{len(out)}", profile, code, proposal_source, cache, gate_source)
         target = root / "build" / "proposal" / "proposal.md"
         got, text = proposal_test.generate(spec_loop / "scripts", root, target, env)
         problems = []
@@ -360,8 +377,10 @@ WIRING_MUTATIONS = [  # (ファイル, 壊す前, 壊した後, 殺すはずの�
     ("scaffold.py", "fail(repo, writing, 1 if code == profiles.EXIT_FAIL else 2,", "fail(repo, writing, 1,", "scaffold: 関門の 4 は 2 で作らない"),
     ("build-proposal.py", "    profile_gate(gate, info[\"req\"])\n", "", "proposal: 関門の 1 で書かない"),
     ("build-proposal.py", "raise Stop(1 if code == profiles.EXIT_FAIL else 2,", "raise Stop(1,", "proposal: 関門の 4 は 2 で書かない"),
-    ("build-proposal.py", "profiles.check(Path(tmp) / signoff.DOCS, version, None, top)", "profiles.check(Path(tmp) / signoff.DOCS, version, None, None)",
-     "proposal: 関門の 0 なら書く"),
+    ("build-proposal.py", "profiles.check(Path(tmp) / signoff.DOCS, version, None, top, top / signoff.DOCS)",
+     "profiles.check(Path(tmp) / signoff.DOCS, version, None, None, top / signoff.DOCS)", "proposal: 関門の 0 なら書く"),
+    ("build-proposal.py", "profiles.check(Path(tmp) / signoff.DOCS, version, None, top, top / signoff.DOCS)",
+     "profiles.check(Path(tmp) / signoff.DOCS, version, None, top)", "proposal: プラグインのキャッシュ（project）でも見つかる"),
 ]
 
 
@@ -384,7 +403,7 @@ def main() -> int:
         # 変異
         guarded = tip.guarded_lines(source)
         check("変異の数が「守ること」の行の数と違う", len(guarded) == len(MUTATIONS), f"守ること {len(guarded)} 行・変異 {len(MUTATIONS)} 件")
-        killers = {killer for _, _, _, killer in MUTATIONS}
+        killers = {killer for _, _, _, killer in MUTATIONS if not killer.startswith("proposal:")}
         check("変異の殺す試料が試料に無い", killers <= set(names), ", ".join(sorted(killers - set(names))))
         for index, killer in enumerate(sorted(killers)):
             case = next(c for c in CASES if c[0] == killer)
@@ -394,6 +413,10 @@ def main() -> int:
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            if killer.startswith("proposal:"):
+                results = proposal_cases(tmp / f"mut{index}", None, source.replace(before, after))
+                check(f"変異が生き残った: {name}（{killer} で殺せるはず）", results[killer] is not None)
                 continue
             case = next(c for c in CASES if c[0] == killer)
             r = run_case(tmp / f"mut{index}", case, env, source.replace(before, after))
@@ -413,7 +436,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 関門の試料 {len(CASES)} 件・本物の platform-spec 2 件・口の試料 10 件・変異 {len(MUTATIONS)} 件（守ること {len(guarded)} 行）・口の変異 {len(WIRING_MUTATIONS)} 件")
+    print(f"OK: 関門の試料 {len(CASES)} 件・本物の platform-spec 2 件・口の試料 11 件・変異 {len(MUTATIONS)} 件（守ること {len(guarded)} 行）・口の変異 {len(WIRING_MUTATIONS)} 件")
     return 0
 
 

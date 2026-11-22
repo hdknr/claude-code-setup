@@ -23,7 +23,7 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 - 1: 候補がある、または違反——`check-infra-profile.py` の違反（設定の形・指しているのに設定が無い・空の ID・重ね合わせ）と、指した ID が古い版（`タグ`）の基盤の層に無い
 - 2: 判定していない——引数の誤り・`docs` が無い・表が読めない・想定外の例外
 - 4: 止めた（判定できなかった）——spec-loop が見つからない・版が範囲の外か古い・clone が見つからない・タグが無い・古い版に基盤の層が無い・
-  形式の版が範囲の外・層の表の形が違う・その profile を持つタグが 1 つも無い
+  形式の版が範囲の外・層の表の形が違う（古い版の層を先に読むので、その profile を持つタグが 1 つも無い形は古い版の読み出しで止まる）
 
 **守ること**:
 
@@ -39,8 +39,9 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 - その profile を持たないタグは、新しい版に数えない
 - 新しい版が `タグ` と同じなら比べずに 0
 - 新しい版が `確かめたタグ` と同じなら比べずに 0
+- 新しい版が `タグ`・`確かめたタグ` と同じでも、古い版の層と、指した ID が古い版に在るかは照らす
+- どちらかの版の基盤の層の表の見出しが形式の版 1 の 4 列（`ID,要約,リンク,項目`）でなければ 4
 - 指した ID が古い版の基盤の層に無ければ 1（照合の違反）
-- その profile を持つタグが 1 つも無ければ 4
 - 古い版に基盤の層が無ければ 4
 - 新しい版の基盤の層を読めなければ 4（形式の版・表の形）
 - `check-infra-profile.py` の設定の違反は、clone を読む前に 1
@@ -62,7 +63,9 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 
 from __future__ import annotations
 
+import csv
 import importlib.util
+import io
 import re
 import sys
 from pathlib import Path
@@ -138,7 +141,13 @@ class Differ(base.Checker):
     def layer(self, clone: Path, commit: str, name: str, tag: str, missing_ok: bool):
         ext = self.ext
         try:
-            return ext.read_layer(clone, commit, name, base.LAYER, base.FORMAT_LOW, base.FORMAT_HIGH)
+            layer = ext.read_layer(clone, commit, name, base.LAYER, base.FORMAT_LOW, base.FORMAT_HIGH)
+            for path in layer.files:
+                head = next((row for row in csv.reader(io.StringIO(ext.read_blob(clone, commit, path).decode("utf-8-sig"), newline=""))
+                             if any(cell.strip() for cell in row)), [])
+                if head != base.LAYER_COLUMNS:
+                    raise Stop(f"{path}（タグ {tag}）の見出しが形式の版 1 の `{','.join(base.LAYER_COLUMNS)}` でない: {','.join(head)}")
+            return layer
         except ext.LayerMissing as e:
             if missing_ok:
                 return None
@@ -176,6 +185,16 @@ class Differ(base.Checker):
         try:
             clone, source = ext.find_clone(repo, self.clone, self.project)
             old_commit = ext.resolve_tag(clone, old)
+        except ext.Undetermined as e:
+            raise Stop(f"{repo} の profile {name} を読めない: {e}") from None
+        # 古い版の層と、指した ID が古い版に在るかは、比べる新しい版が無くても照らす（#1457 の 1 パス目の指摘）
+        old_layer = self.layer(clone, old_commit, name, old, missing_ok=False)
+        for where, item, ids in refs:
+            for rid in ids:
+                if rid not in old_layer.rows:
+                    self.violations.append(f"{where}: {item} の {self.column} {rid} が {repo} の {name}（タグ {old}）の{base.LAYER}の層に無い"
+                                           "（照合の違反——check-infra-profile.py）")
+        try:
             new = self.new if self.new is not None else self.newest(clone, name)
             if new in (old, checked):
                 which = base.SETTING_TAG if new == old else base.SETTING_CHECKED
@@ -184,17 +203,11 @@ class Differ(base.Checker):
             new_commit = ext.resolve_tag(clone, new)
         except ext.Undetermined as e:
             raise Stop(f"{repo} の profile {name} を読めない: {e}") from None
-        old_layer = self.layer(clone, old_commit, name, old, missing_ok=False)
         new_layer = self.layer(clone, new_commit, name, new, missing_ok=True)
         try:
             broken = ext.check_links(clone, new_commit, new_layer) if new_layer is not None else []
         except ext.Undetermined as e:
             raise Stop(f"{repo} の profile {name}（タグ {new}）のリンクを読めない: {e}") from None
-        for where, item, ids in refs:
-            for rid in ids:
-                if rid not in old_layer.rows:
-                    self.violations.append(f"{where}: {item} の {self.column} {rid} が {repo} の {name}（タグ {old}）の{base.LAYER}の層に無い"
-                                           "（照合の違反——check-infra-profile.py）")
         found = candidates(refs, old_layer.rows, new_layer.rows if new_layer is not None else None, broken)
         self.notes.append(f"profile: {repo} の {name}——タグ {old} → {new}"
                           f"{'' if new_layer is not None else f'（{new} に{base.LAYER}の層が無い）'}。clone {clone}（出所: {source}）")

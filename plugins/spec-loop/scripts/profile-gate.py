@@ -39,7 +39,8 @@ usage: python3 profile-gate.py <docs ディレクトリ> [--upto <n>] [--platfor
 関門の使い方:
 
 - scaffold の関門（`scaffold.py`）——画面の関門と同じ条件（作業中の版の全体。`--upto` で前の版の時点を確かめるときは当てない）で当てる。1 は 1、2・4 は 2 で何も作らない
-- 提案書（`build-proposal.py`）——要求確定のタグの時点の `docs/` の写しに当て、`--project` に正本の根を渡す（clone の探し方の `CLAUDE.md`）。1 は 1、2・4 は 2 で書かない
+- 提案書（`build-proposal.py`）——要求確定のタグの時点の `docs/` の写しに当て、`--project` に正本の根を渡す（clone の探し方の `CLAUDE.md`）。
+  platform-spec の見つけ方（プラグインのキャッシュの `projectPath`）には正本の `docs` を当てる（`locate`）。1 は 1、2・4 は 2 で書かない
 - feasibility は CLI で呼び、出力の `platform-spec: 起票の候補: ` の行を共有の Q&A 表に起票する候補として読む（feasibility の `SKILL.md`）
 
 **守ること**:
@@ -53,6 +54,7 @@ usage: python3 profile-gate.py <docs ディレクトリ> [--upto <n>] [--platfor
 - platform-spec の 1 を 1、2 を 2、4 を 4 にし、知らない終了コードを 0 にしない（2）
 - platform-spec の出力を、`platform-spec: ` を前に付けて全部写す
 - platform-spec に `--spec-loop`（このプラグインの根）・`--upto`・`--project` を渡す
+- プラグインのキャッシュの `projectPath` には、写しではなく正本の `docs`（`locate`）を当てる
 - 版の重ね合わせが決まりに反すれば 1
 - platform-spec を読み込まない（子のプロセスで呼ぶ）。ファイルを書かない（`__pycache__` も）
 
@@ -221,8 +223,10 @@ def run_platform_spec(root: Path, docs: Path, upto: int | None, project: Path | 
     return PLATFORM_SPEC_CODES.get(proc.returncode, EXIT_UNJUDGED), lines + [f"platform-spec の版の差分の終了コード: {proc.returncode}"], shown
 
 
-def check(docs: Path, upto: int | None = None, named: str | None = None, project: Path | None = None) -> tuple[int, list[str]]:
-    """(終了コード, 出力する行)。`profile の行` に値が無ければ (0, [])。"""
+def check(docs: Path, upto: int | None = None, named: str | None = None, project: Path | None = None,
+          locate: Path | None = None) -> tuple[int, list[str]]:
+    """(終了コード, 出力する行)。`profile の行` に値が無ければ (0, [])。
+    `locate` は platform-spec の見つけ方（プラグインのキャッシュの `projectPath`）に当てる正本の `docs`——`docs` が写しのとき（`build-proposal.py`）に本物を渡す。"""
     if not docs.is_dir():
         return EXIT_UNJUDGED, [f"{docs}: ディレクトリが無い——profile の関門を判定していない"]
     try:
@@ -240,7 +244,7 @@ def check(docs: Path, upto: int | None = None, named: str | None = None, project
         return EXIT_OK, []
     lines = [f"{INFRA} の {COLUMN} が外部の profile を指している（{count} 行）——profile の関門を当てる"]
     try:
-        root = find_platform_spec(named, docs)
+        root = find_platform_spec(named, locate if locate is not None else docs)
     except NotFound as e:
         lines.append(f"止めた: {e}")
         code = EXIT_STOPPED
