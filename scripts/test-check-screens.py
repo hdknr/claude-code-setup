@@ -416,6 +416,124 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
 ]
 
 
+# ---- 外部の profile（#1458）。profile のリポジトリは試料ごとに一時の git リポジトリで作る（`run_one` の ("profile", …)）
+GUIDE_DIR = "spec-profile/org"
+GUIDE_PROFILE = "層,形式の版,ファイル,重ねる先\n画面,1,screens/*.csv,web-spa\n"
+L_HEAD = "ID,要約,リンク,種類,表,列,種別,値\n"
+L_COL = "L-COL,レイアウトの列,docs/guide.md#レイアウト,列,screens.csv,レイアウト,,\n"
+L_STD = "L-STD,標準のレイアウト,docs/guide.md#標準,語彙,screens.csv,レイアウト,,standard\n"
+L_MODAL = "L-MODAL,モーダル,docs/guide.md#モーダル,語彙,screens.csv,レイアウト,,modal\n"
+L_LIST = "L-LIST,一覧は標準,docs/guide.md#種別ごと,既定,screens.csv,レイアウト,list,standard\n"
+L_FORM = "L-FORM,入力は標準,docs/guide.md#種別ごと,既定,screens.csv,レイアウト,form,standard\n"
+R_ROWS = "R-1,担当者,,語彙,screens.csv,主たる利用者,,担当者\nR-2,管理者,,語彙,screens.csv,主たる利用者,,管理者\n"
+L_ROWS = L_COL + L_STD + L_MODAL + L_LIST + L_FORM + R_ROWS
+BODY_MARK = "ガイドの本文の目印-7f3a"  # リンク先の本文。検査の出力に出てはならない（B9）
+GUIDE_MD = f"# ガイド\n\n## レイアウト\n\n{BODY_MARK}\n\n## 標準\n\n## モーダル\n\n## 種別ごと\n"
+EXT_LABEL = "外部の profile org/guide の org（タグ v1）"
+
+
+def guide(profile: str = GUIDE_PROFILE, rows: str = L_ROWS, head: str = L_HEAD) -> dict[str, str]:
+    return {f"{GUIDE_DIR}/profile.csv": profile, f"{GUIDE_DIR}/screens/layout.csv": head + rows, "docs/guide.md": GUIDE_MD}
+
+
+def prof(tags: dict | None = None, **options) -> tuple:
+    """("profile", 設定)。tags はタグ → profile のリポジトリのファイル（全部）。既定は v1 に guide()。"""
+    return ("profile", {"tags": tags if tags is not None else {"v1": guide()}, **options})
+
+
+EXT_SETTINGS = WEB_SPA + "外部の profile,org/guide org v1\n"
+SE_HEAD = SW_HEAD.replace(",パス\n", ",パス,レイアウト\n")
+# 入口（top）の画面は既定の無い種別で modal——根拠に Q&A の番号が無くても通る（種別で既定を引くことを見る）
+ES1 = WS1.replace(",Q-R-002,/orders\n", ",F-001,/orders,modal\n")
+ES2 = WS2.replace("\n", ",standard\n")
+
+
+def ext(**changes) -> dict[str, object]:
+    """外部の profile を web-spa に重ねた正しい正本。"""
+    files = web_spa()
+    files[SETTINGS_CSV] = EXT_SETTINGS
+    files[S] = SE_HEAD + ES1 + ES2
+    for key, value in changes.items():
+        path = {"S": S, "I": I, "T": T, "SETTINGS": SETTINGS_CSV}[key]
+        if value is None:
+            files.pop(path)
+        else:
+            files[path] = value
+    return files
+
+
+def es2(layout: str, basis: str = "F-002") -> str:
+    return WS2.replace(",F-002,/orders/new\n", f",{basis},/orders/new,{layout}\n")
+
+
+EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
+    # ---- 陰性対照（B2・B3・B7・B9）
+    ("ext-good", ext(), prof(), [], 0, f"{EXT_LABEL}（", BODY_MARK),
+    ("ext-good-quiet", ext(), prof(), [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件", BODY_MARK),
+    ("ext-good-from-env", ext(), prof(env=True, claude_md=False), [], 0, "環境変数 SPEC_PROFILE_CLONE", "違反:"),
+    ("ext-vocab-after-add", ext(), prof({"v1": guide(rows=L_STD + L_MODAL + L_COL + L_LIST + L_FORM + R_ROWS)}), [], 0, "違反 0 件", "止めた"),
+    ("ext-default-with-basis", ext(S=SE_HEAD + ES1 + es2("modal", "F-002、Q-R-002")), prof(), [], 0, "違反 0 件", "既定"),
+    ("ext-vocab-marker-skip", ext(S=SE_HEAD + ES1 + es2("未定（Q-R-002）")), prof(), [], 3, "S-002 レイアウト: 未決定の印", "語彙"),
+    ("ext-vocab-undecided-na", ext(S=SE_HEAD + ES1 + es2(UNDECIDED)), prof(), [], 0, "違反 0 件", "語彙"),
+    ("ext-vocab-empty", ext(S=SE_HEAD + ES1 + es2("")), prof(), [], 0, "違反 0 件", "語彙"),
+    ("ext-setting-empty", with_files(web_spa(), **{SETTINGS_CSV: WEB_SPA + "外部の profile,\n"}), prof(), [], 0, "違反 0 件", "外部の profile org"),
+    # ---- B1: 外部の profile の無い案件は、外部の profile を読む部分の無い spec-loop でも今までどおり
+    ("ext-none-old-spec-loop", web_spa(), prof(drop_ext=True), [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "違反:"),
+    # ---- B2 語彙の外の値
+    ("ext-vocab-outside", ext(S=SE_HEAD + ES1 + es2("wide")), prof(), [], 1,
+     f"S-002 レイアウト: 'wide' は {EXT_LABEL} の語彙（standard・modal）に無い", ""),
+    ("ext-vocab-core-column", ext(S=SE_HEAD + ES1.replace(",担当者,", ",経理,") + ES2), prof(), [], 1,
+     f"S-001 主たる利用者: '経理' は {EXT_LABEL} の語彙（担当者・管理者）に無い", ""),
+    ("ext-vocab-items", ext(), prof({"v1": guide(rows=L_ROWS + "M-1,一覧,,語彙,screen-items.csv,まとまり,,一覧\n")}), [], 1,
+     f"I-002 まとまり: '操作' は {EXT_LABEL} の語彙（一覧）に無い", ""),
+    ("ext-tag-v2-vocab", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org v2\n"),
+     prof({"v1": guide(), "v2": guide(rows=L_COL + L_STD + L_LIST + L_FORM + R_ROWS)}), [], 1,
+     "S-001 レイアウト: 'modal' は 外部の profile org/guide の org（タグ v2） の語彙（standard）に無い", ""),
+    # ---- B3 既定と違う値の根拠
+    ("ext-default-no-basis", ext(S=SE_HEAD + ES1 + es2("modal")), prof(), [], 1,
+     f"S-002 レイアウト: 種別 form の既定 'standard'（{EXT_LABEL} の行 L-FORM）と違う 'modal' の根拠に Q&A の番号が無い", ""),
+    # ---- B4 重ねる先
+    ("ext-base-mismatch", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace(",web-spa\n", ",desktop\n"))}), [], 4,
+     "重ねる先 'desktop' が requirements/screens/settings.csv の profile 'web-spa' と食い違う", "違反"),
+    ("ext-base-unset", ext(SETTINGS=UNSET_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 4,
+     "重ねる先 'web-spa' が requirements/screens/settings.csv の profile '未設定' と食い違う", "違反"),
+    # ---- B5 形式の版
+    ("ext-version-out", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace("画面,1,", "画面,2,"))}), [], 4, "範囲（1 以上 2 未満）の外", "違反"),
+    # ---- B6 読めない
+    ("ext-no-clone", ext(), prof(claude_md=False), [], 4, "の手元の clone が見つからない", "違反"),
+    ("ext-tag-missing", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org v9\n"), prof(), [], 4, "タグ v9 が無い", "違反"),
+    ("ext-layer-missing", ext(), prof({"v1": {f"{GUIDE_DIR}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n",
+                                              f"{GUIDE_DIR}/infra.csv": "ID,要約,リンク\n"}}), [], 4, "層 画面 が", "違反"),
+    ("ext-old-spec-loop", ext(), prof(drop_ext=True), [], 4, "spec-loop に external-profile.py が無い", "違反"),
+    ("ext-bad-tail-columns", ext(), prof({"v1": guide(head="ID,要約,リンク,種類,表,列,種別\n",
+                                                       rows="".join(r.rsplit(",", 1)[0] + "\n" for r in L_ROWS.splitlines(keepends=True)))}),
+     [], 4, "先頭の 3 列の後ろが `種類,表,列,種別,値` でない", "違反"),
+    ("ext-bad-kind", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語い,screens.csv,レイアウト,,x\n")}), [], 4, "種類 '語い' は", "違反"),
+    ("ext-bad-table", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,foo.csv,レイアウト,,x\n")}), [], 4, "表 'foo.csv' は", "違反"),
+    ("ext-empty-column", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,screens.csv,,,x\n")}), [], 4, "行 X-1: 列が空", "違反"),
+    ("ext-add-existing", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,列,screens.csv,パス,,\n")}), [], 4, "列 パス は screens.csv に既に在る", "違反"),
+    ("ext-vocab-empty-value", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,screens.csv,レイアウト,,\n")}), [], 4, "語彙の値が空", "違反"),
+    ("ext-vocab-unknown-column", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,screens.csv,色,,赤\n")}), [], 4,
+     "行 X-1: 列 色 は screens.csv に無い", "違反"),
+    ("ext-default-not-screens", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,transitions.csv,操作,list,x\n")}), [], 4,
+     "既定は screens.csv の列にだけ書く", "違反"),
+    ("ext-default-bad-kind", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,grid,standard\n")}), [], 4,
+     "種別 'grid' は決まった種別", "違反"),
+    ("ext-default-empty-value", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,detail,\n")}), [], 4, "既定の値が空", "違反"),
+    ("ext-default-duplicate", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,form,modal\n")}), [], 4,
+     "種別 form の列 レイアウト の既定が 2 行ある", "違反"),
+    # ---- B7 足した列の無い見出し行
+    ("ext-header-without-column", ext(S=SW_HEAD + WS1 + WS2), prof(), [], 1,
+     f"見出し行が決まり（profile web-spa の列・{EXT_LABEL} の列を足した）", ""),
+    # ---- B8 設定の行
+    ("ext-setting-malformed", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org\n"), prof(), [], 1,
+     "外部の profile: 'org/guide org' は `<持ち主>/<リポジトリ> <名前> <タグ>` の形でない", ""),
+    ("ext-setting-bad-repo", ext(SETTINGS=WEB_SPA + "外部の profile,guide org v1\n"), prof(), [], 1, "の形でない", ""),
+    ("ext-setting-two", ext(SETTINGS=EXT_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
+]
+CASES += EXT_CASES
+
+
 failures: list[str] = []
 
 
@@ -447,6 +565,29 @@ def copy_plugin(source: Path, dest: Path) -> Path:
     return dest
 
 
+def build_profile_repo(root: Path, tags: dict[str, dict[str, str]], env: dict[str, str]) -> None:
+    """外部の profile のリポジトリ（本物の git）。タグの順にファイルを全部置き直してコミットし、タグを付ける。"""
+    assert_in_tmp(root)
+    git_env = {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+                        "-c", "tag.gpgsign=false", *args], check=True, capture_output=True, env=git_env)
+
+    root.mkdir(parents=True)
+    git("init", "-q", "-b", "main")
+    for tag, files in tags.items():
+        for path in [p for p in root.rglob("*") if p.is_file() and ".git" not in p.relative_to(root).parts]:
+            path.unlink()
+        for rel, body in files.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "--allow-empty", "-m", tag)
+        git("tag", tag)
+
+
 def snapshot(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
 
@@ -465,13 +606,31 @@ def run_one(plugin: Path, sibling: Path, case_dir: Path, case) -> tuple[int, str
         path.write_bytes(body if isinstance(body, bytes) else body.encode("utf-8"))
     home = case_dir / "home"
     home.mkdir()
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "SCREEN_SPEC_SPEC_LOOP")}
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "SCREEN_SPEC_SPEC_LOOP", "SPEC_PROFILE_CLONE")
+           and not k.startswith("GIT_")}
     env["HOME"] = str(home)
     script = plugin / "scripts" / TARGET
     extra: list[str] = []
+    cwd = case_dir
     if how is not None:
         kind = how[0]
-        if kind == "version":
+        if kind == "profile":
+            # 外部の profile のリポジトリ（#1458）。タグごとにファイルを全部置き直してコミットし、タグを付ける。
+            # 走らせる場所（cwd）は案件の根（docs の親）と別にする——`CLAUDE.md` を docs の親で探すことを見る
+            options = how[1]
+            guide_repo = case_dir / "guide"
+            build_profile_repo(guide_repo, options["tags"], env)
+            if options.get("claude_md", True):
+                (case_dir / "CLAUDE.md").write_text("# 案件\n\n外部の profile の clone: org/guide guide\n", encoding="utf-8")
+            if options.get("env"):
+                env["SPEC_PROFILE_CLONE"] = str(guide_repo)
+            if options.get("drop_ext"):
+                old = copy_spec_loop(case_dir / "old-spec-loop")
+                (old / "scripts" / "external-profile.py").unlink()
+                extra = ["--spec-loop", str(old)]
+            cwd = case_dir / "elsewhere"
+            cwd.mkdir()
+        elif kind == "version":
             extra = ["--spec-loop", str(copy_spec_loop(case_dir / "alt-spec-loop", version=how[1]))]
         elif kind == "name":
             extra = ["--spec-loop", str(copy_spec_loop(case_dir / "alt-spec-loop", name=how[1]))]
@@ -499,7 +658,7 @@ def run_one(plugin: Path, sibling: Path, case_dir: Path, case) -> tuple[int, str
     # 書かないことは、正本だけでなく走らせた場所（cwd）と、読み込む spec-loop・screen-spec の写し（`__pycache__`）でも見る
     watched = (case_dir, sibling.parent)
     before = [snapshot(root) for root in watched]
-    proc = subprocess.run([sys.executable, "-I", str(script), *argv, *extra], capture_output=True, text=True, cwd=case_dir, env=env)
+    proc = subprocess.run([sys.executable, "-I", str(script), *argv, *extra], capture_output=True, text=True, cwd=cwd, env=env)
     out = proc.stdout + proc.stderr
     if [snapshot(root) for root in watched] != before:
         out += "\n<<正本か走らせた場所か読み込んだプラグインにファイルを書いた>>"
@@ -562,6 +721,41 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("コードブロックの中の見出しを数える", "opened = FENCE.match(line.lstrip())\n            if fence is not None:\n", "opened = None\n            if fence is not None:\n", "heading-in-fence"),
     ("最初の見出しの画面ID を見ない", "if title is None or key not in title[2]:", "if title is None:", "prose-title-without-id"),
     ("無い仕様書を見ない", "self.report.violations.append(f\"{SCREENS} {key} 仕様書: {path} が無い\")", "pass", "prose-file-missing"),
+    # ---- 外部の profile（#1458）
+    ("語彙の外の値を見ない", "                    if value not in values:\n", "                    if False:\n", "ext-vocab-outside"),
+    ("語彙を N/A。実現方式が未定 のセルにも当てる", "                    if not value or undecided_profile(value):\n                        continue\n",
+     "                    if not value:\n                        continue\n", "ext-vocab-undecided-na"),
+    ("語彙を項目の表に当てない", "{SCREENS: screens, ITEMS: items, TRANSITIONS: transitions}", "{SCREENS: screens, ITEMS: {}, TRANSITIONS: transitions}", "ext-vocab-items"),
+    ("既定と違う値の根拠を見ない", "if not self.qa_number.search(whole.tables[SCREENS][key].get(\"根拠\", \"\")):", "if False:", "ext-default-no-basis"),
+    ("既定と違う値は根拠があっても違反にする", "if not self.qa_number.search(whole.tables[SCREENS][key].get(\"根拠\", \"\")):", "if True:", "ext-default-with-basis"),
+    ("既定と同じ値も違反にする", "if not value or undecided_profile(value) or value == default:", "if not value or undecided_profile(value):", "ext-good"),
+    ("既定を種別で引かない", "                if row.get(\"種別\") != kind:\n", "                if False:\n", "ext-good"),
+    ("重ねる先を照らさない", "        if layer.base != self.profile:\n", "        if False:\n", "ext-base-mismatch"),
+    ("足す列を見出し行に求めない", " + added.get(path, [])", "", "ext-good"),
+    ("案件の根を docs の親にしない", "project=self.docs.resolve().parent", "project=None", "ext-good"),
+    ("形式の版の範囲を変える", "EXTERNAL_RANGE = (\"1\", \"2\")", "EXTERNAL_RANGE = (\"1\", \"3\")", "ext-version-out"),
+    ("設定の行が 2 つあっても通す", "        if len(values) >= 2:\n", "        if False:\n", "ext-setting-two"),
+    ("設定の行の形を見ない", "if len(parts) != 3 or not EXTERNAL_REPO.fullmatch(parts[0]):", "if len(parts) != 3:", "ext-setting-bad-repo"),
+    ("設定の空の値を外さない", "        values = [value for value in values if value]\n", "", "ext-setting-empty"),
+    ("spec-loop に読む部分が無いのを見ない", "        if not path.is_file():\n", "        if False:\n", "ext-old-spec-loop"),
+    ("検査の中で止めたのを 4 にしない", "    except Stop as e:\n        print(f\"止めた: {e}\", file=sys.stderr)\n        return 4\n    except Unreadable as e:",
+     "    except Unreadable as e:", "ext-base-mismatch"),
+    ("画面の層の後ろの列を見ない", "            if tuple(row)[len(ext.LAYER_HEAD):] != EXTERNAL_COLUMNS:\n", "            if False:\n", "ext-bad-tail-columns"),
+    ("画面の層の表を見ない", "            if table not in tables:\n", "            if False:\n", "ext-bad-table"),
+    ("画面の層の空の列を見ない", "            if not column:\n", "            if False:\n", "ext-empty-column"),
+    ("既に在る列を足させる", "                if column in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:\n", "                if False:\n", "ext-add-existing"),
+    ("語彙の空の値を見ない", "                if not value:\n                    raise Stop(f\"{where}: 語彙の値が空\")", "                if False:\n                    raise Stop(f\"{where}: 語彙の値が空\")",
+     "ext-vocab-empty-value"),
+    ("既定を screens.csv のほかにも書かせる", "                if target != SCREENS:\n", "                if False:\n", "ext-default-not-screens"),
+    ("既定の種別を見ない", "                if screen_kind not in SCREEN_KINDS:\n", "                if False:\n", "ext-default-bad-kind"),
+    ("既定の空の値を見ない", "                if not value:\n                    raise Stop(f\"{where}: 既定の値が空\")", "                if False:\n                    raise Stop(f\"{where}: 既定の値が空\")",
+     "ext-default-empty-value"),
+    ("既定の重なりを見ない", "                if (column, screen_kind) in external.defaults:\n", "                if False:\n", "ext-default-duplicate"),
+    ("決まりに無い種類を通す", "raise Stop(f\"{where}: 種類 {kind!r}", "None and (f\"{where}: 種類 {kind!r}", "ext-bad-kind"),
+    ("どこにも無い列の語彙を通す", "            if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:\n", "            if False:\n", "ext-vocab-unknown-column"),
+    ("足した列を全部読む前に語彙の列を照らす", "                uses.append((target, column, rid))\n            elif kind == EXTERNAL_DEFAULT:",
+     "                if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:\n                    raise Stop(\"早すぎる照合\")\n                uses.append((target, column, rid))\n            elif kind == EXTERNAL_DEFAULT:",
+     "ext-vocab-after-add"),
     ("表から指されない仕様書を見ない", "elif name not in referenced:", "elif False:", "prose-orphan"),
     ("common.md を表から指されない仕様書に数える", "            if name == COMMON:\n", "            if False:\n", "prose-common-not-orphan"),
     ("仕様書を 2 つの画面が指すのを見ない", "elif document in documents:", "elif False:", "doc-shared"),
@@ -713,6 +907,48 @@ def profile_mismatches(module, profiles: str, directories: list[str]) -> list[st
     return problems
 
 
+def external_mismatches(module, profiles: str, tables: str) -> list[str]:
+    """外部の profile の定数と `references/profiles.md` の「外部の profile」・`references/tables.md` の設定の行（#1458）。"""
+    problems = []
+
+    def same(what: str, ours, theirs) -> None:
+        if ours != theirs:
+            problems.append(f"{what}: 本体 {ours!r} ／ references {theirs!r}")
+
+    try:
+        part = section(profiles, "## 外部の profile")
+        setting = section(part, "### 設定の行")
+        layer = section(part, "### 画面の層")
+        kinds = section(layer, "#### 行の種類")
+        accepted = section(part, "### 受け付ける形式の版")
+        settings = section(tables, "## 案件ごとの設定（`settings.csv`）")
+    except ValueError as e:
+        return [f"references の節が無い: {e}"]
+    columns = rows_of(layer.split("\n#### ")[0])
+    same("画面の層の後ろの列", list(module.EXTERNAL_COLUMNS), [ticked(r[0])[0] for r in columns])
+    by_name = {ticked(r[0])[0]: r for r in columns}
+    same("画面の層の表", [p.rsplit("/", 1)[1] for p in module.TABLES], ticked(by_name.get("表", ["", ""])[1]))
+    same("行の種類", list(module.EXTERNAL_KINDS), [ticked(r[0])[0] for r in rows_of(kinds)])
+    same("足す・語彙・既定", [module.EXTERNAL_ADD, module.EXTERNAL_VOCAB, module.EXTERNAL_DEFAULT], [ticked(r[0])[0] for r in rows_of(kinds)])
+    same("層の名前", [module.EXTERNAL_LAYER], re.findall(r"`profile\.csv` の層 `([^`]+)` の表", layer))
+    found = re.search(r"\| `([0-9.]+)` \| `([0-9.]+)` \|", accepted)
+    same("形式の版の範囲", module.EXTERNAL_RANGE, (found.group(1), found.group(2)) if found else None)
+    same("設定の行の形", [module.EXTERNAL_KEY], re.findall(r"^([^,\n`]+),<持ち主>/<リポジトリ> <名前> <タグ>$", setting, flags=re.MULTILINE))
+    same("設定の表の行", [module.EXTERNAL_KEY], re.findall(r"^\| `(外部の[^`]*)` \|", settings, flags=re.MULTILINE))
+    return problems
+
+
+EXTERNAL_MUTATIONS = [
+    ("後ろの列の名前を変える", "profiles", "| `種別` | `種類` が `既定` のとき", "| `画面の種別` | `種類` が `既定` のとき"),
+    ("掛ける表を減らす", "profiles", "——`screens.csv`・`screen-items.csv`・`transitions.csv` |", "——`screens.csv`・`transitions.csv` |"),
+    ("行の種類を変える", "profiles", "| `語彙` | 列の値の語彙を 1 つ足す。", "| `値の一覧` | 列の値の語彙を 1 つ足す。"),
+    ("層の名前を変える", "profiles", "`profile.csv` の層 `画面` の表", "`profile.csv` の層 `screens` の表"),
+    ("形式の版の上限を変える", "profiles", "| `1` | `2` |", "| `1` | `3` |"),
+    ("設定の行の名前を変える", "profiles", "外部の profile,<持ち主>/<リポジトリ> <名前> <タグ>", "外部 profile,<持ち主>/<リポジトリ> <名前> <タグ>"),
+    ("設定の表の行を消す", "tables", "| `外部の profile` | 組み込みの profile の上に重ねる外部の profile。", "| 外部の profile | 組み込みの profile の上に重ねる外部の profile。"),
+]
+
+
 def reference_mismatches(module, tables: str, prose: str, boundary: str) -> list[str]:
     problems = []
 
@@ -826,6 +1062,16 @@ def main() -> int:
         problems = profile_mismatches(module, profiles_md, directories)
         check("本体の profile の定数が references/profiles.md・profiles/ と一致しない", not problems, "; ".join(problems))
         check("崩すと不一致になる: profiles/ のディレクトリを足す", bool(profile_mismatches(module, profiles_md, directories + ["desktop"])))
+        problems = external_mismatches(module, profiles_md, docs["tables"])
+        check("本体の外部の profile の定数が references と一致しない", not problems, "; ".join(problems))
+        for name, which, before, after in EXTERNAL_MUTATIONS:
+            text = profiles_md if which == "profiles" else docs["tables"]
+            if text.count(before) != 1:
+                check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {text.count(before)} 回現れる")
+                continue
+            broken = text.replace(before, after)
+            args = (broken, docs["tables"]) if which == "profiles" else (profiles_md, broken)
+            check(f"崩すと不一致になる: {name}", bool(external_mismatches(module, *args)))
         for name, before, after in PROFILE_MUTATIONS:
             if profiles_md.count(before) != 1:
                 check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {profiles_md.count(before)} 回現れる")
@@ -868,7 +1114,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS) + len(PROFILE_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS) + len(PROFILE_MUTATIONS) + len(EXTERNAL_MUTATIONS) + 1} 件")
     return 0
 
 
