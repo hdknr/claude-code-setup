@@ -102,10 +102,10 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 | 項目 | 書くもの |
 | --- | --- |
 | 旧 | `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`（周の base） |
-| 新 | （回した時点で書く） |
-| 入力の出どころ | サンプル——`scripts/test-check-screens.py` の試料のうち外部の profile を持たないもの全部（周の base の時点の試料と、この周で足した外部の profile の無い試料）。件数は回した時点で書く |
+| 新 | `5968a03b7532764908c3b04e0399d956b34b5010` |
+| 入力の出どころ | サンプル——`scripts/test-check-screens.py` の試料のうち外部の profile を持たないもの全部（周の base の時点の試料と、この周で足した外部の profile の無い試料）。127 件（外部の profile の行を値つきで持たない試料。この周で足した `ext-none-old-spec-loop`・`ext-setting-empty` を含む）。比べたのは終了コードと標準出力＋標準エラーの全文 |
 | 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので、`<tmp>` に揃える——比較に関係ない置き場所の違い） |
-| 結果 | （回した時点で書く） |
+| 結果 | 比べた 127 件・差分 0 件・一覧に無い差分 0 件。陽性対照: 新側の `起票の候補` の条件を `if False:` にした写しで差分 2 件（`marker-without-number` ほか）——差分を検出する |
 | 回した場所 | リポジトリの外（scratchpad。旧は `git archive <旧> plugins/screen-spec plugins/spec-loop` で取り出した木） |
 
 #### 承認済みの変更の一覧
@@ -119,8 +119,9 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1458-screen-spec-external-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1458`・起点 `b37059d0`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`
-- 関門: まだ
-- 交絡を潰した手順: まだ
+- 関門: 1 パス目へ（起点は下）
+- check-all: まだ。`test-check-screens.py`（run-serial 越し）は `5968a03b` の木で緑（試料 162・変異 130・references の崩し 35）
+- 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を取った。外部の profile の試料は走らせる場所（cwd）を案件の根と別にし、`CLAUDE.md` を docs の親で探すことが観測に効くようにした（変異「案件の根を docs の親にしない」が `ext-good` で落ちる）
 - 割り目: 割らない（cruise の周）
 
 ## 既知の限界・決着済みの論点
