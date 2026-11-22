@@ -39,9 +39,13 @@ requirements/screens/
 | --- | --- | --- |
 | `画面IDの接頭辞` | `add` が採る画面ID の頭。英大文字で始まり、英大文字と数字が続き、`-` で終わる（`S-`・`SCR-`）。spec-loop の成果物の表の番号の頭（`F-` など）と重ねず、画面ID が Q&A の番号の形（`Q-`・`D-`）や未決定の印（`TBD-`・`TODO-`）にならないもの | `S-` |
 | `profile` | 実現方式の profile の名前（このプラグインの `profiles/` にあるもの。`references/profiles.md`）か `未設定` | `未設定` |
-| `外部の profile` | 組み込みの profile の上に重ねる外部の profile。`<持ち主>/<リポジトリ> <名前> <タグ>` を空白で区切って書く（案件に 1 つまで。`references/profiles.md` の「外部の profile」） | 行を置かない（外部の profile を使わない） |
+| `外部の profile` | 組み込みの profile の上に重ねる外部の profile。`<持ち主>/<リポジトリ> <名前> <タグ>` を空白で区切って書く（案件に 1 つまで。`references/profiles.md` の「外部の profile」） | 行を置かない（外部の profile を使わない）。基盤の profile が画面の profile を名指せばそれ（下の項） |
 
-- `profile` の初期値は、`init` のスキルが spec-loop の基盤要件（`shared/infra.csv`）のフロントエンドの行（`項目` が `frontend`・`フロントエンド`）から推し、利用者に確かめて決める。
+- **基盤の profile が画面の profile を名指せば、それが `profile` と `外部の profile` の初期値になる**——`init` の `--profile` と `--external` を両方省いたとき（#1460）。
+  基盤の profile は platform-spec の案件の設定（重ねた全体の `shared/platform/settings.csv`）が名指す外部の profile で、名指しはそのタグの時点の `profile.csv` の層 `画面` の `重ねる先`
+  （決まりと、初期値を決められないときに止めることは `references/profiles.md` の「基盤の profile から引く初期値」）。
+- 基盤の profile が無い・名指しが無いときの `profile` の初期値は、`init` のスキルが spec-loop の基盤要件（`shared/infra.csv`）のフロントエンドの行（`項目` が `frontend`・`フロントエンド`）から推す。
+  どちらの初期値も、`init` のスキルが利用者に確かめて決める（`hint` が材料を出す）。
   profile を選ぶと、表の見出し行に profile の列が入り、仕様書と共通仕様に profile の節が要る（`references/profiles.md`）。**profile は表を置く最初の版で決める**——見出し行は版の間で変えない。
 - 検査（`check-screens.py`）は設定のうち `profile` と `外部の profile` を読む（設定が無ければ `未設定` で、外部の profile は使わない）——画面ID が接頭辞で始まるかは見ない（手で置いた画面ID を止めない）。
 
@@ -49,6 +53,8 @@ requirements/screens/
 
 **`init`**（`write-screens.py init`）は、作業中の版（いちばん大きい `v<n>`）の `requirements/screens/` に、3 つの表（見出し行だけ）・`settings.csv`・`common.md`・`templates/spec.md` を置く。
 profile を選べば、表の見出し行に profile の列を入れ、`common.md` と `templates/spec.md` の末尾に profile の節の雛形（このプラグインの `profiles/<profile>/`）を足す。
+外部の profile（`--external <持ち主>/<リポジトリ> <名前> <タグ>`。`なし` なら書かない）を選べば、`settings.csv` に `外部の profile` の行を書き、外部の profile が足す列を見出し行の profile の列の後ろに入れる
+（読めない・`profile` に重ねられなければ書かない。`references/profiles.md` の「外部の profile」）。2 つを省いたときの初期値は上の「案件ごとの設定」。
 重ねた全体か作業中の版にどれか 1 つでも在れば、何も書かない。版が 1 つも無ければ何も書かない（版を作るのは spec-loop）。
 
 **`add`**（`write-screens.py add`）は、画面を 1 つ足す。足すものは次の 3 つで、**項目と遷移の行は足さない**（ボタンと遷移は画面の中身で、利用者と決めて表に足す）。

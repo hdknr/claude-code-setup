@@ -284,7 +284,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **ワイヤーフレームの雛形の拡張子を `.drawio` にしない**——`check-diagram-freshness.py` が `diagrams/` の外の `.drawio` を止める
     - `scripts/write-screens.py` - `init`・`add` のスキルが呼ぶ書き込み（#1093。`hint`・`init`・`add`）。作業中の版の `requirements/screens/` に表と雛形を置き、
       **画面ID をどの版の生の表の鍵とも重ねずに採番する**。`check-screens.py` を読み込み、spec-loop の見つけ方・版の範囲・表の列を共有する（写さない）。
-      **書けないときは 1 つも書かない**。守る／守らないは docstring を正とする。テストは `scripts/test-write-screens.py`
+      **書けないときは 1 つも書かない**。**`init` の `--profile` と `--external` を両方省くと、基盤の profile（platform-spec の `shared/platform/settings.csv`）の画面の層の `重ねる先` が初期値になる——platform-spec は読み込まず、設定の置き場所と項目名は写し**（#1460。決められなければ 4 で止まる）。守る／守らないは docstring を正とする。テストは `scripts/test-write-screens.py`
     - `scripts/check-screens.py` - 画面の表と散文の仕様書を、**spec-loop の重ね方（`merge-versions.py` の `merge`）で重ねた全体**に当てる検査（#1092。
       表どうし・入口から辿れること・遷移の無いボタン・Q&A の根拠・成果物の表への参照・未決定の印・散文の節）。**spec-loop の決まりは写さずに読み込み**（Q&A の番号の形・未決定の印・成果物の表の置き場所も）、
       **検査の前に spec-loop の版が対応の範囲かを確かめて、外なら 4 で止まる**。**ファイルを書かず、Q&A の番号を振らない**（起票の候補を出すだけ）。
@@ -519,7 +519,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-write-screens.py` - screen-spec の `init`・`add` の書き込みと雛形（#1093）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` と `plugins/screen-spec/templates/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べ、スキルの手順をスクリプトで再現する**
     （`hint` → `init` → `add` → `check-screens.py`）。#1093 の受入基準（空の案件で 0・Q&A 表を書き換えない・表で持つ節は印だけ）・採番・書けないときに書かないことと、
-    **雛形が `references/prose.md` の「雛形」に、本体の定数が `references/tables.md` に合うこと**を見る
+    **雛形が `references/prose.md` の「雛形」に、本体の定数が `references/tables.md` に合うこと**を見る。**基盤の profile から引く初期値（#1460）は一時の git リポジトリの profile で当て、プラグインの隣に読み込まれたら印を書く偽の platform-spec を置いて読み込まないことと、写した設定の項目名が platform-spec の定数と一致することを見る**
   - `test-build-mock.py` - screen-spec の UI モックの生成器（#1095）の回帰テスト（変異テストを含む）。**本体は `plugins/screen-spec/scripts/` にある**。
     **引数なし（CI）は文字列と印で決まる部分**——一時の git リポジトリの正本で生成し、埋め込んだ表を表と突き合わせ、外を読まない・印・版の中の描き方で止まる・`D-` と許可の外の列が出ない・書くのは出力の 1 ファイルだけ、と
     **本体の定数が `references/mock.md` と一致すること**を見る。**`--browser` は手元で回す部分**——ヘッドレスの Chrome を `node` の組み込みの WebSocket で動かし（依存は足さない）、
