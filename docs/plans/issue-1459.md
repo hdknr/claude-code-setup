@@ -113,7 +113,8 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼び、出力を
 
 - 仕様の穴 G1〜G4 は推奨で決めた（上の表）。確認の Issue: G1 #1493・G2 #1494・G3 #1495・G4 #1496（閉じない。Refs で指す）。
 - PR: #1492。PR 側の CI: `f35ae1b6` で 13 pass・1 skipping（deploy）。外部レビュー: 該当なし（`external-reviews.py` が 3）。手順 7 のマージは親がする。
-- マージ前の判断: C6（`ext-bad-kind` の止めた理由の文言）——推奨「マージする」。PR コメントに書く。
+- マージ前の判断: C6（`ext-bad-kind` の止めた理由の文言）——推奨「マージする」。PR コメントに書く。確認の Issue は親が立てた #1500（閉じない。Refs で指す）。
+- マージの直前の取り込み（親の依頼）: #1489（#1457。platform-spec・spec-loop）を取り込んだ。衝突なし。screen-spec は main で 0.8.0 のままで、この周の 0.9.0 は上げ直し不要。軽い 2 本（check-plugin-versions・skill-metrics --check）と PR 側の CI で確かめる（CLAUDE.md の #831 の例外）。
 
 ## 関門の進捗（再開点）
 
