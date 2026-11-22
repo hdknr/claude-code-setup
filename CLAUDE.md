@@ -288,6 +288,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-screens.py` - 画面の表と散文の仕様書を、**spec-loop の重ね方（`merge-versions.py` の `merge`）で重ねた全体**に当てる検査（#1092。
       表どうし・入口から辿れること・遷移の無いボタン・Q&A の根拠・成果物の表への参照・未決定の印・散文の節）。**spec-loop の決まりは写さずに読み込み**（Q&A の番号の形・未決定の印・成果物の表の置き場所も）、
       **検査の前に spec-loop の版が対応の範囲かを確かめて、外なら 4 で止まる**。**ファイルを書かず、Q&A の番号を振らない**（起票の候補を出すだけ）。
+      **`settings.csv` が外部の profile を名指したときだけ、spec-loop の `external-profile.py` を読み込んで画面の層を `web-spa` などの上に重ね、語彙・種別の既定・足す列を見る——読めない・`重ねる先` が食い違えば 4**（#1458。決まりの原本は `references/profiles.md` の「外部の profile」）。
       守る／守らないは docstring を正とする。テストは `scripts/test-check-screens.py`）
     - `scripts/build-mock.py` - 画面の表から **UI モック（HTML 1 枚）を生成する**（#1095。`check-screens.py` を読み込み、同じ重ね方の表から `<docs の親>/build/mock/v<n>/index.html` を書く——commit しない）。
       **外を読まず**、表は許可した列だけを JSON で埋め込み、**どのセルからも内部の層の番号（`D-`）を外す**。描き方の差し替えは版の外の `screen-spec/renderers/<画面ID>.js` で、
@@ -506,7 +507,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-screens.py` - screen-spec の画面・項目・遷移の表の検査（#1092）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べて走らせ**（spec-loop の重ね方を読み込むので）、
     #1092 の受入基準の陽性対照・陰性対照・実行の前後で正本が変わらないこと（Q&A の番号を振らない）と、**本体の定数が `plugins/screen-spec/references/` の原本と一致すること**を見る。
-    spec-loop の版の範囲は写しの `plugin.json` を書き換えて、プラグインのキャッシュの形は一時の設定のディレクトリ（`CLAUDE_CONFIG_DIR`）に作って当てる——利用者の `~/.claude` は読まない
+    spec-loop の版の範囲は写しの `plugin.json` を書き換えて、プラグインのキャッシュの形は一時の設定のディレクトリ（`CLAUDE_CONFIG_DIR`）に作って当てる——利用者の `~/.claude` は読まない。
+    **外部の profile（#1458）は試料ごとに一時の本物の git リポジトリ（タグつき）で作り、案件の `CLAUDE.md` の行か `SPEC_PROFILE_CLONE` で指す**（利用者の値は外す）
   - `test-screen-gate.py` - spec-loop の画面の表の関門（#1097）と、それを条件 1 に入れる `check-spec-exit.py` の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の spec-loop の写しを置き、隣に本物の screen-spec の写しを置く・置かない・偽物を名指す**で当て、
     正本の試料は `test-check-screens.py` の `base()` を読み込む。**陽性対照: 同じ「未定」の正本で、画面の関門を当てない条件 1 は 0**。プラグインのキャッシュの形は一時の `CLAUDE_CONFIG_DIR` に作る——利用者の `~/.claude` は読まない
