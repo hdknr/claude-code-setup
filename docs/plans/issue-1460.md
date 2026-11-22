@@ -131,13 +131,23 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 - 回帰テスト: `test-write-screens.py`（run-serial 越し）は `fb37d7dc` の木で緑（試料 61・変異 56・雛形の崩し 14・references の崩し 11・platform-spec の写しの崩し 3）。`test-check-screens.py` は同じ木で緑（試料 167・変異 137・references の崩し 35）
 - 1 パス目の指摘対応: `49457ada`（CR1-1・CR1-2）。`test-write-screens.py` は緑（試料 64・変異 59）。check-all（run-serial 越し）は `49457ada` の成果物で緑（23 本を回した・失敗 0・ほかは CACHED）。差分テストを `49457ada` で回し直した（275 件・差分 0）
 - 0 行の判定: `git diff fb37d7dc -- ':(top)' ':(top,exclude)docs/plans/issue-1460.md'` は 3 ファイル（profiles.md・write-screens.py・test-write-screens.py）——2 パス目を回す
-- 2 パス目: 割り目——割らない（cruise の周）。Verifier と `/code-review` に `49457ada` を渡した（結果は回収後に書く）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と手順 6 の 2 パス目（`/code-review`）
+- 2 パス目: 割り目——割らない（cruise の周）。Verifier（sonnet）を `49457ada` に当てた——反証 0 件（`test-write-screens.py` 緑・差分テスト 275 件差分 0・Verifier の陽性対照（`settings.csv` の行順の入れ替え）で差分 30 件・承認済みの一覧の 6 本は反証の条件に当たらない・`49457ada` 以降の差は計画ファイルだけ。正規化を外した差分 90 件は先頭の数件を見てパスの違いだけ）。報告は起動元に届かず、記録（transcript）から読んだ。`/code-review`（high）を `49457ada` に当てた——指摘 5 件（重要 1・nit 4。下の 2 パス目の採否の表）。報告は記録（transcript）から読んだ。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と手順 6 の 2 パス目（`/code-review`）
 - 割り目: 割らない（cruise の周）
 
 ## 既知の限界・決着済みの論点
 
 - 外部の profile の足した列を `add`・`build-mock.py`・MkDocs のフックはまだ知らない（#1458 で原本に書いた限界）——`init` が足した列つきで置いた表に `add` は断る。この Issue の範囲の外。
 - 基盤の profile の設定（`shared/platform/settings.csv`）の値の形の検査は platform-spec の `check-infra-profile.py` が持ち、screen-spec は写さない（読めなければ P1 のとおり止める）。
+
+### 2 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1（/code-review）CR1-1 の直しで、名指しの無い（画面の層が無い・`重ねる先` が空）基盤の profile でも、profile の名前に空白があれば引数を省いた `init` が 4 で止まる——`fb37d7dc` では 0 で `profile,未設定`（周の base と同じ）。写せる形の確かめが名指しの有無を見る前に在る | 示せる（/code-review の実走。直す前の本体 `49457ada` で試料 `base-no-screen-name-with-space` が 4、直した後で 0） | A2（この周の 2 パス目の前の直しが持ち込んだ後退） | 直す（確かめを名指しが分かった後へ移し、案内の文を直す。試料と差分テストの試料を足す）→ 狭いパス |
+| CR2-2（/code-review）試料 `base-screen-layer-version-out-of-range` で、確かめを外す変異を殺すのは `hint` の手順だけで、`init` の「初期値を引いた」が出ないことは見ていない | 示せる（変異の読み） | 無し（A9 の変異は名指しの試料で殺せている） | 残課題 |
+| CR2-3（/code-review）スキルの手順 2 の選択肢で、名指しがあるとき「`web-spa` だけ（外部の profile なし）」を選べない | 示せる（文） | 無し（A8 は推して確かめ 2 つを明示で渡すこと——手で `--external なし` は渡せる） | 残課題 |
+| CR2-4（/code-review）スキルの手順 3 の「0 以外なら何も書かれていない」は、書いている途中の失敗（docstring の守らないもの）と食い違う | 示せる（文） | 無し（文言） | 残課題 |
+| CR2-5（/code-review）CR1-4 の決着の理由（A5 は罠と platform-spec を置かない形で示した）は、A5 の「指す箇所が無く」を支えない——`profiles.md`・docstring・止める文が platform-spec の `infra-profile.md`・`check-infra-profile.py` を名指す | 示せる（文） | A5 の文言を字どおりに読めば当たる。ただし名指しは写しの出所と人への案内で、パスとして解決して読み込む箇所ではない（Issue の受入基準は「読み込まない」） | 残課題——A5 の「指す」は読み込む先として解決する箇所の意味で書いた。受入基準は周の途中で直さない（手順 6）ので、PR コメントで人間に渡す |
 
 ### 1 パス目の採否（直す線: 既定）
 
