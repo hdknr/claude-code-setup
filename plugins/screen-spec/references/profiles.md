@@ -111,7 +111,21 @@ ID・`要約`・`リンク`・`表`・`列`・`値` に改行か制御文字（U
 
 足す列は表の見出し行に入り、**見出し行は版の間で変えない**（上の「選び方」——このファイルの最初の節）。だから外部の profile（とそのタグ）も、表を置く最初の版で決める。
 後の版で外部の profile を足す・外す・足す列の違うタグに変えると、見出し行が決まりと違って違反（1）になる。
-`init`・`add`（`write-screens.py`）・UI モックの生成器（`build-mock.py`）・MkDocs のフックは、外部の profile が足した列をまだ知らない——見出し行が決まりと違うとして断る。
+`init`（`write-screens.py init`）は、外部の profile を書くときに足す列を見出し行に入れる（#1460）。`add`・UI モックの生成器（`build-mock.py`）・MkDocs のフックは、外部の profile が足した列をまだ知らない——見出し行が決まりと違うとして断る。
+
+### 基盤の profile から引く初期値
+
+基盤の profile が「画面は `web-spa` + `<外部の profile>`」と名指せば、`init` の初期値はそれになる（#1314 の提案 5・#1460）。利用者に確かめて決めるのは今と同じ（`init` のスキルが `hint` の出力から推して訊く）。
+
+- **基盤の profile**——platform-spec の案件の設定（重ねた全体の `shared/platform/settings.csv`。見出し行 `項目,値`、項目 `リポジトリ`・`profile`・`タグ`）が名指す外部の profile。
+  置き場所・見出し・項目名は platform-spec の `references/infra-profile.md` の「案件の設定」の写しで、**screen-spec は platform-spec を読み込まない**（このプラグインを置いているリポジトリのテストが platform-spec の定数と突き合わせる）。
+- **名指し**——基盤の profile のタグの時点の `profile.csv` の層 `画面` の `重ねる先`（spec-loop の `external-profile.py` で読む。探し方は上の「設定の行」と同じ）。
+  名指しがあれば、初期値は `profile` がその値・`外部の profile` が同じリポジトリと名前とタグ（同じ束の画面の層を重ねる）。
+- **効くのは `--profile` と `--external` を両方省いたときだけ**——どちらかを渡せば基盤の profile を読まず、省いた方は `未設定`・外部の profile なし。
+- **名指しが無い**（`profile.csv` に層 `画面` が無い・`重ねる先` が空）・**基盤の profile が無い**（`shared/platform/settings.csv` が無い）なら、今までの初期値（`未設定`・外部の profile なし）。
+- **初期値を決められなければ止める（4）**——設定の 3 つの項目が 1 行ずつ値つきで無い・見出し行が違う・spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・`profile.csv` が読めない・
+  `重ねる先` がこのプラグインの profile でない・名指しが在るのに値が `外部の profile` の行に写せない形（`リポジトリ` が `<持ち主>/<名前>` でない・profile とタグに空白——名指しが無ければ行に写さないので見ない）・画面の層が読めない（上の「読めないとき」と同じ確かめ。`hint` もこの確かめを通った値だけを初期値として出す）。今までの初期値に落とさない（落とすと profile の無い見出し行が置かれ、後の版で変えられない——上の「選び方」）。値を明示して渡せば進める。
+- 設定の値の形（タグの名前に使える形など）の全部は platform-spec の `check-infra-profile.py` が見る。`init` が見るのは、3 つの項目があることと `外部の profile` の行に写せることだけで、ほかは `external-profile.py` が読むときに判定する。
 
 ### 受け付ける形式の版
 
