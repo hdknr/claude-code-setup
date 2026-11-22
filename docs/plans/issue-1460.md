@@ -125,7 +125,7 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 - 関門 1 パス目: Verifier（sonnet・dev-loop:dev-loop-verifier。verifier.md 250 行を読んだ）を `fb37d7dc` に当てた——反証 0 件（気づき 3 件は下の採否の表）。報告は起動元に届かず、親が回した。
   Verifier の未確認: `test-screen-spec-pages.py`・`test-screen-gate.py`・`test-check-screens.py` の単体（run-serial の順番待ち）、11 の表の正規化を外す確かめ・承認済みの一覧の 6 本・取り出した木の rev-parse。
   前者 3 本は親の check-all（run-serial 越し。`65ae5893` の木＝成果物は `fb37d7dc` と同じ）で OK（`test-check-screens.py` 111 秒・`test-screen-gate.py` 29 秒・`test-screen-spec-pages.py` 54 秒・`test-scaffold-screens.py`・`test-build-mock.py` も OK）。
-  Verifier の差分テストの陽性対照: `base_initial` の基盤無しの戻り値を変えた写しで差分 6 件。`/code-review`（high）を `fb37d7dc` に当てた（結果は回収後に書く）。
+  Verifier の差分テストの陽性対照: `base_initial` の基盤無しの戻り値を変えた写しで差分 6 件。`/code-review`（high）を `fb37d7dc` に当てた——指摘 7 件（重要 2・nit 5。下の採否の表）。報告は親が回した。差し戻し: 1 パス目の指摘対応（CR1-1・CR1-2 を直す）。
 - check-all（run-serial 越し）: `65ae5893` で 1 本落ちた（check-plan-counts——件数の行が無かった。`5fda6505` で足した。ほかは OK・78 本 CACHED）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を init と check-screens の両方で取った。基盤の profile の試料は、clone を案件の根（docs の親）の `CLAUDE.md` の行で探させ、環境変数 `SPEC_PROFILE_CLONE`・`GIT_*` を外した（手元の環境で別の clone を読まない）。platform-spec を読み込まないことは、読み込まれたら印を書く偽の platform-spec を隣に置き、読み込む変異で印が出ること（陽性対照）を取った
 - 回帰テスト: `test-write-screens.py`（run-serial 越し）は `fb37d7dc` の木で緑（試料 61・変異 56・雛形の崩し 14・references の崩し 11・platform-spec の写しの崩し 3）。`test-check-screens.py` は同じ木で緑（試料 167・変異 137・references の崩し 35）
@@ -142,6 +142,13 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 | --- | --- | --- | --- |
 | V1-1（Verifier の気づき）`hint` の出力が、基盤の profile が無いときも `基盤の profile: … が無い` の 1 行だけ増え、差分テストは `init` しか比べていない | 示せる（Verifier の実走） | 無し——「振る舞いを変えない」は A2（`init` が書くもの・終了コード・出力）と A6（`check-screens.py`）だけで、`hint` は Issue の要件どおり基盤の profile の名指しを出すために変える口（A1 の「`hint` がその初期値を出す」）。承認済みの変更の一覧は差分テストの比べる範囲（`init`・`check-screens.py`）の一覧で、`hint` はその範囲に入れていない | 残課題（記録だけ） |
 | V1-2（Verifier の気づき）設定の項目の重なりのエラー文の空白が揃っていない | 示せる（文） | 無し（文言） | 残課題 |
+| CR1-1（/code-review）引数なしの `init` が設定の `リポジトリ`・`profile`・`タグ` を確かめずに `外部の profile` の行へ写す——`リポジトリ,guide`・空白を含む profile で `init` は 0 で書くが、直後の `check-screens.py` が違反 1 | 示せる（/code-review の実走。直した後の試料 `base-repo-without-slash`・`base-name-with-space` が、確かめを外す変異で赤） | A1（直後の `check-screens.py` が 0） | 直す（`base_initial` で行に写せる形か確かめ、駄目なら 4） |
+| CR1-2（/code-review）`hint` は画面の層の形式の版・行を確かめないので、`init` が拒む初期値（形式の版 2）を推し、`init` は「初期値を引いた」と出してから 4 で止まる | 示せる（/code-review の実走。試料 `base-screen-layer-version-out-of-range`——確かめを外す変異で赤） | A1（`hint` が出すのは `init` の初期値。拒まれる値は初期値でない） | 直す（`base_initial` で `load_external` を当て、通った値だけを初期値にする——`hint` と `init` の両方） |
+| CR1-3（/code-review）`load_external` の文言が settings.csv を前提にしている・`--external` だけで選んでいない「profile が '未設定'」が出る | 示せる（文言） | 無し（A6 で `check-screens.py` の出力は変えない） | 残課題 |
+| CR1-4（/code-review）A5 の罠は `check-infra-profile.py`・`__init__.py` の実行しか拾わず、静的な走査が無い | 示せる（試料の形） | 無し（A5 は罠の印と platform-spec を置かない形で示している） | 残課題 |
+| CR1-5（/code-review）`test-write-screens.py` の試料で同じ文字列への `replace` が何もしておらず、見出し行全体を比べていない | 示せる | 無し（見出し行は `EXT_S_HEAD`・`EXT_T_HEAD` で比べている） | 残課題 |
+| CR1-6（/code-review）`--profile` だけを渡すと、基盤の profile が名指す外部の profile を黙って落とす | 示せる | 無し（A3 は明示の引数が勝つと決めた。スキルは 2 つとも明示で渡す） | 残課題 |
+| CR1-7（/code-review）コミットが `Refs #1460` で `Fixes` が無い | 示せる | 無し（周の記録） | 捨てる（PR の本文に `Fixes #1460` を書く） |
 | V1-3（Verifier の気づき）`--external` だけを渡すと 4 | 示せる | 無し（設計どおり——省いた `--profile` は `未設定` で、`未設定` には重ねられない。A3） | 残課題（決着） |
 
 ## 手順 8 の記録
