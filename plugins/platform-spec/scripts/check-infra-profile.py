@@ -34,9 +34,13 @@ usage: python3 check-infra-profile.py <docs ディレクトリ> [--upto <n>] [--
 - 設定に同じ項目が 2 行あれば 1
 - 設定の値が空なら 1
 - 設定に決まりの項目が足りなければ 1
+- 設定の `リポジトリ` が `<持ち主>/<名前>` の形でなければ 1
+- 設定の `profile` が profile の名前の形（`/` を含まない・`.`・`..` でない）でなければ 1
+- 設定の `タグ` がタグの名前に使えない形（`git check-ref-format` が通さない。`v1~1` など）なら 1
 - 設定があれば、`profile の行` の値が無くても profile を読む（設定の誤りを 0 にしない）
 - profile に基盤の層が無ければ 4（「無い」の 3 にしない）
 - 基盤の層の表の見出しが形式の版 1 の 4 列（`ID,要約,リンク,項目`）でなければ 4
+- 基盤の層の表の見出しは、空の行を飛ばした最初の行で読む（spec-loop の読み方と同じ）
 - 名指した spec-loop が spec-loop でなければ、ほかを探さずに 4
 - spec-loop の版が対応の範囲の外なら、照らす前に 4
 - 重ね合わせが spec-loop の決まりに反すれば 1
@@ -66,6 +70,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -94,6 +99,7 @@ LAYER_COLUMNS = ["ID", "要約", "リンク", "項目"]
 FORMAT_LOW = "1"   # この版を含む
 FORMAT_HIGH = "2"  # この版を含まない
 ID_SEPARATOR = "・"
+REPO_FORM = re.compile(r"[^/\s]+/[^/\s]+")
 
 
 class Stop(Exception):
@@ -275,7 +281,18 @@ class Checker:
         for key in SETTING_KEYS:
             if key not in found:
                 self.violations.append(f"{SETTINGS}: 項目 {key} の行が無い")
+        self.setting_forms(found)
         return found
+
+    def setting_forms(self, found: dict[str, str]) -> None:
+        """設定の値の形。違えば violations に足す（外部の profile を読む前に、書き間違いを 1 にする）。"""
+        repo, name, tag = (found.get(key, "") for key in SETTING_KEYS)
+        if repo and not REPO_FORM.fullmatch(repo):
+            self.violations.append(f"{SETTINGS}: {SETTING_REPO} {repo!r} が `<持ち主>/<名前>` の形でない")
+        if name and ("/" in name or name in (".", "..")):
+            self.violations.append(f"{SETTINGS}: {SETTING_PROFILE} {name!r} が profile の名前の形でない（`/` を含まない・`.`・`..` でない）")
+        if tag and subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], capture_output=True).returncode != 0:
+            self.violations.append(f"{SETTINGS}: {SETTING_TAG} {tag!r} がタグの名前に使えない形")
 
     def layer_ids(self, settings: dict[str, str]) -> set[str]:
         """設定のタグの時点の基盤の層の ID。判定できなければ Stop。"""
@@ -286,7 +303,8 @@ class Checker:
             commit = ext.resolve_tag(clone, tag)
             layer = ext.read_layer(clone, commit, name, LAYER, FORMAT_LOW, FORMAT_HIGH)
             for path in layer.files:
-                head = next(csv.reader(io.StringIO(ext.read_blob(clone, commit, path).decode("utf-8-sig"), newline="")), [])
+                head = next((row for row in csv.reader(io.StringIO(ext.read_blob(clone, commit, path).decode("utf-8-sig"), newline=""))
+                             if any(cell.strip() for cell in row)), [])
                 if head != LAYER_COLUMNS:
                     raise Stop(f"{repo} の {path}（タグ {tag}）の見出しが形式の版 1 の `{','.join(LAYER_COLUMNS)}` でない: {','.join(head)}")
         except ext.LayerMissing as e:

@@ -92,12 +92,16 @@ CASES: list[tuple[str, dict, list[str], int, str, str]] = [
     ("設定の同じ項目", with_(OK, settings=settings(extra="タグ,v2\n")), [], 1, "項目 タグ が 2 行ある", ""),
     ("設定の空の値", with_(OK, settings=settings(profile="")), [], 1, "profile の値が空", ""),
     ("設定の足りない項目", with_(OK, settings="項目,値\nリポジトリ,org/guide\nprofile,org\n"), [], 1, "項目 タグ の行が無い", ""),
+    ("設定のリポジトリの形", with_(OK, settings=settings(repo="guide")), ["--clone", "{clone}"], 1, "リポジトリ 'guide' が `<持ち主>/<名前>` の形でない", ""),
+    ("設定の profile の形", with_(OK, settings=settings(profile="a/b")), [], 1, "profile 'a/b' が profile の名前の形でない", ""),
+    ("設定のタグの形", with_(OK, settings=settings("v1~1")), [], 1, "タグ 'v1~1' がタグの名前に使えない形", ""),
     ("設定があれば値が無くても読む", {I: infra("", ""), S: settings("nope"), CLAUDE: DECL}, [], 4, "タグ", ""),
     ("clone が見つからない", with_(OK, claude=None), [], 4, "手元の clone が見つからない", ""),
     ("タグが無い", with_(OK, settings=settings("v9")), [], 4, "v9", ""),
     ("基盤の層が無い", with_(OK, settings=settings("nolayer")), [], 4, "基盤の層が無い", ""),
     ("形式の版が範囲の外", with_(OK, settings=settings("fmt2")), [], 4, "受け付ける範囲（1 以上 2 未満）の外", ""),
     ("層の見出しが違う", with_(OK, settings=settings("badhead")), [], 4, "形式の版 1 の `ID,要約,リンク,項目` でない", ""),
+    ("層の表の先頭が空の行", with_(OK, settings=settings("blankhead")), [], 0, "照らした ID 3 件", "違反: "),
     ("名指した spec-loop が違う", OK, ["--spec-loop", "{fake}"], 4, "spec-loop のプラグインの根でない", ""),
     ("spec-loop の版が範囲の外", OK, ["--spec-loop", "{old}"], 4, "対応の範囲の外", ""),
     ("spec-loop が古い", OK, ["--spec-loop", "{stale}"], 4, "PROFILE_COLUMN", ""),
@@ -125,11 +129,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            if False:\n                self.violations.append(f\"{where}: {key} の値が空\")", "設定の空の値"),
     ("設定の足りない項目を通す", "        for key in SETTING_KEYS:\n            if key not in found:", "        for key in ():\n            if key not in found:",
      "設定の足りない項目"),
+    ("リポジトリの形を見ない", "        if repo and not REPO_FORM.fullmatch(repo):", "        if False:", "設定のリポジトリの形"),
+    ("profile の形を見ない", '        if name and ("/" in name or name in (".", "..")):', "        if False:", "設定の profile の形"),
+    ("タグの形を見ない", '        if tag and subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], capture_output=True).returncode != 0:',
+     "        if False:", "設定のタグの形"),
     ("値が無ければ profile を読まない", "        known = self.layer_ids(settings)", "        known = self.layer_ids(settings) if refs else set()",
      "設定があれば値が無くても読む"),
     ("層が無いのを 4 にしない", '        except ext.LayerMissing as e:\n            raise Stop(f"profile {name}（{repo} のタグ {tag}）に{LAYER}の層が無い: {e}") from None\n',
      "", "基盤の層が無い"),
     ("層の見出しを見ない", "                if head != LAYER_COLUMNS:", "                if False:", "層の見出しが違う"),
+    ("見出しの前の空の行を飛ばさない", "if any(cell.strip() for cell in row)), [])", "if True), [])", "層の表の先頭が空の行"),
     ("名指しが違っても使う", "            if not is_spec_loop(root):\n                raise Stop(", "            if False:\n                raise Stop(",
      "名指した spec-loop が違う"),
     ("spec-loop の版を見ない", "    if not (SPEC_LOOP_MIN <= version < SPEC_LOOP_BELOW):", "    if False:", "spec-loop の版が範囲の外"),
@@ -173,7 +182,7 @@ LAYER_V1 = "ID,要約,リンク,項目\nLANG-1,Python 3.12,docs/guide.md,言語\
 
 
 def make_profile(root: Path, env: dict) -> Path:
-    """タグ v1・v2・fmt2・badhead・nolayer を持つ profile のリポジトリ。"""
+    """タグ v1・v2・fmt2・badhead・blankhead・nolayer を持つ profile のリポジトリ。"""
     assert_in_tmp(root)
     root.mkdir(parents=True)
     git(root, env, "init", "-q", "-b", "main")
@@ -197,6 +206,7 @@ def make_profile(root: Path, env: dict) -> Path:
     commit("v2", PROFILE_V1, LAYER_V1 + "HOST-9,AWS Lambda,,ホスティング環境\n")
     commit("fmt2", PROFILE_V1.replace("基盤,1,", "基盤,2,"), LAYER_V1)
     commit("badhead", PROFILE_V1, LAYER_V1.replace("ID,要約,リンク,項目", "ID,要約,リンク,決定"))
+    commit("blankhead", PROFILE_V1, "\n" + LAYER_V1)
     commit("nolayer", "層,形式の版,ファイル,重ねる先\n画面,1,screens/*.csv,web-spa\n", LAYER_V1,
            {"screens/a.csv": "ID,要約,リンク\nS-1,一覧,\n"})
     git(root, env, "checkout", "-q", "v1")  # 作業ツリーはどれかのタグ。読むのはタグの時点
