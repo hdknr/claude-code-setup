@@ -356,9 +356,6 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
         return UNSET, None, f"{PLATFORM_SETTINGS} が無い（基盤の profile から画面の profile を引かない）"
     repo, name, tag = setting
     label = f"基盤の profile {repo} の {name}（タグ {tag}）"
-    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):
-        raise checks.Stop(f"{label}: `外部の profile` の行（`<持ち主>/<リポジトリ> <名前> <タグ>`）に写せない形——"
-                          f"リポジトリは `<持ち主>/<名前>`、profile とタグは空白を含まない（platform-spec の check-infra-profile.py で確かめる）")
     path = docs.spec_loop / "scripts" / checks.EXTERNAL_SCRIPT
     if not path.is_file():
         raise checks.Stop(f"{label}: spec-loop に {checks.EXTERNAL_SCRIPT} が無い（spec-loop の版が古い）")
@@ -382,6 +379,9 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
     if row.base not in profiles() or row.base not in checks.PROFILES:
         raise checks.Stop(f"{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先 {row.base!r} はこのプラグインの profile でない"
                           f"（あるもの: {'・'.join(profiles()) or 'なし'}）——--profile と --external を明示して渡す")
+    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):  # 名指しが在るときだけ（無ければ行に写さない）
+        raise checks.Stop(f"{label}: 画面の profile を名指しているが、`外部の profile` の行（`<持ち主>/<リポジトリ> <名前> <タグ>`。空白で区切る）に写せない形——"
+                          f"リポジトリが `<持ち主>/<名前>` でないか、profile かタグが空白を含む（--profile と --external を明示して渡す）")
     checker = checks.Checker(docs.spec_loop, docs.docs, None)  # init が書く前に読むのと同じ読み方で、画面の層を確かめる（形式の版・層の行）
     checker.profile = row.base
     checker.load_external(repo, name, tag)

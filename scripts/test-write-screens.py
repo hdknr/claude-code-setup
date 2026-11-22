@@ -277,11 +277,16 @@ CASES: list[tuple] = [
     # /code-review 1 パス目 CR1-1・CR1-2: 行に写せない設定の値・init が拒む画面の層は初期値にしない（clone は環境変数で指す——設定のリポジトリの名前に依らず見つかる）
     ("base-repo-without-slash", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("リポジトリ,org/guide", "リポジトリ,guide")}, [
         (["hint"], 0, "基盤の profile: 読めない（"),
-        (["init"], 4, "`外部の profile` の行（`<持ち主>/<リポジトリ> <名前> <タグ>`）に写せない形"),
+        (["init"], 4, "画面の profile を名指しているが、`外部の profile` の行"),
     ], None, [], {}, {**guide(), "env": True}),
     ("base-name-with-space", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("profile,org", "profile,my org")}, [
         (["init"], 4, "に写せない形"),
     ], None, [], {}, {"guide": {"v1": {k.replace(GUIDE_DIR, "spec-profile/my org"): v for k, v in guide()["guide"]["v1"].items()}}, "env": True}),
+    # /code-review 2 パス目 CR2-1: 名指しが無ければ、行に写せない値でも今の初期値（周の base と同じ）
+    ("base-no-screen-name-with-space", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("profile,org", "profile,my org")}, [
+        (["init"], 0, "画面IDの接頭辞: S-、profile: 未設定）"),
+    ], (0, "違反 0 件"), INIT_FILES, {SD + "settings.csv": SETTINGS},
+     {"guide": {"v1": {"spec-profile/my org/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n", "spec-profile/my org/infra.csv": GUIDE_INFRA}}, "env": True}),
     ("base-screen-layer-version-out-of-range", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 読めない（"),
         (["init"], 4, "形式の版 2"),
@@ -766,6 +771,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    except checks.Stop as e:\n        raise", "base-no-clone"),
     ("行に写せない設定の値を初期値にする", "    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):",
      "    if False:", "base-repo-without-slash"),
+    ("行に写せる形を名指しの有無より先に確かめる", "    row = layers.get(checks.EXTERNAL_LAYER)\n",
+     "    row = layers.get(checks.EXTERNAL_LAYER)\n    if any(len(value.split()) != 1 for value in (name, tag)):\n        raise checks.Stop('写せない')\n",
+     "base-no-screen-name-with-space"),
     ("profile の空白を見ない", "    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):",
      "    if not checks.EXTERNAL_REPO.fullmatch(repo):", "base-name-with-space"),
     ("名指した画面の層を確かめずに初期値にする", "    checker.load_external(repo, name, tag)\n    return row.base", "    return row.base", "base-screen-layer-version-out-of-range"),
