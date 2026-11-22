@@ -1,7 +1,7 @@
 {
   "name": "platform-spec",
-  "description": "spec-loop の基盤要件（shared/infra.csv）を、組織の開発ガイドのような外部の設計パターン（profile）とつなぐプラグイン（spec-loop は依存しない——置かなければ今の infra.csv と check-infra-csv.py のまま動く）。profile の中身はパターンの持ち主のリポジトリに置いたまま写さず、spec-loop の external-profile.py を読み込んで手元の clone のタグの時点を読む。基盤の層の表の形（ID・要約・リンク・項目。形式の版 1）と案件の設定（版の中の shared/platform/settings.csv にリポジトリ・profile・タグ）を決め、check-infra-profile.py が spec-loop の重ね方で重ねた全体の infra.csv の末尾の任意の列 profile の行（・で区切った ID）が設定のタグの基盤の層に在るかを照らし、無い ID を名指しする（読むだけ）。対応する spec-loop の版の範囲の外なら照らす前に止まる。スキルはまだ持たない",
-  "version": "0.1.0",
+  "description": "spec-loop の基盤要件（shared/infra.csv）を、組織の開発ガイドのような外部の設計パターン（profile）とつなぐプラグイン（spec-loop は依存しない——置かなければ今の infra.csv と check-infra-csv.py のまま動く）。profile の中身はパターンの持ち主のリポジトリに置いたまま写さず、spec-loop の external-profile.py を読み込んで手元の clone のタグの時点を読む。基盤の層の表の形（ID・要約・リンク・項目。形式の版 1）と案件の設定（版の中の shared/platform/settings.csv にリポジトリ・profile・タグ）を決め、check-infra-profile.py が spec-loop の重ね方で重ねた全体の infra.csv の末尾の任意の列 profile の行（・で区切った ID）が設定のタグの基盤の層に在るかを照らし、無い ID を名指しする（読むだけ）。check-profile-diff.py が profile の新しい版（手元の clone のタグのうち版の順が最も後ろのもの。--new で名指しも）と設定のタグを比べ、profile の行が指す行のうち変わった・消えた・リンクの切れた行を、共有の Q&A 表に起票する候補として出す（番号は振らない。採らないと決めた版は設定の任意の項目 確かめたタグ に書く）。spec-loop の profile-gate.py がこれを子のプロセスで呼んで proposal・scaffold の前の関門にする。対応する spec-loop の版の範囲の外なら照らす前に止まる。スキルはまだ持たない",
+  "version": "0.2.0",
   "author": {
     "name": "hdknr"
   }
