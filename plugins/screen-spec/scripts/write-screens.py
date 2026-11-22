@@ -59,7 +59,8 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - `init` は、`--profile` と `--external` を両方省いたときだけ基盤の profile を読む。どちらかを渡せば読まず（読めない基盤の profile があっても止まらない）、省いた方は `未設定`・外部の profile なし
 - 引数を省いた `init` は、基盤の profile の画面の層の `重ねる先` があれば、それを `profile` に、同じリポジトリ・名前・タグを外部の profile にする。
   基盤の profile が無い・画面の層が無い・`重ねる先` が空なら `未設定`・外部の profile なしで、書くものと出力は基盤の profile を見る前と同じ
-- 引数を省いた `init` で基盤の profile から初期値を決められなければ、今の初期値に落とさずに 4 で止める（何も書かない）
+- 引数を省いた `init` で基盤の profile から初期値を決められなければ、今の初期値に落とさずに 4 で止める（何も書かない）。
+  名指した画面の層は `load_external` で確かめ（形式の版・層の行）、設定の値が `外部の profile` の行に写せない形（`リポジトリ` に `/` が無い・profile とタグに空白）なら決められないとする——`hint` も同じ確かめを通った値だけを初期値として出す
 - `init` が外部の profile を書くときは、`check-screens.py` と同じ読み方（`load_external`）で読み、足す列を見出し行の profile の列の後ろに宣言の順で入れる（読めなければ 4）
 - platform-spec のファイルを読み込まない（基盤の profile の設定の項目名は写し、値は spec-loop の `external-profile.py` が読む）
 
@@ -73,7 +74,7 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 | **ワイヤーフレームの書き出し（SVG）** | spec-loop の `render-diagrams.py` が書き出す。`add` のスキルは書いた後にそれを走らせる |
 | **書いている途中の失敗**（ディスクが一杯・権限など） | 置き場所の形（途中がファイル・置き場所がディレクトリ）は書く前に確かめて 3 で止めるが、ほかの失敗では書いた分が残る。書いたものは 1 つずつ出力に名指しする |
 | **profile の選び直し** | `init` で選んだ profile は表の見出し行に入る。後の版で変えると spec-loop の重ね方が止める（`references/profiles.md` の「選び方」） |
-| **基盤の profile の設定の値の形**（`リポジトリ` の形・タグの名前の形・ほかの項目） | platform-spec の `check-infra-profile.py` が見る。ここは 3 つの項目が 1 行ずつ値つきで在ることだけを見て、値は spec-loop の `external-profile.py` が読むときに判定する |
+| **基盤の profile の設定の値の形の全部**（タグの名前に使える形・`.`・`..` の名前・ほかの項目） | platform-spec の `check-infra-profile.py` が見る。ここは 3 つの項目が 1 行ずつ値つきで在ることと、`外部の profile` の行に写せる形（`<持ち主>/<名前>`・空白なし）だけを見て、ほかは spec-loop の `external-profile.py` が読むときに判定する |
 | **外部の profile の足した列を `add` が知ること** | `add` は見出し行が決まり（core＋profile の列）と違えば断る（`references/profiles.md` の「足す列と見出し行」） |
 """
 
@@ -355,6 +356,9 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
         return UNSET, None, f"{PLATFORM_SETTINGS} が無い（基盤の profile から画面の profile を引かない）"
     repo, name, tag = setting
     label = f"基盤の profile {repo} の {name}（タグ {tag}）"
+    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):
+        raise checks.Stop(f"{label}: `外部の profile` の行（`<持ち主>/<リポジトリ> <名前> <タグ>`）に写せない形——"
+                          f"リポジトリは `<持ち主>/<名前>`、profile とタグは空白を含まない（platform-spec の check-infra-profile.py で確かめる）")
     path = docs.spec_loop / "scripts" / checks.EXTERNAL_SCRIPT
     if not path.is_file():
         raise checks.Stop(f"{label}: spec-loop に {checks.EXTERNAL_SCRIPT} が無い（spec-loop の版が古い）")
@@ -378,6 +382,9 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
     if row.base not in profiles() or row.base not in checks.PROFILES:
         raise checks.Stop(f"{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先 {row.base!r} はこのプラグインの profile でない"
                           f"（あるもの: {'・'.join(profiles()) or 'なし'}）——--profile と --external を明示して渡す")
+    checker = checks.Checker(docs.spec_loop, docs.docs, None)  # init が書く前に読むのと同じ読み方で、画面の層を確かめる（形式の版・層の行）
+    checker.profile = row.base
+    checker.load_external(repo, name, tag)
     return row.base, (repo, name, tag), f"画面は {row.base} + 外部の profile {repo} {name} {tag}（{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先）"
 
 

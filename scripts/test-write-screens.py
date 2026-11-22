@@ -274,6 +274,18 @@ CASES: list[tuple] = [
     ("base-overlay-unknown", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init"], 4, "重ねる先 'desktop' はこのプラグインの profile でない")], None, [], {},
      guide(GUIDE_PROFILE.replace(",web-spa\n", ",desktop\n"))),
     ("base-old-spec-loop", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "<noext>"], 4, "spec-loop に external-profile.py が無い")], None, [], {}, guide()),
+    # /code-review 1 パス目 CR1-1・CR1-2: 行に写せない設定の値・init が拒む画面の層は初期値にしない（clone は環境変数で指す——設定のリポジトリの名前に依らず見つかる）
+    ("base-repo-without-slash", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("リポジトリ,org/guide", "リポジトリ,guide")}, [
+        (["hint"], 0, "基盤の profile: 読めない（"),
+        (["init"], 4, "`外部の profile` の行（`<持ち主>/<リポジトリ> <名前> <タグ>`）に写せない形"),
+    ], None, [], {}, {**guide(), "env": True}),
+    ("base-name-with-space", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("profile,org", "profile,my org")}, [
+        (["init"], 4, "に写せない形"),
+    ], None, [], {}, {"guide": {"v1": {k.replace(GUIDE_DIR, "spec-profile/my org"): v for k, v in guide()["guide"]["v1"].items()}}, "env": True}),
+    ("base-screen-layer-version-out-of-range", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "基盤の profile: 読めない（"),
+        (["init"], 4, "形式の版 2"),
+    ], None, [], {}, guide(GUIDE_PROFILE.replace("画面,1,", "画面,2,"))),
     ("base-alone", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "<alone>"], 0, "外部の profile: org/guide org v1")], None, INIT_FILES,
      {SD + "settings.csv": EXT_SETTINGS}, guide()),
 ]
@@ -439,6 +451,8 @@ def run_case(plugin: Path, case_dir: Path, case) -> tuple[bool, str]:
     if "guide" in options:  # 基盤の profile のリポジトリ（#1460）。案件の根（docs の親）の CLAUDE.md の行で探させる
         build_profile_repo(case_dir / "guide", options["guide"], env)
         (case_dir / "CLAUDE.md").write_text("# 案件\n\n外部の profile の clone: org/guide guide\n", encoding="utf-8")
+        if options.get("env"):
+            env["SPEC_PROFILE_CLONE"] = str(case_dir / "guide")
         guide_before = git_state(case_dir / "guide", env)
     alone = None
     start = snapshot(docs)
@@ -750,6 +764,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    if False:\n        raise checks.Stop(f\"{label}: spec-loop に", "base-old-spec-loop"),
     ("init の Stop を 4 にしない", "    except checks.Stop as e:\n        print(f\"止めた: {e}——書いていない\", file=sys.stderr)\n        return 4",
      "    except checks.Stop as e:\n        raise", "base-no-clone"),
+    ("行に写せない設定の値を初期値にする", "    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):",
+     "    if False:", "base-repo-without-slash"),
+    ("profile の空白を見ない", "    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):",
+     "    if not checks.EXTERNAL_REPO.fullmatch(repo):", "base-name-with-space"),
+    ("名指した画面の層を確かめずに初期値にする", "    checker.load_external(repo, name, tag)\n    return row.base", "    return row.base", "base-screen-layer-version-out-of-range"),
     ("platform-spec を読み込む", "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n",
      "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n    _load(\"trap\", PLUGIN_ROOT.parent / \"platform-spec\" / \"scripts\" / \"check-infra-profile.py\")\n",
      "base-names-screen"),
