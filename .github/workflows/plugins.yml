@@ -385,7 +385,7 @@ jobs:
         run: python3 scripts/test-init-mkdocs.py
 
   # spec-loop のテストのうち、表の検査（Q&A 表・スケジュールと見積りの表）と仕様レビューを抜ける条件の判定と、
-  # ガントチャート・図の書き出し・Red テストと Issue の本文の生成と、spec-loop の重ね方を読み込む screen-spec の表の検査（ジョブの名前より広い）
+  # ガントチャート・図の書き出し・Red テストと Issue の本文の生成と、spec-loop の重ね方を読み込む screen-spec の表の検査と platform-spec の照合（ジョブの名前より広い）
   spec-loop-generate:
     runs-on: ubuntu-latest
     steps:
@@ -416,6 +416,10 @@ jobs:
       # 本体は plugins/spec-loop/scripts/ にある（feasibility がゲートに当て、scaffold・build-proposal が読み込む）。
       - name: spec-loop の基盤要件の表の検査のテスト（#950）
         run: python3 scripts/test-check-infra-csv.py
+
+      # 本体は plugins/platform-spec/scripts/ にある（spec-loop の重ね方と外部の profile の読み方を読み込むので、本物の spec-loop と並べて回す。profile は一時の git リポジトリ）。
+      - name: platform-spec の infra.csv と外部の profile の基盤の層の照合のテスト（#1456）
+        run: python3 scripts/test-check-infra-profile.py
 
       # 本体は plugins/screen-spec/scripts/ にある（spec-loop の重ね方を読み込むので、本物の spec-loop と並べて回す）。
       - name: screen-spec の画面・項目・遷移の表の検査のテスト（#1092）
