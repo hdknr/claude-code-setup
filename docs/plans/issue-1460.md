@@ -132,6 +132,7 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 - 1 パス目の指摘対応: `49457ada`（CR1-1・CR1-2）。`test-write-screens.py` は緑（試料 64・変異 59）。check-all（run-serial 越し）は `49457ada` の成果物で緑（23 本を回した・失敗 0・ほかは CACHED）。差分テストを `49457ada` で回し直した（275 件・差分 0）
 - 0 行の判定: `git diff fb37d7dc -- ':(top)' ':(top,exclude)docs/plans/issue-1460.md'` は 3 ファイル（profiles.md・write-screens.py・test-write-screens.py）——2 パス目を回す
 - 2 パス目: 割り目——割らない（cruise の周）。Verifier（sonnet）を `49457ada` に当てた——反証 0 件（`test-write-screens.py` 緑・差分テスト 275 件差分 0・Verifier の陽性対照（`settings.csv` の行順の入れ替え）で差分 30 件・承認済みの一覧の 6 本は反証の条件に当たらない・`49457ada` 以降の差は計画ファイルだけ。正規化を外した差分 90 件は先頭の数件を見てパスの違いだけ）。報告は起動元に届かず、記録（transcript）から読んだ。`/code-review`（high）を `49457ada` に当てた——指摘 5 件（重要 1・nit 4。下の 2 パス目の採否の表）。報告は記録（transcript）から読んだ。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と手順 6 の 2 パス目（`/code-review`）
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `46832b48a8d4718fc4aeb874f17da9a7bb1106ef`
 - 割り目: 割らない（cruise の周）
 
 ## 既知の限界・決着済みの論点
