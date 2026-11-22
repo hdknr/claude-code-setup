@@ -43,8 +43,10 @@ MUTATIONS = {
     "環境変数があっても CLAUDE.md を先に見る": [
         ("    if env.get(ENV_CLONE):\n", "    if env.get(ENV_CLONE) and not (Path(project) if project else Path.cwd()).joinpath(\"CLAUDE.md\").exists():\n")],
     "名指しが git のリポジトリでなくても使う": [("    if not path.is_dir() or not _is_repo(path):\n", "    if False:\n")],
-    "サブディレクトリも clone とする": [("    return top.returncode == 0 and Path(top.stdout.strip()).resolve() == path\n", "    return top.returncode == 0\n")],
-    "GIT_DIR を子の git に渡す": [("if k not in GIT_ENV_DROP}", "if True}")],
+    "サブディレクトリも clone とする": [("    return top.returncode == 0 and os.path.samefile(top.stdout.strip(), path)\n", "    return top.returncode == 0\n")],
+    "bare を根として読まない": [('    key = "--absolute-git-dir" if bare.stdout.strip() == "true" else "--show-toplevel"\n', '    key = "--show-toplevel"\n')],
+    "GIT_DIR などを子の git に渡す": [("    return {k: v for k, v in os.environ.items() if k not in drop}\n", "    return dict(os.environ)\n")],
+    "置き換えを効かせる": [('["git", "--no-replace-objects", "-C", str(clone), *args]', '["git", "-C", str(clone), *args]')],
     "どこにも無ければ案件の根を使う": [("    raise Undetermined(\n        f\"{repo} の手元の clone が見つからない",
                                   "    return root.resolve(), \"無し\"\n    raise Undetermined(\n        f\"{repo} の手元の clone が見つからない")],
     "ほかのリポジトリの行も使う": [("parts[0] == repo", "True")],
@@ -58,6 +60,7 @@ MUTATIONS = {
                            "    _git(clone, \"checkout\", \"-q\", \"--detach\", tag)\n    return proc.stdout.decode().strip()\n")],
     "上限を含む": [("    return lo <= v < hi\n", "    return lo <= v <= hi\n")],
     "足りない桁を 0 で揃えない": [("    v, lo, hi = _pad(v, n), _pad(lo, n), _pad(hi, n)\n", "")],
+    "ASCII でない数字を受け付ける": [('VERSION_RE = re.compile(r"[0-9]+(?:\\.[0-9]+)*")', 'VERSION_RE = re.compile(r"\\d+(?:\\.\\d+)*")')],
     "数字の後ろの文字を見ない": [('    if not VERSION_RE.fullmatch(text or ""):\n', '    if not VERSION_RE.match(text or ""):\n')],
     "層が無いのを判定できなかったにする": [('raise LayerMissing(f"層 {layer} が', 'raise Undetermined(f"層 {layer} が')],
     "profile.csv の見出しを見ない": [("if not rows or tuple(rows[0]) != PROFILE_COLUMNS:", "if not rows:")],
@@ -81,8 +84,10 @@ MUTATIONS = {
     "BOM つきの .md の先頭の見出しを落とす": [('.decode("utf-8", "replace").removeprefix("\\ufeff"))', '.decode("utf-8", "replace"))')],
     "リポジトリの外を指すリンクを切れたにしない": [("        if rel is None:\n            broken.append(", "        if rel is None:\n            continue\n            broken.append(")],
     "外の URL も見る": [("if not link or SCHEME_RE.match(link):", "if not link:")],
+    "百分率の符号化を戻さない": [("        path, anchor = unquote(path), unquote(anchor)\n", "")],
     "diff の切れたを古いタグで見る": [("broken = check_links(clone, new_commit, new) if new else []", "broken = check_links(clone, old_commit, new) if new else []")],
     "BOM を外さない": [('text = raw.decode("utf-8").removeprefix("\\ufeff")', 'text = raw.decode("utf-8")')],
+    "想定外の例外を 1 にする": [("        return EXIT_UNKNOWN\n\n\ndef _main(", "        raise\n\n\ndef _main(")],
 }
 
 PROFILE = "spec-profile/org"
@@ -96,7 +101,9 @@ V1 = {
                             "I-4,無し,,,\n"
                             "I-6,外へ,../outside.md,,\n"
                             "I-7,手元だけ,docs/untracked.md,,\n"
-                            "I-8,BOM,docs/bom.md#先頭,,\n",
+                            "I-8,BOM,docs/bom.md#先頭,,\n"
+                            "I-9,符号化,docs/%E6%97%A5%E6%9C%AC.md#%E8%AA%8D%E8%A8%BC,,\n",
+    "docs/日本.md": "# 認証\n",
     "docs/bom.md": "\ufeff# 先頭\n",
     f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,一覧,/docs/guide.md,一覧\n",
     f"{PROFILE}/screens/b.csv": "ID,要約,リンク,幅,高さ\nS-2,詳細,docs/old.md,100,\"2\n00\"\n",
@@ -111,11 +118,13 @@ V2[f"{PROFILE}/infra.csv"] = ("\ufeffID,要約,リンク,言語,備考\n"
                               "I-5,偽,docs/guide.md#偽の見出し,,\n"
                               "I-6,外へ,../outside.md,,\n"
                               "I-7,手元だけ,docs/untracked.md,,\n"
-                              "I-8,BOM,docs/bom.md#先頭,,\n")
+                              "I-8,BOM,docs/bom.md#先頭,,\n"
+                              "I-9,符号化,docs/%E6%97%A5%E6%9C%AC.md#%E8%AA%8D%E8%A8%BC,,\n")
 V2[f"{PROFILE}/screens/a.csv"] = "ID,要約,リンク,種類\nS-1,一覧,/docs/guide.md,一覧 \n"
 del V2["docs/old.md"]
 
 BAD = {
+    "bad-wide-digit": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,１.2,infra.csv,\n画面,1,screens/*.csv,\n"},
     "bad-version": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1a,infra.csv,\n画面,1,screens/*.csv,\n"},
     "bad-profile-head": {f"{PROFILE}/profile.csv": "層,版,ファイル,重ねる先\n基盤,1.2,infra.csv,\n"},
     "bad-dup-layer": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,infra.csv,\n基盤,1.2,infra.csv,\n"},
@@ -198,6 +207,12 @@ def build_template(base: Path) -> Path:
     work = dict(V2)
     work[f"{PROFILE}/profile.csv"] = "層,形式の版,ファイル,重ねる先\n基盤,9,infra.csv,\n画面,9,screens/*.csv,\n"
     commit_tree(prof, work, "work")
+    subprocess.run(["git", "clone", "-q", "--bare", str(prof), str(t / "bare.git")], check=True, capture_output=True)
+    # clone の置き換え: v1 の profile.csv の blob を、形式の版 9 の blob に差し替える（タグの中身は版 1.2 のまま）
+    old = git(prof, "rev-parse", f"v1:{PROFILE}/profile.csv").strip()
+    new = subprocess.run(["git", "-C", str(prof), "hash-object", "-w", "--stdin"], input="層,形式の版,ファイル,重ねる先\n基盤,9,infra.csv,\n画面,9,screens/*.csv,\n",
+                         capture_output=True, text=True, check=True).stdout.strip()
+    git(prof, "replace", old, new)
     for name in ("envclone", "declclone"):
         init_repo(t / name)
         commit_tree(t / name, {"README.md": name}, name)
@@ -285,6 +300,9 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
     o["どこにも無い"] = find()
     o["環境変数が git でない（行は在る）"] = find(decl=line, env=str(work / "plain"))
     o["引数がリポジトリの中のサブディレクトリ"] = find("--clone", str(prof / "docs"))
+    o["引数の大文字・小文字が実体と違う"] = find("--clone", str(work / "PROFILE")) if (work / "PROFILE").exists() else "大文字・小文字を区別するファイルシステム"
+    o["bare の clone"] = find("--clone", str(work / "bare.git"))
+    o["bare の中のサブディレクトリ"] = find("--clone", str(work / "bare.git" / "refs"))
     o["ほかのリポジトリの行だけ"] = find(decl=f"外部の profile の clone: other/repo {work / 'declclone'}\n")
     o["同じリポジトリの行が 2 行"] = find(decl=line + f"外部の profile の clone: {R} {work / 'envclone'}\n")
     o["フェンスの中の行だけ"] = find(decl="```text\n" + line + "```\n")
@@ -316,6 +334,18 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
         o["check v1（基盤・GIT_DIR がほかを指す）"] = ck("v1", "基盤=1,2")
     finally:
         os.environ.pop("GIT_DIR", None)
+    os.environ["GIT_OBJECT_DIRECTORY"] = str(work / "envclone" / ".git" / "objects")
+    try:
+        o["check v1（基盤・GIT_OBJECT_DIRECTORY がほかを指す）"] = ck("v1", "基盤=1,2")
+    finally:
+        os.environ.pop("GIT_OBJECT_DIRECTORY", None)
+    o["check bare v1（基盤）"] = run(mod, ["check", "--repo", R, "--clone", str(work / "bare.git"), "--profile", "org", "--tag", "v1", "--layer", "基盤=1,2"], base)
+    saved_path = os.environ.get("PATH", "")
+    os.environ["PATH"] = str(work / "plain")
+    try:
+        o["git が無い"] = run(mod, ["find", "--repo", R, "--clone", str(prof)], base)[0]
+    finally:
+        os.environ["PATH"] = saved_path
     o["check 層が無い"] = ck("v1", "運用=1,2")
     o["check 層が無い・切れた層"] = ck("v1", "運用=1,2", "基盤=1,2")
     for t in BAD:
@@ -371,6 +401,10 @@ def main() -> int:
         check("行が git のリポジトリでなければ 4", o["行が git でない"][0] == 4)
         check("環境変数が git のリポジトリでなければ、行に落ちず 4（A1）", o["環境変数が git でない（行は在る）"][0] == 4)
         check("リポジトリの中のサブディレクトリは clone にしない: 4（A1）", o["引数がリポジトリの中のサブディレクトリ"][0] == 4)
+        k = o["引数の大文字・小文字が実体と違う"]
+        check("パスの大文字・小文字が実体と違っても同じ根なら 0（区別するファイルシステムでは確かめない）", isinstance(k, str) or k[0] == 0)
+        check("bare の clone は根として読む: 0（A1）", o["bare の clone"][0] == 0)
+        check("bare の中のサブディレクトリは 4（A1）", o["bare の中のサブディレクトリ"][0] == 4)
         check("どこにも無ければ 4 で、gh では取りに行かないと言う（A1・A7）", o["どこにも無い"][0] == 4 and "gh では取りに行かない" in o["どこにも無い"][1])
         check("ほかのリポジトリの行だけなら 4", o["ほかのリポジトリの行だけ"][0] == 4)
         check("同じリポジトリの行が 2 行なら 4", o["同じリポジトリの行が 2 行"][0] == 4)
@@ -380,10 +414,11 @@ def main() -> int:
         check("check v1 の基盤: 切れたリンクがあって 1（A4）", c1[0] == 1)
         check("在る節（#認証）と重なった見出しの -1（#データベース-1）は切れない（A4）", "I-1 " not in c1[1] and "I-2 " not in c1[1])
         check("BOM つきの .md の先頭の見出しへのリンクは切れない（A4）", "I-8 " not in c1[1])
+        check("百分率で符号化したパスと節は戻して照らす（I-9 は切れない）（A4）", "I-9 " not in c1[1])
         check("外の URL と空のリンクは見ない（A4）", "I-3 " not in c1[1] and "I-4 " not in c1[1])
         check("リポジトリの外を指すリンクは切れた（A4）", "切れた: I-6 ../outside.md（リポジトリの外を指す）" in c1[1])
         check("作業ツリーにだけ在るファイルへのリンクは切れた（A2・A4）", "切れた: I-7 docs/untracked.md（ファイルがその時点に無い）" in c1[1])
-        check("BOM つきの CSV を読む・6 行（A8 の陽性対照）", "形式の版 1.2・7 行" in c1[1])
+        check("BOM つきの CSV を読む・8 行（A8 の陽性対照）", "形式の版 1.2・8 行" in c1[1])
         check("check の前後で clone の HEAD・作業ツリー・参照が変わらない（A2）", o["check v1 の前後で clone が変わらない"] is True)
         check("作業ツリーの中身がタグと違っても、別のブランチに居ても、タグの中身を読む（A2）",
               o["check v1（基盤・作業ツリーを書き換えた）"] == c1)
@@ -397,10 +432,14 @@ def main() -> int:
         check("タグが無ければ、同じ名前のブランチがあっても 4（A7）", o["check タグが無い（ブランチ v9 は在る）"][0] == 4)
         check("タグの名前の版の記法（v2~1）はたどらず 4（A7）", o["check 版の記法 v2~1"][0] == 4)
         check("GIT_DIR がほかのリポジトリを指していても、名指しの clone を読む（A1・A2）", o["check v1（基盤・GIT_DIR がほかを指す）"] == c1)
+        check("GIT_OBJECT_DIRECTORY がほかを指していても、名指しの clone を読む（A2）", o["check v1（基盤・GIT_OBJECT_DIRECTORY がほかを指す）"] == c1)
+        check("clone の置き換え（refs/replace）を効かせず、タグの中身を読む（A2）", "形式の版 1.2" in c1[1])
+        check("bare の clone でタグを読む: 1（切れたリンク）", o["check bare v1（基盤）"][0] == 1 and "形式の版 1.2・8 行" in o["check bare v1（基盤）"][1])
+        check("git が無ければ 4（想定外の例外を 1 にしない）（A7）", o["git が無い"] == 4)
         check("求めた層が無ければ 3（無い）（A7）", o["check 層が無い"][0] == 3 and "無い:" in o["check 層が無い"][1])
         check("無い層と切れた層を一緒に求めると 1（1 が 3 より強い）", o["check 層が無い・切れた層"][0] == 1)
         check("読めない形式の版（1a）は 4（A3）", o["check bad-version"][0] == 4 and "[基盤] 判定できなかった" in o["check bad-version"][1])
-        for t in ("bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file"):
+        for t in ("bad-wide-digit", "bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file"):
             check(f"表の形が違う {t} は 4（A8）", o[f"check {t}"][0] == 4)
         check("画面の層の後ろの列が違っても、層ごとに読める・改行入りの値も読む（A6）",
               o.get("read_layer の画面の行", {}).get("S-2", {}).get("高さ") == "2\n00"

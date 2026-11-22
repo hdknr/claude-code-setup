@@ -41,8 +41,10 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **引数で名指しした clone があれば、環境変数と `CLAUDE.md` を見ない。**
 - **環境変数があれば、`CLAUDE.md` の行を見ない。**
 - **名指し（引数・環境変数・行）が git のリポジトリでなければ、次の探し方に落ちずに 4**——黙って別の clone を読まない。
-- **名指しが git のリポジトリの中のサブディレクトリ（リポジトリの根でない）なら 4**——外のリポジトリを clone として読まない（bare のリポジトリは git のディレクトリそのものが根）。
-- **環境変数 `GIT_DIR`・`GIT_WORK_TREE`・`GIT_INDEX_FILE`・`GIT_COMMON_DIR` を子の git に渡さない**——フックの中などで走らせても、名指しの clone を読む。
+- **名指しが git のリポジトリの中のサブディレクトリ（リポジトリの根でない）なら 4**——外のリポジトリを clone として読まない。根かどうかは同じファイルか（`os.path.samefile`）で比べ、パスの大文字・小文字の書き方の違いでは 4 にしない。
+- **bare のリポジトリは、git のディレクトリそのものを根として読む。**
+- **git がリポジトリの場所を決める環境変数（`git rev-parse --local-env-vars` の全部。`GIT_DIR`・`GIT_OBJECT_DIRECTORY` など）を子の git に渡さない**——フックの中などで走らせても、名指しの clone を読む。
+- **clone の置き換え（`refs/replace`）を効かせない**（`--no-replace-objects`）——タグに無い中身を読まない。
 - **どこにも見つからなければ 4**（「無い」の 3 にしない）。
 - **`CLAUDE.md` の行は、ほかのリポジトリの行を使わない**——リポジトリの名前が一致する行だけ。
 - **同じリポジトリの行が 2 行以上なら 4**——どれを使うか決めない。
@@ -54,6 +56,7 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **形式の版が下限より小さければ 4、上限と同じか大きければ 4**（下限は含み、上限は含まない）。
 - **形式の版を桁ごとの数で比べる**——`1.10` は `1.9` より大きい。足りない桁は 0 として比べる（`1` と `1.0` は同じ）。
 - **数字と `.` 以外の形式の版は 4。**
+- **ASCII でない数字（全角の `１` など）の形式の版も 4。**
 - **求めた層が `profile.csv` に無ければ 3**（判定できなかったの 4 にしない）。
 - **`profile.csv` の見出しが `層,形式の版,ファイル,重ねる先` でなければ 4。**
 - **同じ層が 2 行あれば 4。**
@@ -74,8 +77,10 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **BOM つきの `.md` の先頭の見出しも id にする。**
 - **リポジトリの外を指す `リンク`（`..` で根より上）は切れた。**
 - **外の URL（`https:` などのスキームを持つ `リンク`）は見ない**——切れたにしない。
+- **百分率で符号化したパスと節（GitHub の URL からコピーした形）は、戻してから照らす。**
 - **`diff` の切れたリンクは、新しいタグの時点で見る。**
 - **BOM つきの CSV の先頭の列を読む。**
+- **想定外の例外（git が無い・パスに NUL など）は 4**——1（切れた・差分あり）と取り違えない。
 
 守らない:
 
@@ -99,6 +104,7 @@ import posixpath
 import re
 import subprocess
 import sys
+from urllib.parse import unquote
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -131,7 +137,7 @@ EXIT_USAGE = 2
 EXIT_ABSENT = 3
 EXIT_UNKNOWN = 4
 
-VERSION_RE = re.compile(r"\d+(?:\.\d+)*")
+VERSION_RE = re.compile(r"[0-9]+(?:\.[0-9]+)*")
 SCHEME_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 HEADING_RE = re.compile(r" {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*#*[ \t]*$")
@@ -165,11 +171,23 @@ class Layer:
 # ---- 探し方
 
 
-GIT_ENV_DROP = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")
+GIT_ENV_FALLBACK = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+                    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_REPLACE_REF_BASE", "GIT_CONFIG_PARAMETERS", "GIT_NAMESPACE")
+_drop_cache: list = []
+
+
+def _drop_vars() -> set:
+    """子の git に渡さない環境変数（`git rev-parse --local-env-vars` と、取れなかったときの既定の和）。"""
+    if not _drop_cache:
+        proc = subprocess.run(["git", "rev-parse", "--local-env-vars"], capture_output=True, text=True,
+                              env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
+        _drop_cache.append(set(proc.stdout.split()) | set(GIT_ENV_FALLBACK))
+    return _drop_cache[0]
 
 
 def _child_env() -> dict:
-    return {k: v for k, v in os.environ.items() if k not in GIT_ENV_DROP}
+    drop = _drop_vars()
+    return {k: v for k, v in os.environ.items() if k not in drop}
 
 
 def _is_repo(path: Path) -> bool:
@@ -180,7 +198,7 @@ def _is_repo(path: Path) -> bool:
         return False
     key = "--absolute-git-dir" if bare.stdout.strip() == "true" else "--show-toplevel"
     top = subprocess.run(["git", "-C", str(path), "rev-parse", key], capture_output=True, text=True, env=env)
-    return top.returncode == 0 and Path(top.stdout.strip()).resolve() == path
+    return top.returncode == 0 and os.path.samefile(top.stdout.strip(), path)
 
 
 def find_clone(repo: str, clone: str | None = None, project: str | Path | None = None, env=None) -> tuple[Path, str]:
@@ -226,7 +244,7 @@ def _named(path: Path, source: str) -> tuple[Path, str]:
 
 
 def _git(clone: Path, *args: str, data: bytes | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(clone), *args], input=data, capture_output=True, env=_child_env())
+    return subprocess.run(["git", "--no-replace-objects", "-C", str(clone), *args], input=data, capture_output=True, env=_child_env())
 
 
 def resolve_tag(clone: Path, tag: str) -> str:
@@ -412,6 +430,7 @@ def check_links(clone: Path, commit: str, layer: Layer) -> list[tuple[str, str, 
         if not link or SCHEME_RE.match(link):
             continue
         path, _, anchor = link.partition("#")
+        path, anchor = unquote(path), unquote(anchor)
         rel = _safe_rel(path.lstrip("/")) if path.strip("/") else None
         if rel is None:
             broken.append((rid, link, "リポジトリの中のファイルを指していない" if not path.strip("/") else "リポジトリの外を指す"))
@@ -472,6 +491,14 @@ def _worst(codes: list[int]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except Exception as e:  # 想定外の例外は判定できなかった（4）——1（切れた・差分あり）と取り違えない
+        print(f"判定できなかった（想定外の例外）: {type(e).__name__}: {e}")
+        return EXIT_UNKNOWN
+
+
+def _main(argv: list[str] | None) -> int:
     p = argparse.ArgumentParser(description="外部の profile を中身を知らずに読む（#1455）")
     sub = p.add_subparsers(dest="cmd")
     for cmd in ("find", "check", "diff"):
