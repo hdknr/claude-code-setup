@@ -104,7 +104,7 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 | 項目 | 書くもの |
 | --- | --- |
 | 旧 | `64e41878be4eace2a420d09e424a73a14006ced8`（周の base） |
-| 新 | `fb37d7dc`（実装のコミット） |
+| 新 | `49457ada`（1 パス目の指摘対応の後に回し直した。前の回は `fb37d7dc`（275 件・差分 0）） |
 | 入力の出どころ | サンプルと生成——(1) `init`: 正本の試料 9 つ（空の v1・基盤要件と Q&A と機能一覧つき・置き済み・版が無い・重ね合わせの違反・作業中の版が v2・基盤の profile に画面の層が無い・`重ねる先` が空・v2 に置いた基盤の profile に画面の層が無い）× 引数の組 12（省く・`--prefix SCR-`・`--profile web-spa`・`--profile 未設定`・`--profile desktop`・`--prefix s-`・`Q-`・`TBD-`・`F-`・`--profile web-spa --prefix A1-`・値の無い `--prefix`・知らない引数）= 108 件。終了コード・出力・書いたファイルの中身を比べた。(2) `check-screens.py`: `scripts/test-check-screens.py` の試料の全部 167 件（外部の profile の試料を含む）を同じ `run_one` で旧と新に当て、終了コードと出力を比べた。計 275 件 |
 | 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので `<tmp>` に揃える） |
 | 結果 | 比べた 275 件・差分 0 件・一覧に無い差分 0 件。陽性対照 2 つ: 新側の `base_initial` の「画面の層が無い」を `web-spa` を返す形にした写しで差分 4 件（`base-no-screen` と `base-no-screen-v2` の引数を省く・`--prefix SCR-`）、新側の `load_external` の既定の重なりの判定を外した写しで差分 1 件（`ext-default-duplicate`）——どちらも差分を検出する。スクリプトは scratchpad の `diff-1460/difftest.py`（残さない） |
@@ -129,6 +129,9 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 - check-all（run-serial 越し）: `65ae5893` で 1 本落ちた（check-plan-counts——件数の行が無かった。`5fda6505` で足した。ほかは OK・78 本 CACHED）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を init と check-screens の両方で取った。基盤の profile の試料は、clone を案件の根（docs の親）の `CLAUDE.md` の行で探させ、環境変数 `SPEC_PROFILE_CLONE`・`GIT_*` を外した（手元の環境で別の clone を読まない）。platform-spec を読み込まないことは、読み込まれたら印を書く偽の platform-spec を隣に置き、読み込む変異で印が出ること（陽性対照）を取った
 - 回帰テスト: `test-write-screens.py`（run-serial 越し）は `fb37d7dc` の木で緑（試料 61・変異 56・雛形の崩し 14・references の崩し 11・platform-spec の写しの崩し 3）。`test-check-screens.py` は同じ木で緑（試料 167・変異 137・references の崩し 35）
+- 1 パス目の指摘対応: `49457ada`（CR1-1・CR1-2）。`test-write-screens.py` は緑（試料 64・変異 59）。check-all（run-serial 越し）は `49457ada` の成果物で緑（23 本を回した・失敗 0・ほかは CACHED）。差分テストを `49457ada` で回し直した（275 件・差分 0）
+- 0 行の判定: `git diff fb37d7dc -- ':(top)' ':(top,exclude)docs/plans/issue-1460.md'` は 3 ファイル（profiles.md・write-screens.py・test-write-screens.py）——2 パス目を回す
+- 2 パス目: 割り目——割らない（cruise の周）。Verifier と `/code-review` に `49457ada` を渡した（結果は回収後に書く）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と手順 6 の 2 パス目（`/code-review`）
 - 割り目: 割らない（cruise の周）
 
 ## 既知の限界・決着済みの論点
