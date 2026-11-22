@@ -119,10 +119,20 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1458-screen-spec-external-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1458`・起点 `b37059d0`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`
-- 関門: 1 パス目へ（起点は下）
-- check-all: まだ。`test-check-screens.py`（run-serial 越し）は `5968a03b` の木で緑（試料 162・変異 130・references の崩し 35）
+- 1 パス目の指摘対応の起点（0 行の判定）: `fe3a6e3a93250e9c219f16f4027c1fcf7b093902`（関門の 2 つに渡した時点の HEAD。以後 `79d7f709` は計画ファイルだけ）
+- 関門 1 パス目: Verifier（sonnet・dev-loop:dev-loop-verifier）を `fe3a6e3a` に当てた——反証 1 件（R1）。`/code-review`（high）を `fe3a6e3a` に当てた——指摘 10 件（important 2・nit 8）。採否は下の表。差し戻し: 1 パス目の指摘対応（R1・CR-2 を直した。`a329ca3e`）。
+  Verifier の未確認: `test-check-screens.py` 全体と変異（親が run-serial 越しに回して緑）・承認済みの変更の一覧の確かめの 6 本・`build-mock.py` などが足した列を断る主張。
+- 2 パス目: 割り目——割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
+- check-all（run-serial 越し）: `fe3a6e3a` で 1 本落ちた（check-plan-counts——件数の行が無かった。`79d7f709` で足した。ほかの 99 本は OK・2 本 CACHED）。`test-check-screens.py`（run-serial 越し）は `5968a03b` の木で緑（試料 162・変異 130・references の崩し 35）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を取った。外部の profile の試料は走らせる場所（cwd）を案件の根と別にし、`CLAUDE.md` を docs の親で探すことが観測に効くようにした（変異「案件の根を docs の親にしない」が `ext-good` で落ちる）
 - 割り目: 割らない（cruise の周）
+
+```dev-loop-gates
+周の base: b37059d0d0f6ff317fddadfd2cd866eab10e5cd9
+関門: Verifier 1 fe3a6e3a93250e9c219f16f4027c1fcf7b093902 反証=1
+関門: /code-review 1 fe3a6e3a93250e9c219f16f4027c1fcf7b093902 指摘=10
+マージの反映: ドキュメントとプラグインの配布
+```
 
 ## 既知の限界・決着済みの論点
 
@@ -130,6 +140,22 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 - 外部の profile のリンクが切れているかは見ない（spec-loop の `external-profile.py check` が見る）。
 - 語彙はセルの値をそのまま比べる（`、` で区切らない）。
 - 外部の profile は案件に 1 つまで（G1）。
+
+### 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R1（Verifier）`profile` が `未設定` で層の `重ねる先` も `未設定` だと外部の profile が重なる | 示せる（Verifier の実走: 終了コード 1・語彙の違反 2 件。4 で止まらない） | B4 | 直す（`未設定` なら重ねる先に依らず 4。試料 `ext-base-unset-both`・変異「未設定 に重ねさせる」） |
+| CR-1 種別の既定（B3）は `根拠` にどの Q&A の番号があっても通る——`根拠` は全行に書くので、ほぼ全行で通る | 示せる（/code-review の実走: S-002 form・`根拠`=Q-R-002・modal で 0） | 無し（B3 は「その画面の行の `根拠` に Q&A の番号が無いもの」と決めており、そのとおり動く） | 残課題 |
+| CR-2 B7「宣言の順」を見る試料が無く、足す列の順を逆にする変異が生き残る | 示せる（/code-review の実走: 2 列の試料で変異が 0 のまま） | B7・B11 | 直す（2 列の試料 2 つ——層のファイルをまたぐ・ファイルの中——と変異 2 つ） |
+| CR-3a 空の `外部の profile` の行と値つきの行が並ぶと通る（`profile` の行と数え方が違う） | 示せる | 無し（B8 は「値の形・1 行まで」——空の行は使わない扱いと決めた） | 残課題 |
+| CR-3b 計画ファイルに件数の行が無い | 示せる | 無し（周の記録） | 捨てる（`79d7f709` で足した） |
+| CR-3c 外部の profile の行と `settings.csv` の違反が同時だと見出しの違反を出さずに返る | 示せる | 無し（違反 1 で止まるのは同じ） | 残課題 |
+| CR-3d `外部のprofile` など綴り違いの鍵を黙って無視する | 示せる | 無し（B6 は名指した外部の profile を外さないこと。名指しの無い行は設定ではない） | 残課題 |
+| CR-3e B9 の「本文の目印が出ない」に陽性対照が無い | 示せる（試料の形） | 無し（B9 の証明は「出力に目印が無い・ファイルを書かない」で、本体は本文を読まない） | 残課題 |
+| CR-3f profile の名前が `a/b`・`..` だと違反 1 でなく 4 | 示せる | 無し（名前の形は spec-loop の `external-profile.py` が判定する——読めないは 4） | 残課題 |
+| CR-3g `SPEC_PROFILE_CLONE` が別リポジトリの clone を指しても読む | 示せる | 無し（spec-loop の決まり——#1467 の確認の Issue の「守らない」） | 残課題 |
+| CR-3h `profiles.md` の「後の版で外部の profile を足すと見出しが違反」は列を足す profile のときだけ真 | 示せる（文） | 無し（文言） | 残課題 |
 
 ## 手順 8 の記録
 
