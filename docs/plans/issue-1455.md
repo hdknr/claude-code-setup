@@ -104,9 +104,15 @@ Issue 本文（外部入力）から読んだ要件: spec-loop に、外部の p
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1455-external-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1455`・起点 `f1e12efa`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `f1e12efad2c2fb7e91ba24b1f66a14316e393b6a`
-- 関門: まだ
+- 関門: 1 パス目の Verifier（sonnet・dev-loop:dev-loop-verifier）と `/code-review`（high）を `75d12897` に当てる（起動中——結果はここに書く）。
+- 1 パス目の指摘対応の起点（0 行の判定）: `75d12897a2bf09fbce39a75144c0be184b98e19b`
+- check-all（run-serial 越し）: `af2ee4ca` で 2 本落ちた（check-skill-pointers——原本が `scripts/test-…` を指した、check-plan-counts——件数の行が無かった）。直して `75d12897` に畳んだ（2 本は単独で緑）。全部はもう 1 度 PR の前に回す。
 - 交絡を潰した手順: まだ
 - 割り目: 割らない（cruise の周）
+
+```dev-loop-gates
+周の base: f1e12efad2c2fb7e91ba24b1f66a14316e393b6a
+```
 
 ## 既知の限界・決着済みの論点
 
