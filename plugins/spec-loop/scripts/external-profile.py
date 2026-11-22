@@ -78,6 +78,7 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **リポジトリの外を指す `リンク`（`..` で根より上）は切れた。**
 - **外の URL（`https:` などのスキームを持つ `リンク`）は見ない**——切れたにしない。
 - **百分率で符号化したパスと節（GitHub の URL からコピーした形）は、戻してから照らす。**
+- **`%` を含む名前のファイルを、書いたままの名前で指したリンクは切れたにしない**——書いたままの名前が在ればそれを指し、無いときだけ戻した名前を見る。
 - **`diff` の切れたリンクは、新しいタグの時点で見る。**
 - **BOM つきの CSV の先頭の列を読む。**
 - **想定外の例外（git が無い・パスに NUL など）は 4**——1（切れた・差分あり）と取り違えない。
@@ -429,8 +430,12 @@ def check_links(clone: Path, commit: str, layer: Layer) -> list[tuple[str, str, 
         link = row.get("リンク", "").strip()
         if not link or SCHEME_RE.match(link):
             continue
-        path, _, anchor = link.partition("#")
-        path, anchor = unquote(path), unquote(anchor)
+        raw_path, _, raw_anchor = link.partition("#")
+        # 書いたままの名前のファイルが在ればそれを指す（`%` を含む名前）。無ければ百分率の符号化を戻した名前を見る
+        raw_rel = _safe_rel(raw_path.lstrip("/")) if raw_path.strip("/") else None
+        path = raw_path if raw_rel is not None and (raw_rel in files or raw_rel in dirs) else unquote(raw_path)
+        anchors = {raw_anchor, unquote(raw_anchor)}
+        anchor = unquote(raw_anchor)
         rel = _safe_rel(path.lstrip("/")) if path.strip("/") else None
         if rel is None:
             broken.append((rid, link, "リポジトリの中のファイルを指していない" if not path.strip("/") else "リポジトリの外を指す"))
@@ -441,7 +446,7 @@ def check_links(clone: Path, commit: str, layer: Layer) -> list[tuple[str, str, 
         if anchor and rel.endswith(".md") and rel in files:
             if rel not in cache:
                 cache[rel] = heading_ids(read_blob(clone, commit, rel).decode("utf-8", "replace").removeprefix("\ufeff"))
-            if anchor not in cache[rel]:
+            if not anchors & cache[rel]:
                 broken.append((rid, link, f"節 #{anchor} が {rel} の見出しに無い"))
     return broken
 

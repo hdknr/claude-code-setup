@@ -79,12 +79,13 @@ MUTATIONS = {
     "足した行を出さない": [('"足した": sorted(set(n) - set(o)),', '"足した": [],')],
     "作業ツリーに在るファイルを在るとする": [("        if rel not in files and rel not in dirs:\n",
                                      "        if rel not in files and rel not in dirs and not (clone / rel).exists():\n")],
-    "節を見ない": [("            if anchor not in cache[rel]:\n", "            if False:\n")],
+    "節を見ない": [("            if not anchors & cache[rel]:\n", "            if False:\n")],
     "フェンスの中の見出しから id を作る": [("                fence = None\n            continue\n        h = HEADING_RE", "                fence = None\n        h = HEADING_RE")],
     "BOM つきの .md の先頭の見出しを落とす": [('.decode("utf-8", "replace").removeprefix("\\ufeff"))', '.decode("utf-8", "replace"))')],
     "リポジトリの外を指すリンクを切れたにしない": [("        if rel is None:\n            broken.append(", "        if rel is None:\n            continue\n            broken.append(")],
     "外の URL も見る": [("if not link or SCHEME_RE.match(link):", "if not link:")],
-    "百分率の符号化を戻さない": [("        path, anchor = unquote(path), unquote(anchor)\n", "")],
+    "百分率の符号化を戻さない": [("else unquote(raw_path)\n", "else raw_path\n"), ("anchors = {raw_anchor, unquote(raw_anchor)}", "anchors = {raw_anchor}")],
+    "書いたままの名前を見ない": [("path = raw_path if raw_rel is not None and (raw_rel in files or raw_rel in dirs) else unquote(raw_path)", "path = unquote(raw_path)")],
     "diff の切れたを古いタグで見る": [("broken = check_links(clone, new_commit, new) if new else []", "broken = check_links(clone, old_commit, new) if new else []")],
     "BOM を外さない": [('text = raw.decode("utf-8").removeprefix("\\ufeff")', 'text = raw.decode("utf-8")')],
     "想定外の例外を 1 にする": [("        return EXIT_UNKNOWN\n\n\ndef _main(", "        raise\n\n\ndef _main(")],
@@ -102,7 +103,9 @@ V1 = {
                             "I-6,外へ,../outside.md,,\n"
                             "I-7,手元だけ,docs/untracked.md,,\n"
                             "I-8,BOM,docs/bom.md#先頭,,\n"
-                            "I-9,符号化,docs/%E6%97%A5%E6%9C%AC.md#%E8%AA%8D%E8%A8%BC,,\n",
+                            "I-9,符号化,docs/%E6%97%A5%E6%9C%AC.md#%E8%AA%8D%E8%A8%BC,,\n"
+                            "I-10,百分率の名前,docs/a%20b.md,,\n",
+    "docs/a%20b.md": "# 名前に百分率\n",
     "docs/日本.md": "# 認証\n",
     "docs/bom.md": "\ufeff# 先頭\n",
     f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,一覧,/docs/guide.md,一覧\n",
@@ -119,7 +122,8 @@ V2[f"{PROFILE}/infra.csv"] = ("\ufeffID,要約,リンク,言語,備考\n"
                               "I-6,外へ,../outside.md,,\n"
                               "I-7,手元だけ,docs/untracked.md,,\n"
                               "I-8,BOM,docs/bom.md#先頭,,\n"
-                              "I-9,符号化,docs/%E6%97%A5%E6%9C%AC.md#%E8%AA%8D%E8%A8%BC,,\n")
+                              "I-9,符号化,docs/%E6%97%A5%E6%9C%AC.md#%E8%AA%8D%E8%A8%BC,,\n"
+                              "I-10,百分率の名前,docs/a%20b.md,,\n")
 V2[f"{PROFILE}/screens/a.csv"] = "ID,要約,リンク,種類\nS-1,一覧,/docs/guide.md,一覧 \n"
 del V2["docs/old.md"]
 
@@ -415,10 +419,11 @@ def main() -> int:
         check("在る節（#認証）と重なった見出しの -1（#データベース-1）は切れない（A4）", "I-1 " not in c1[1] and "I-2 " not in c1[1])
         check("BOM つきの .md の先頭の見出しへのリンクは切れない（A4）", "I-8 " not in c1[1])
         check("百分率で符号化したパスと節は戻して照らす（I-9 は切れない）（A4）", "I-9 " not in c1[1])
+        check("% を含む名前のファイルを書いたままの名前で指したリンクは切れない（I-10）（A4）", "I-10 " not in c1[1])
         check("外の URL と空のリンクは見ない（A4）", "I-3 " not in c1[1] and "I-4 " not in c1[1])
         check("リポジトリの外を指すリンクは切れた（A4）", "切れた: I-6 ../outside.md（リポジトリの外を指す）" in c1[1])
         check("作業ツリーにだけ在るファイルへのリンクは切れた（A2・A4）", "切れた: I-7 docs/untracked.md（ファイルがその時点に無い）" in c1[1])
-        check("BOM つきの CSV を読む・8 行（A8 の陽性対照）", "形式の版 1.2・8 行" in c1[1])
+        check("BOM つきの CSV を読む・9 行（A8 の陽性対照）", "形式の版 1.2・9 行" in c1[1])
         check("check の前後で clone の HEAD・作業ツリー・参照が変わらない（A2）", o["check v1 の前後で clone が変わらない"] is True)
         check("作業ツリーの中身がタグと違っても、別のブランチに居ても、タグの中身を読む（A2）",
               o["check v1（基盤・作業ツリーを書き換えた）"] == c1)
@@ -434,7 +439,7 @@ def main() -> int:
         check("GIT_DIR がほかのリポジトリを指していても、名指しの clone を読む（A1・A2）", o["check v1（基盤・GIT_DIR がほかを指す）"] == c1)
         check("GIT_OBJECT_DIRECTORY がほかを指していても、名指しの clone を読む（A2）", o["check v1（基盤・GIT_OBJECT_DIRECTORY がほかを指す）"] == c1)
         check("clone の置き換え（refs/replace）を効かせず、タグの中身を読む（A2）", "形式の版 1.2" in c1[1])
-        check("bare の clone でタグを読む: 1（切れたリンク）", o["check bare v1（基盤）"][0] == 1 and "形式の版 1.2・8 行" in o["check bare v1（基盤）"][1])
+        check("bare の clone でタグを読む: 1（切れたリンク）", o["check bare v1（基盤）"][0] == 1 and "形式の版 1.2・9 行" in o["check bare v1（基盤）"][1])
         check("git が無ければ 4（想定外の例外を 1 にしない）（A7）", o["git が無い"] == 4)
         check("求めた層が無ければ 3（無い）（A7）", o["check 層が無い"][0] == 3 and "無い:" in o["check 層が無い"][1])
         check("無い層と切れた層を一緒に求めると 1（1 が 3 より強い）", o["check 層が無い・切れた層"][0] == 1)
