@@ -25,20 +25,24 @@ feasibility の手順に「標準を採るかを Q&A 1 問で決め、標準か�
 - `plugins/platform-spec/scripts/check-profile-diff.py` — 新規。版の差分から起票の候補を出す（関門の本体）
 - `plugins/platform-spec/scripts/check-infra-profile.py` — 案件の設定の任意の項目 `確かめたタグ` を受ける（形はタグと同じに見る）
 - `plugins/platform-spec/references/infra-profile.md` — 「案件の設定」に任意の項目、「版の差分と関門」の節
-- `plugins/platform-spec/README.md`・`plugins/platform-spec/.claude-plugin/plugin.json` — 中身の表・description・版
+- `plugins/platform-spec/README.md` — 中身の表
+- `plugins/platform-spec/.claude-plugin/plugin.json` — description・版
 - `plugins/spec-loop/scripts/profile-gate.py` — 新規。profile の関門（`screen-gate.py` と同じ形。platform-spec を子のプロセスで呼ぶ）
 - `plugins/spec-loop/scripts/scaffold.py` — 生成の前に profile の関門を当てる（画面の関門と同じ条件）
 - `plugins/spec-loop/scripts/build-proposal.py` — 生成の前に、要求確定のタグの時点の `docs/` に profile の関門を当てる
 - `plugins/spec-loop/references/tree.md` — 「基盤要件」に profile の関門の 1 段落（原本は `profile-gate.py` の docstring を指す）
 - `plugins/spec-loop/skills/feasibility/SKILL.md` — 標準を採るかを 1 問で決め、外れる行だけ個別に決める流れと、版の差分の候補の読み方
-- `plugins/spec-loop/skills/scaffold/SKILL.md`・`plugins/spec-loop/skills/proposal/SKILL.md` — 生成の前の profile の関門の 1 行
+- `plugins/spec-loop/skills/scaffold/SKILL.md` — 生成の前の profile の関門の 1 行
+- `plugins/spec-loop/skills/proposal/SKILL.md` — 生成の前の profile の関門の 1 行
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（7 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版・description
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版・description
 - `scripts/test-check-profile-diff.py` — 新規。候補の回帰テスト（変異テストを含む）
 - `scripts/test-profile-gate.py` — 新規。関門と scaffold・proposal の口の回帰テスト（変異テストを含む）
 - `scripts/test-check-infra-profile.py` — 任意の項目の試料・変異・原本の突き合わせ
 - `scripts/test-check-infra-csv.py` — spec-loop が platform-spec の名前を持つのは `profile-gate.py` だけ、に狭める見張り
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — 回帰テストの登録と CI のステップ
+- `scripts/check-all.py` — 回帰テストの登録
+- `.github/workflows/plugins.yml` — CI のステップ
 - `CLAUDE.md` — プロジェクト構成の項
 - `docs/plans/issue-1457.md` — この計画ファイル
 
@@ -152,4 +156,4 @@ C1 に足す行（プロパティテスト）: 候補の集合について、ラ
 
 ## 手順 8 の記録
 
-（周の終わりに書く）
+- この周の起票: 2 件（仕様の穴 G1・G2 の確認の Issue。番号は立てた後に書く）
