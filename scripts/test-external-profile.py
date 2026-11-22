@@ -53,6 +53,7 @@ MUTATIONS = {
     "同じリポジトリの行が 2 行でも先頭を使う": [("    if len(hits) > 1:\n", "    if False:\n")],
     "フェンスの中の行も宣言と読む": [("tlc.scan_declarations(text, (DECL_KEY,))[DECL_KEY]",
                                  "[l[len(DECL_KEY):] for l in text.splitlines() if l.startswith(DECL_KEY)]")],
+    "行の ~ をホームに展開しない": [("        path = Path(hits[0]).expanduser()", "        path = Path(hits[0])")],
     "タグが無ければブランチに落ちる": [('f"refs/tags/{tag}^{{commit}}"', 'f"{tag}^{{commit}}"')],
     "版の記法をたどる": [('    if _git(clone, "check-ref-format", f"refs/tags/{tag}").returncode != 0:\n', "    if False:\n")],
     "HEAD の中身を読む": [('f"{commit}:{path}"', 'f"HEAD:{path}"')],
@@ -310,6 +311,19 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
     o["ほかのリポジトリの行だけ"] = find(decl=f"外部の profile の clone: other/repo {work / 'declclone'}\n")
     o["同じリポジトリの行が 2 行"] = find(decl=line + f"外部の profile の clone: {R} {work / 'envclone'}\n")
     o["フェンスの中の行だけ"] = find(decl="```text\n" + line + "```\n")
+    # 行の `~`（#1471）: HOME を試料の置き場所に向け、`~/declclone` が引数・環境変数と同じくホームに展開されるか（`~<名前>` は利用者のホームを読むので試さない）
+    saved_home = os.environ.get("HOME")
+    os.environ["HOME"] = str(work)
+    try:
+        o["行（~/）"] = find(decl=f"外部の profile の clone: {R} ~/declclone\n")
+        o["引数（~/）"] = find("--clone", "~/declclone")
+        o["環境変数（~/）"] = find(env="~/declclone")
+        o["行（~/ が git でない）"] = find(decl=f"外部の profile の clone: {R} ~/plain\n")
+    finally:
+        if saved_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = saved_home
 
     def ck(tag_, *layers):
         return run(mod, ["check", "--repo", R, "--clone", str(prof), "--profile", "org", "--tag", tag_,
@@ -413,6 +427,13 @@ def main() -> int:
         check("ほかのリポジトリの行だけなら 4", o["ほかのリポジトリの行だけ"][0] == 4)
         check("同じリポジトリの行が 2 行なら 4", o["同じリポジトリの行が 2 行"][0] == 4)
         check("フェンスの中の行だけなら 4", o["フェンスの中の行だけ"][0] == 4)
+        check("行の ~/ はホームに展開する（#1471）", o["行（~/）"][0] == 0 and "<tmp>/correct/declclone（出所: CLAUDE.md の" in src("行（~/）"))
+        check("行の ~/ は引数・環境変数と同じ clone を指す（#1471）",
+              o["引数（~/）"][0] == 0 and o["環境変数（~/）"][0] == 0
+              and all("<tmp>/correct/declclone（" in src(k) for k in ("引数（~/）", "環境変数（~/）")))
+        check("行の ~/ が git でなければ、展開した先を名指して 4（#1471）",
+              o["行（~/ が git でない）"][0] == 4 and "<tmp>/correct/plain は git" in o["行（~/ が git でない）"][1]
+              and "project/~" not in o["行（~/ が git でない）"][1])
 
         c1 = o["check v1（基盤）"]
         check("check v1 の基盤: 切れたリンクがあって 1（A4）", c1[0] == 1)
