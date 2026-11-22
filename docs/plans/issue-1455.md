@@ -106,7 +106,9 @@ Issue 本文（外部入力）から読んだ要件: spec-loop に、外部の p
 - 周の在り処: ブランチ `issue/1455-external-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1455`・起点 `f1e12efa`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `f1e12efad2c2fb7e91ba24b1f66a14316e393b6a`
 - 関門: 1 パス目の Verifier（sonnet・dev-loop:dev-loop-verifier）を `a5cfc689` に当てた——受入基準を破る反証 0 件、軽微な指摘 3 件（V-1〜V-3）。1 パス目の `/code-review`（high）を同じ `a5cfc689` に当てた——指摘 10 件（CR-1〜CR-10）。採否は下の表。差し戻し: 1 パス目の指摘対応（手順 4 へ）。
 - 1 パス目の指摘対応の起点（0 行の判定）: `a5cfc689`（`75d12897` から計画ファイルだけ進めたコミット。関門はどちらも `a5cfc689` の木を見た）
-- 2 パス目: 割り目——割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
+- 2 パス目: 割り目——割らない（cruise の周）。Verifier（sonnet）を `40b83c99` に当てた——受入基準を破る反証 0 件、軽微な指摘 3 件（M-1〜M-3）。`/code-review`（high）を `40b83c99` に当てた——指摘 10 件（CR2-1〜CR2-10）。採否は下の表。
+- check-all（run-serial 越し）: `40b83c99` で失敗 0（END rc=0。8 本はキャッシュ）。
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: このコミット（計画の記録だけを足したもの）。終点は指摘対応の最後のコミットで、コミットした直後に書く。
 - check-all（run-serial 越し）: `af2ee4ca` で 2 本落ちた（check-skill-pointers——原本が `scripts/test-…` を指した、check-plan-counts——件数の行が無かった）。直して `75d12897` に畳んだ（2 本は単独で緑）。全部はもう 1 度 PR の前に回す。
 - 交絡を潰した手順: まだ
 - 割り目: 割らない（cruise の周）
@@ -115,6 +117,8 @@ Issue 本文（外部入力）から読んだ要件: spec-loop に、外部の p
 周の base: f1e12efad2c2fb7e91ba24b1f66a14316e393b6a
 関門: Verifier 1 a5cfc689 反証=3
 関門: /code-review 1 a5cfc689 指摘=10
+関門: Verifier 2 40b83c99 反証=3
+関門: /code-review 2 40b83c99 指摘=10
 ```
 
 ## 既知の限界・決着済みの論点
@@ -143,3 +147,19 @@ Issue 本文（外部入力）から読んだ要件: spec-loop に、外部の p
 ## 手順 8 の記録
 
 - この周の起票: 4 件（仕様の穴 G1〜G4 の確認の Issue。`仕様の穴 = 推奨で決めて起票` の線で、手順 6 の起票の 3 条件の対象外）
+
+### 2 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| M-1／CR2-1 本物の clone の根でも、パスの大文字・小文字が実体と違うと 4（1 パス目の直しで入った） | 示せる（両者の実走: `--clone <s>/PROF`→4） | A1 | 直す（`os.path.samefile` で比べる） |
+| M-2／CR2-3 `CLAUDE.md` の行の `~/…` が展開されない | 示せる（実走で 4） | 無し（原本は「相対パスは案件の根から」とだけ書き、`~` を決めていない） | 残課題 |
+| M-3 全角数字の形式の版（`１`）を受け付ける | 示せる（`parse_version('１')` が (1,)） | A3（守る「数字と `.` 以外の形式の版は 4」） | 直す（`[0-9]` に） |
+| CR2-2 `GIT_OBJECT_DIRECTORY` などが子の git に渡る・clone の `refs/replace` がタグに無い中身を返す | 示せる（実走: 誤った理由で 4・replace で版 9 を読む） | A2（タグの時点の内容を読む） | 直す（`git rev-parse --local-env-vars` の全部を外し、`--no-replace-objects` を付ける。試料・変異） |
+| CR2-4 百分率で符号化したパス・節（GitHub の URL からコピーした形）が切れたになる | 示せる（実走） | A4（在るものを切れたとする） | 直す（パスと節を `unquote` して照らす。原本にも書く） |
+| CR2-5 bare のリポジトリの試料が無く、bare の分岐を壊しても緑 | 示せる（試料と変異の表に無い） | A1・A9 | 直す（bare の clone の試料と変異。守るの行を割る） |
+| CR2-6 docstring・CLAUDE.md・計画の「`rev-parse`・`ls-tree`・`cat-file` だけ」に `check-ref-format` が無い | 示せる（文） | 無し（`check-ref-format` も読むだけで、A2 の「変えない」は保たれる） | 残課題 |
+| CR2-7 `ファイル` の `?`・`[` も glob になる | 示せない（コードを読んだだけ） | 無し | 残課題 |
+| CR2-8 想定外の例外（git が無い・パスに NUL）で終了コード 1（「切れた・差分あり」と同じ） | 示せる（実走） | A7（判定できなかったを終了コードで分ける） | 直す（`main` の想定外の例外を 4 に） |
+| CR2-9 変異の scenario の外への例外を理由を見ずに「殺せた」と数える | 示せない（起こりうる形） | 無し | 残課題 |
+| CR2-10 テストのラベル「6 行」（判定は 7 行）・`expected_in_range` の docstring「4 桁」（コードは 6） | 示せる（文） | 無し | 残課題 |
