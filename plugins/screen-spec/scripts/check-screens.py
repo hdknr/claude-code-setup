@@ -57,7 +57,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
   `spec/qa-dev.csv` の部分は既定を採った内部の候補。決める人が 2 人の項目は `値` が空なら両方、`利用者`・`開発者` ならその部分だけ
 - 既定の答えの候補を、その候補の Q&A 表（共有か内部）の行の `質問` に行の ID があれば出さない（もう一方の表の行は見ない）
 - 既定の答えの候補に Q&A の番号を付けず、終了コードを変えない。出すのは表・項目・決める人・行の ID・要約・リンクだけで、リンク先を読まない
-- 種類 `答え` の行の `表` と `列` が組み込みの profile の誰が決めるかの項目でない・`要約` か `リンク` が空・`値` が空でも決める人でもない・同じ項目と部分の答えが 2 行なら 4
+- 種類 `答え` の行の `表` と `列` が組み込みの profile の誰が決めるかの項目でない・`要約` か `リンク` が空・`値` が空でも決める人でもない・同じ項目と部分の答えが 2 行・
+  ID・`要約`・`リンク` に改行か制御文字か Q&A の番号の形がある（候補の行を割る・振っていない番号を出す）なら 4
 
 **守らないもの**:
 
@@ -645,6 +646,13 @@ class Checker:
         """種類 `答え` の行（`references/profiles.md` の「既定の答え」。#1459）。誰が決めるかの項目と決める人の部分を確かめて持つ。決まりに合わなければ Stop。"""
         table, item, value = row["表"].strip(), row["列"].strip(), row["値"].strip()
         summary, link = row["要約"].strip(), row["リンク"].strip()
+        # 候補の行にそのまま出す欄——改行・制御文字は出力の行を割り（別の行を作る）、Q&A の番号の形は振っていない番号を出す
+        for name, text in (("ID", rid), ("要約", summary), ("リンク", link)):
+            if any(unicodedata.category(ch).startswith("C") for ch in text):
+                raise Stop(f"{external.label} の行 {rid!r}: {name} に改行か制御文字がある（起票の候補の行に出せない）")
+            if self.qa_number.search(text):
+                at = f"{external.label} の答えの行" if name == "ID" else where  # ID は出さない（番号の形をそのまま出すことになる）
+                raise Stop(f"{at}: {name} に Q&A の番号の形がある（番号は振らない——候補に番号を出さない）")
         builtin = PROFILES[self.profile]
         places = {path.rsplit("/", 1)[1]: builtin["columns"].get(path, []) for path in TABLES}
         places.update({place: builtin[part] for place, part in ANSWER_PLACES.items()})
