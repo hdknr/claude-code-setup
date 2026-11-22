@@ -144,7 +144,9 @@ C1 に足す行（プロパティテスト）: 候補の集合について、ラ
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1457-profile-diff-gate`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1457`・起点 `8a13a16f`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `8a13a16f22fbda1e6a98f4f99c158bad746120bd`
-- 関門: まだ（実装中）
+- 関門: 1 パス目を `068e030b` に当てる（Verifier は sonnet・dev-loop:dev-loop-verifier、/code-review は high）
+- 1 パス目の指摘対応の起点（0 行の判定）: `068e030b332c59d6b8042fbafd3f51b58c6e5e62`
+- check-all（run-serial 越し・出力 `checkall-1457-1.txt`）: `159f37fc` の木で失敗 2（`check-plan-counts.py`・`check-plan-scope.py`——計画ファイルの件数の行と 1 行 2 パターン。`a48f932f` で直し、2 本を単独で回して緑）
 - 割り目: 割らない（cruise の周）
 - 交絡を潰した手順: （実験の後に書く）
 
