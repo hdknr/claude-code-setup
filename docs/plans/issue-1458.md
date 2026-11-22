@@ -102,7 +102,7 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 | 項目 | 書くもの |
 | --- | --- |
 | 旧 | `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`（周の base） |
-| 新 | `5968a03b7532764908c3b04e0399d956b34b5010` |
+| 新 | `a329ca3e933956b81ab7e6f71d2979c7bc514334`（1 パス目の指摘対応の後に回し直した。前の回は `5968a03b` で同じ結果） |
 | 入力の出どころ | サンプル——`scripts/test-check-screens.py` の試料のうち外部の profile を持たないもの全部（周の base の時点の試料と、この周で足した外部の profile の無い試料）。127 件（外部の profile の行を値つきで持たない試料。この周で足した `ext-none-old-spec-loop`・`ext-setting-empty` を含む）。比べたのは終了コードと標準出力＋標準エラーの全文 |
 | 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので、`<tmp>` に揃える——比較に関係ない置き場所の違い） |
 | 結果 | 比べた 127 件・差分 0 件・一覧に無い差分 0 件。陽性対照: 新側の `起票の候補` の条件を `if False:` にした写しで差分 2 件（`marker-without-number` ほか）——差分を検出する |
@@ -122,6 +122,7 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 - 1 パス目の指摘対応の起点（0 行の判定）: `fe3a6e3a93250e9c219f16f4027c1fcf7b093902`（関門の 2 つに渡した時点の HEAD。以後 `79d7f709` は計画ファイルだけ）
 - 関門 1 パス目: Verifier（sonnet・dev-loop:dev-loop-verifier）を `fe3a6e3a` に当てた——反証 1 件（R1）。`/code-review`（high）を `fe3a6e3a` に当てた——指摘 10 件（important 2・nit 8）。採否は下の表。差し戻し: 1 パス目の指摘対応（R1・CR-2 を直した。`a329ca3e`）。
   Verifier の未確認: `test-check-screens.py` 全体と変異（親が run-serial 越しに回して緑）・承認済みの変更の一覧の確かめの 6 本・`build-mock.py` などが足した列を断る主張。
+- `test-check-screens.py`（run-serial 越し）は `a329ca3e` の木で緑（試料 165・変異 133・references の崩し 35）。差分テストを `a329ca3e` で回し直した（127 件・差分 0）。
 - 2 パス目: 割り目——割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
 - check-all（run-serial 越し）: `fe3a6e3a` で 1 本落ちた（check-plan-counts——件数の行が無かった。`79d7f709` で足した。ほかの 99 本は OK・2 本 CACHED）。`test-check-screens.py`（run-serial 越し）は `5968a03b` の木で緑（試料 162・変異 130・references の崩し 35）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を取った。外部の profile の試料は走らせる場所（cwd）を案件の根と別にし、`CLAUDE.md` を docs の親で探すことが観測に効くようにした（変異「案件の根を docs の親にしない」が `ext-good` で落ちる）
