@@ -54,6 +54,7 @@ MUTATIONS = {
     "フェンスの中の行も宣言と読む": [("tlc.scan_declarations(text, (DECL_KEY,))[DECL_KEY]",
                                  "[l[len(DECL_KEY):] for l in text.splitlines() if l.startswith(DECL_KEY)]")],
     "行の ~ をホームに展開しない": [("        path = _expand(Path(hits[0]), source)", "        path = Path(hits[0])")],
+    "行の ~ で始まらない値も展開する": [(' if hits[0].startswith("~") else Path(hits[0])', "")],
     "~ を展開できないと RuntimeError のまま投げる": [("    except RuntimeError as e:\n        raise Undetermined(", "    except ZeroDivisionError as e:\n        raise Undetermined(")],
     "タグが無ければブランチに落ちる": [('f"refs/tags/{tag}^{{commit}}"', 'f"{tag}^{{commit}}"')],
     "版の記法をたどる": [('    if _git(clone, "check-ref-format", f"refs/tags/{tag}").returncode != 0:\n', "    if False:\n")],
@@ -312,6 +313,9 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
     o["ほかのリポジトリの行だけ"] = find(decl=f"外部の profile の clone: other/repo {work / 'declclone'}\n")
     o["同じリポジトリの行が 2 行"] = find(decl=line + f"外部の profile の clone: {R} {work / 'envclone'}\n")
     o["フェンスの中の行だけ"] = find(decl="```text\n" + line + "```\n")
+    # `./~declclone`（#1471 の 2 パス目 CR2-1）: 案件の根の下の `~declclone` で、利用者のホームと読まない
+    (project / "~declclone").symlink_to(work / "declclone")
+    o["行（./~ は案件の根の下）"] = find(decl=f"外部の profile の clone: {R} ./~declclone\n")
     # 行の `~`（#1471）: HOME を試料の置き場所に向け、`~/declclone` が引数・環境変数と同じくホームに展開されるか（`~<名前>` は利用者のホームを読むので試さない）
     saved_home = os.environ.get("HOME")
     os.environ["HOME"] = str(work)
@@ -441,6 +445,8 @@ def main() -> int:
         check("行の ~/ は引数・環境変数と同じ clone を指す（#1471）",
               o["引数（~/）"][0] == 0 and o["環境変数（~/）"][0] == 0
               and all("<tmp>/correct/declclone（" in src(k) for k in ("引数（~/）", "環境変数（~/）")))
+        check("行の ./~… は展開せず案件の根の下を読む（#1471 CR2-1）", o["行（./~ は案件の根の下）"][0] == 0
+              and "<tmp>/correct/declclone（出所: CLAUDE.md の" in src("行（./~ は案件の根の下）"))
         check("行の ~<無い名前>/ は出所とパスを名指して 4（#1471）", o["行（~<無い名前>/）"][0] == 4
               and "CLAUDE.md の `外部の profile の clone:` の行 のパス ~nosuchuser-1471zz/prof の `~` をホームに展開できない" in o["行（~<無い名前>/）"][1])
         check("引数の ~<無い名前>/ も出所を名指して 4（#1471）", o["引数（~<無い名前>/）"][0] == 4

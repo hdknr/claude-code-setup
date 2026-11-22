@@ -50,6 +50,7 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **同じリポジトリの行が 2 行以上なら 4**——どれを使うか決めない。
 - **`CLAUDE.md` のコードフェンスの中の行を宣言と読まない**（読み方は `check-tlc.py` の `scan_declarations`）。
 - **`CLAUDE.md` の行のパスの `~`（`~<名前>` も）は、引数・環境変数と同じくホームに展開してから、相対パスかを見る**——`~/…` を案件の根の下の `~` というディレクトリと読まない。
+- **`CLAUDE.md` の行で展開するのは、書いた値が `~` で始まるときだけ**——`./~dir` は案件の根の下の `~dir` で、利用者 `dir` のホームと読まない。
 - **`~` を展開できない（無い利用者の名前 `~<名前>`・ホームが決まらない）なら、出所とパスを名指して Undetermined（4）**——`RuntimeError` のまま投げない（読み込んで使う側は Undetermined を捕まえる）。
 - **タグが無ければ 4**——ブランチや同じ名前の別の参照に落ちない（`refs/tags/` だけを見る）。
 - **タグの名前に版の記法（`v2~1`・`v2^` など、参照の名前に使えない形）を書いたら 4**——たどった先のタグの無いコミットを読まない。
@@ -228,7 +229,9 @@ def find_clone(repo: str, clone: str | None = None, project: str | Path | None =
         raise Undetermined(f"{md} に `{DECL_KEY} {repo} …` の行が {len(hits)} 行ある（どれを使うか決めない）")
     if hits:
         source = f"{md.name} の `{DECL_KEY}` の行"
-        path = _expand(Path(hits[0]), source)  # `~`・`~<名前>` は引数・環境変数と同じくホームに展開してから、相対かを見る
+        # `~`・`~<名前>` は引数・環境変数と同じくホームに展開してから、相対かを見る。展開するのは書いた値が `~` で始まるときだけ——
+        # Path は `./~dir` を `~dir` に縮めるので、Path にしてから展開すると案件の根の下の `~dir` を利用者のホームと読む
+        path = _expand(Path(hits[0]), source) if hits[0].startswith("~") else Path(hits[0])
         if not path.is_absolute():
             path = root / path
         return _named(path, source)

@@ -71,15 +71,18 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 周の在り処: ブランチ `issue/1471-profile-clone-tilde`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1471`・
   起点 `b37059d0`・base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: 1 パス目を通した（Verifier 反証 0 件・/code-review 指摘 2 件——採否は下の表）。2 パス目に渡す（Verifier・/code-review）。割り目（手順 6）: 割らない（cruise の周）。1 パス目の指摘対応の起点: `dbd27f367ea6378101342047516e74c8ba82e412`（実装のコミット。先に当てた関門に渡した時点の HEAD）
+- 関門: 1 パス目を通した（Verifier 反証 0 件・/code-review 指摘 2 件——採否は下の表）。2 パス目に渡した（Verifier・/code-review。終点 `920aa64e5314433800b474dbc1f07e11cd24254d`）。2 パス目の指摘対応の起点（狭いパスの起点）: `920aa64e5314433800b474dbc1f07e11cd24254d`。割り目（手順 6）: 割らない（cruise の周）。1 パス目の指摘対応の起点: `dbd27f367ea6378101342047516e74c8ba82e412`（実装のコミット。先に当てた関門に渡した時点の HEAD）
 - 歯止め: 最初の `check-all.py` の出力ファイルは並行の周と名前が重なり上書きされたので根拠にしない。`dbd27f36` の木（未コミットは計画ファイルだけ）で回し直した: 56 本を回して失敗 0・46 本は CACHED（入力が前回の緑から変わっていない）・`END rc=0`（出力 `checkall-1471-dbd27f36.txt`）
 - 1 パス目の指摘対応の歯止め: `run-serial.py` 越しの `check-all.py` が 102/102 本・失敗 0・`END rc=0`（出力 `checkall-1471-fix1.txt`。指摘対応のコミットの直前の木）。`test-external-profile.py` は全部合格（「守る」46 行・変異 46 件）
+- 2 パス目の指摘対応の歯止め: `checkall-1471-fix2.txt` で FAIL は `check-version-bump.py` の 1 本だけ（`spec-loop` の版が main の先端 0.133.0 より下——並行の周が先にマージした。取り込みと上げ直しは狭いパスの後に行う。指摘対応の途中で取り込まない）。ほかは OK か CACHED
 - 交絡を潰した手順: 直す前の本体（`git show b37059d0:…`）と直した後の本体を、同じ一時 HOME・同じ `CLAUDE.md`（`外部の profile の clone: o/r ~/prof`）で走らせ、前は 4（`<案件>/~/prof は git のリポジトリ（の根）でない`）・後は 0（`<HOME>/prof`）。陽性対照は引数 `--clone ~/prof` が同じ HOME で 0
 
 ```dev-loop-gates
 周の base: b37059d0d0f6ff317fddadfd2cd866eab10e5cd9
 関門: Verifier 1 dbd27f367ea6378101342047516e74c8ba82e412 反証=0
 関門: /code-review 1 dbd27f367ea6378101342047516e74c8ba82e412 指摘=2
+関門: Verifier 2 920aa64e5314433800b474dbc1f07e11cd24254d 反証=0
+関門: /code-review 2 920aa64e5314433800b474dbc1f07e11cd24254d 指摘=3
 ```
 
 ## 既知の限界・決着済みの論点
@@ -97,6 +100,18 @@ Verifier 1 パス目: 反証 0 件（報告は宛先がずれて親経由で届�
 | --- | --- | --- | --- |
 | CR1-1 行の `~<無い名前>/…` で `expanduser()` が `RuntimeError`。CLI は汎用の「想定外の例外」で 4、`find_clone` を直に呼ぶと `Undetermined` でなく `RuntimeError`。既知の限界 3 の理由が誤り | 示せる——行 `外部の profile の clone: o/r ~nosuchuserzz/prof` で CLI `判定できなかった（想定外の例外）: RuntimeError: Could not determine home directory.`（rc 4）。直す前の本体（b37059d0）では同じ行が `<案件>/~nosuchuserzz/prof は git のリポジトリ（の根）でない` の `Undetermined` だった——この周が持ち込んだ後退 | 4（既存の振る舞い：行が git のリポジトリでなければ `Undetermined` で出所とパスを名指す）・2（入口の間の食い違い） | 直す——`_expand` を足し、行と `_named`（引数・環境変数）の両方で `RuntimeError` を出所とパスを名指した `Undetermined` に変える。「守る」に 1 行・変異 1 件・試料 3 件（行・引数・直の呼び出し） |
 | CR1-2（nit）`find_clone` の `env` 引数が `~` の展開に効かない（`os.environ` の HOME を読む。`_named` の既存の展開も同じ） | 示せる（`env={'HOME':…}` でも実の HOME に解決）——ただし受入基準は「引数・環境変数と同じく展開する」で、引数・環境変数の側も `os.environ` を読む | 無し | 残課題（PR コメント）。`env` は `SPEC_PROFILE_CLONE` を差し替える口で、HOME の差し替えを約束していない |
+
+### 2 パス目の採否（直す線: 既定）
+
+Verifier 2 パス目: 反証 0 件（軽微の注記 1 件——展開できないときの 4 は原本の「探し方」に無く docstring の「守る」にだけある。反証ではないと Verifier 自身が書いている→残課題）。
+
+/code-review 2 パス目: 指摘 3 件。
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1（important）行に `./~dir` と書くと、`Path` が `~dir` に縮め、`_expand` が利用者 `dir` のホームとして展開して 4。直す前は `<案件>/~dir` で 0——この周が持ち込んだ後退 | 示せる——一時ディレクトリで案件の根の下に git の `~dir`、行 `外部の profile の clone: o/r ./~dir`: 920aa64e の本体は rc 4（`パス ~dir の ~ をホームに展開できない`）、b37059d0 の本体は rc 0（`<案件>/~dir`） | 4（相対パスは案件の根から） | 直す（2 パス目の直し→狭いパス）——書いた値が `~` で始まるときだけ展開。「守る」に 1 行・試料 1 件（`./~declclone`）・変異 1 件。直した後は同じ再現で rc 0 |
+| CR2-2（nit）原本の「探し方」が、展開できなければ止まることを書いていない（docstring の「守る」にだけある） | 示せる（原本の 3 の文） | 6（原本と本体が食い違わない——原本が足りない） | 直す——原本の 3 に「展開できなければ止める」「`~` で始まらない値は展開しない」を足す |
+| CR2-3（pre_existing）引数 `--clone ./~dir`・環境変数も `_named` の `Path(...)` で `~dir` に縮む | 示せる（レビューの再現） | 無し——前からの振る舞い（直す前の本体も `Path('./~dir').expanduser()` で同じ）。この周で変わったのは例外の型（RuntimeError → Undetermined）だけ | 残課題（PR コメント） |
 
 ## 手順 8 の記録
 
