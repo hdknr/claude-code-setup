@@ -17,7 +17,7 @@
    台帳の無い base は飛ばし、解決できない base は 2。**陽性対照**: 同じ試料で eval を足すと 0 になる（0 は 1 の試料の差だけで決まる）。
    付け替え（G16・G27〜G29。付け替え先を同じ PR で言い換えても 1——#1423 の S1・S2）・言い換えと縮め（G20〜G22・G30。外した項の頭に縮めた引きが当たっても 0——S5）・
    統合と言い換えの組み合わせ（G31・G35。統合元の除外は言い換えない付け替えに掛けない——G40）・外した項の文面を入れ子に残す（G36）・段落にした項への付け替え（G37・G38）・
-   本文が別の項の頭を引く項の言い換え（G41）・改名（G32〜G34・G39。改名だけなら 0——R1。コミット前でも 0）。
+   本文が別の項の頭を引く項の言い換え（G41）と、本文で引いていた頭の言い換えへの付け替え（G42。1——#1430）・改名（G32〜G34・G39。改名だけなら 0——R1。コミット前でも 0）。
 4. **原本との突き合わせ**——本物の台帳が 0 で通る・`references/prune.md` の記録の例が本体の正規表現に当たる・「削らない」が「黙って削らない」に置き換わっている。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、名指しした試料が期待から外れることを確かめる。変異ごとに、壊す箇所が本体にちょうど 1 回現れること・変異の前は期待どおりであることを先に確かめる。
@@ -499,6 +499,16 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
             "**AAA ひとつめの行です**", "**AAA 一つめの行です**"))
         (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "**AAA 一つめ"] + ROWS[0][3:]] + ROWS[1:]))
     scenario("G41 本文が base の時点から別の項の頭を引いている項の頭を言い換えても 0", 0, "問題 0 件", s_reword_quoting, pre_base=pre_quote_ccc)
+    # #1430: 元の項の本文が base の時点から付け替え先の頭を引いていても、付け替え先の頭の飾りを外した言い換えへの付け替えは 1（#1426 の狭いパスの N1）
+    def pre_quote_bbb(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("   - 入れ子は数えない", "   - 入れ子は数えない（下の「BBB ふたつめの行です」と同じ）"))
+    def s_reassign_to_quoted(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("1. **AAA ひとつめの行です**\n   - 入れ子は数えない\n", "").replace(
+            "2. **BBB ふたつめの行です**", "2. BBB ふたつめの行です"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "BBB ふたつめ"] + ROWS[0][3:], ROWS[2]]))
+        add_eval(root, eval_case("V-02", "x"))
+    scenario("G42 元の項の本文が base の時点から付け替え先の頭を引いていても、元の項を消して付け替え先の頭の飾りを外した言い換えへ付け替えれば 1",
+             1, "付け替えた", s_reassign_to_quoted, pre_base=pre_quote_bbb)
     return bad
 
 
@@ -571,11 +581,13 @@ MUTATIONS = [
     ("付け替え先を言い換えた付け替えを見ない（前方一致だけで照らす）", "guard", "            clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash\n", "            clash += [f for f in [] if flat(f) and flat(f) in cur and f not in clash\n", "guard"),
     ("元の項の頭が残っていても別の項の頭を付け替えと見る", "guard", "        if not (prev is not None and flat(prev) in cur):", "        if True:", "guard"),
     ("HEAD に残った項に限らない（外した項の頭も照らす）", "guard", "and f in new_heads]", "]", "guard"),
-    ("統合した項の頭も照らす", "guard", "and not any(f.startswith(m) for m in merged) and flat(f) not in prev_own]", "and flat(f) not in prev_own]", "guard"),
+    ("統合した項の頭も照らす", "guard", "and not any(f.startswith(m) for m in merged)\n", "and True\n", "guard"),
     ("統合元の除外を言い換えない付け替えにも掛ける", "guard", "others = [f for _, f, _ in base_items if f != prev]", "others = [f for _, f, _ in base_items if f != prev and not any(f.startswith(m) for m in merged)]", "guard"),
-    ("元の項が base で本文に引いていた頭も照らす", "guard", "and not any(f.startswith(m) for m in merged) and flat(f) not in prev_own]", "and not any(f.startswith(m) for m in merged)]", "guard"),
+    ("元の項が base で本文に引いていた頭も照らす", "guard", 'and (flat(f) not in prev_own or flat(f).startswith(flat(h["引き"])))]', "]", "guard"),
     ("項の続きの段落まで項に含める", "guard", "if line.strip() and not line[:1].isspace():", "if False:", "guard"),
     ("改名をコミットした履歴でだけ見る", "guard", '"-M", base, "--"', '"-M", f"{base}...HEAD", "--"', "guard"),
+    # #1430
+    ("本文で引いていた頭の除外を、新しい引きが前方一致する頭にも掛ける", "guard", 'flat(f) not in prev_own or flat(f).startswith(flat(h["引き"]))', "flat(f) not in prev_own", "guard"),
 ]
 
 
