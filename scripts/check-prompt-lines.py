@@ -25,8 +25,10 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
      base の別の項の頭が入っている——付け替え先の項を同じ PR で言い換えても当たる（#1423 の S1・S2）。
    元の項の頭が残る言い換え（頭の飾りを外す・本文の文を頭に上げる・頭を縮める）は通る。後者の照らしでは、**その ID の `統合元` に挙がった行の項の頭**（統合で取り込んだ文面）と、
    **元の項が base の時点から本文（字下げした行）で引いていた別の項の頭**は照らさない（前者は統合の言い換え、後者は同じ項の頭の言い換えを付け替えと見ないため）。
-   **ただし後者でも、HEAD でその引きが当たる項の頭の行（飾りと空白を除いた形）に入る頭は照らす**——元の項を消し、本文で引いていた項の頭の言い換え
-   （飾りを外す・前置きを足す・後ろを延ばす）へ ID を付け替える形を止める（#1430）。本文（字下げした行）でだけ引き続ける頭は、今までどおり照らさない。
+   **ただし後者でも、HEAD に項の頭のまま残らない頭は照らす**——元の項を消し、本文で引いていた項の頭を言い換えて（飾りを外す・前置きを足す・後ろを延ばす・
+   字下げした行へ折り返す・新しい頭を置いて元の頭を本文に下ろす）ID を付け替える形を止める（#1430）。引いた先の項の頭が HEAD に残るなら、
+   元の項の頭の言い換え（引いた文を頭の行に上げる形を含む）として照らさない。**同じ PR で、引いた先の項も言い換えるか外したうえで、元の項の頭を言い換え、
+   本文に引いた先の古い頭を残す形は 1 になる**（止まる向き）。
    **項を本文ごと別の新しい文面に差し替えて ID を付け替える形・付け替え先の頭も言い換えたうえで元の項の頭の文面をその字下げした行か字下げの無い続きの行に写して付け替える形は見ない**（守られているのは項の頭だけ）。
 
 ## 守らないもの
@@ -200,7 +202,6 @@ def main(argv: list[str]) -> int:
         new_items = effects.items_of(new_file.read_text(encoding="utf-8")) if new_file.is_file() else []
         new_heads = {f for _, f, _ in new_items}
         cur = next((flat(own_lines(body)) for _, f, body in new_items if f.startswith(h["引き"])), None)
-        cur_head = next((flat(f) for _, f, _ in new_items if f.startswith(h["引き"])), "")
         if cur is None:
             continue  # 引きが HEAD の項の頭に当たらない——上の check が名指す
         merged = [x["引き"] for x in base_rows if x["ID"] in h["統合元"].split(";") and x["ファイル"] == b["ファイル"]]
@@ -210,10 +211,11 @@ def main(argv: list[str]) -> int:
         # 元の項の頭が新しい引きの項に残らず、base の別の項の頭が入っている（付け替え先を言い換えた付け替え）
         if not (prev is not None and flat(prev) in cur):
             # 統合元の項の頭（取り込んだ文面）と、元の項が base の時点から本文で引いていた別の項の頭は照らさない。
-            # ただし新しい引きが当たる項の頭の行に入る頭は、本文で引いていても照らす——その頭の言い換えへの付け替えである（#1430）
+            # ただし HEAD に項の頭として残らない頭は、本文で引いていても照らす——引いた先の項が言い換えられて消え、その文面が
+            # 新しい引きの項に残るのは、その項の言い換えへの付け替えである（#1430）
             clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash
                       and not any(f.startswith(m) for m in merged)
-                      and (flat(f) not in prev_own or flat(f) in cur_head)]
+                      and (flat(f) not in prev_own or f not in new_heads)]
         if clash:
             problems.append(f"{b['ID']}: 引きを base に既にある別の項の頭「{clash[0][:30]}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")
             print(f"NG: {problems[-1]}")
