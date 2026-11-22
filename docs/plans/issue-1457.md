@@ -144,7 +144,9 @@ C1 に足す行（プロパティテスト）: 候補の集合について、ラ
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1457-profile-diff-gate`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1457`・起点 `8a13a16f`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `8a13a16f22fbda1e6a98f4f99c158bad746120bd`
-- 関門: 1 パス目を `068e030b` に当てる（Verifier は sonnet・dev-loop:dev-loop-verifier、/code-review は high）
+- 関門: 1 パス目の Verifier（sonnet・dev-loop:dev-loop-verifier）を `068e030b` に当てた——受入基準を破る反証 0 件、受入基準の外の懸念 2 件（V-1・V-2）。差し込み 10 は Verifier の変異 5 本のうち 4 本が赤・1 本は等価変異、差し込み 11 は 333 件で差分 0・陽性対照で検出。
+  1 パス目の `/code-review`（high）を `068e030b` に当てた——指摘 9 件（重要 4・nit 5。CR-1〜CR-9）。採否は下の表。差し戻し: 1 パス目の指摘対応（手順 4 へ）。
+- 1 パス目の指摘対応の終点: `0db99fbf`（差分は 0 行でない——2 パス目を回す）。割り目: 割らない（cruise の周）。
 - 1 パス目の指摘対応の起点（0 行の判定）: `068e030b332c59d6b8042fbafd3f51b58c6e5e62`
 - check-all（run-serial 越し・出力 `checkall-1457-1.txt`）: `159f37fc` の木で失敗 2（`check-plan-counts.py`・`check-plan-scope.py`——計画ファイルの件数の行と 1 行 2 パターン。`a48f932f` で直し、2 本を単独で回して緑）
 - 割り目: 割らない（cruise の周）
@@ -155,6 +157,22 @@ C1 に足す行（プロパティテスト）: 候補の集合について、ラ
 - 仕様の穴 G1・G2（上の表）。
 - 抜ける条件 1（`check-spec-exit.py`）とサインオフの前の確かめには profile の関門を入れない——Issue は proposal・scaffold の前を求める。
 - spec-loop が「profile を使っている」と読むのは `profile の行` の値だけ（`shared/platform/settings.csv` の置き場所は platform-spec の決まりで、spec-loop は持たない）。設定だけ置いて値の無い案件は関門が何もしない——比べる行が無い。
+- 決まりの外の項目の文言（`リポジトリ・profile・タグ のどれか`）は #1456 のまま——差分テストの領域（`確かめたタグ` を置かない設定）で出力を変えないため。任意の項目 `確かめたタグ` は「案件の設定」の原本が持つ。
+
+### 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V-1／CR-4 `--sort=-v:refname` がプレリリースのタグ（`v10-rc1`・`v2.0.0-rc1`）を正式な版より後ろに並べ、新しい版にする | 示せる（/code-review の `rev1457/tagorder`） | 無し（C2 は「git の `v:refname` の順」——その順のとおりに動く） | 残課題 |
+| V-2 凍結した要求確定のタグの時点の `docs/` に clone の今の最新のタグとの差分を当てるので、profile が後でタグを切ると、その版の提案書を作り直せない（`確かめたタグ` を書けば通る） | 示せる（Verifier が本物の platform-spec で実走: タグ v1→v10 で 1・`確かめたタグ,v10` で 0） | 無し（G1・G2 の決めた値どおりの振る舞い） | 残課題（確認の Issue G1 に帰結として書く） |
+| CR-1 新しい版がタグか確かめたタグと同じとき、古い版の層と指した ID の照合の前に返り、無い ID・層の無いタグでも 0 | 示せる（`rev1457/exp1.py`: NOPE-1 で 0） | C3（指した ID が古い版に無いのは 1、古い版の層が無いのは 4） | 直す（古い版の層と ID を先に照らす。守る 1 行・変異・試料 2） |
+| CR-2 platform-spec が `scope: project` で入っていると、build-proposal.py が関門を写しの `docs` に当てるので `projectPath` が合わず常に 2 | 示せる（`rev1457/exp3.py`: 4） | C6（関門が 0 なら作る） | 直す（`profile-gate.py` の `check` に正本の `docs` を渡す `locate`。守る 1 行・変異・口の試料 1・口の変異 1） |
+| CR-3 層の表の見出し `ID,要約,リンク,項目` を確かめず、`備考` の列が増えた層で偽の候補を出して 1（`check-infra-profile.py` は 4） | 示せる（`rev1457/exp2.py`） | C3（層の表の形が違えば 4。docstring の終了コード 4） | 直す（どちらの版も見出しを確かめて 4。守る 1 行・変異・試料 1） |
+| CR-5 C7 の差分テストの陽性対照が 3 本の腕のうち 1 本（check-infra-profile）だけで、scaffold・build-proposal の 11 試料は関門の手前で止まる | 示せる（スクリプト） | 無し（C7 に足す行は「1 か所入れると検出する」——検出した） | 残課題 |
+| CR-6 `188edfbb` が差分を 0 にするため正しい文言を戻し、決まりの外の項目の文言に `確かめたタグ` が無い | 示せる（文言） | 無し | 残課題（既知の限界に書いた） |
+| CR-7 docstring の「`diff_layers` を読み込む——写さない」が偽（`candidates` は自前でテストのモデルも実装と同じ形） | 示せる（コード） | 無し | 残課題 |
+| CR-8 `profile-gate.py` の docstring の「画面の関門と同じ条件」が偽（scaffold は仕様レビューの記録と同じ `--upto` なしで当てる） | 示せる（コード） | 無し | 残課題 |
+| CR-9 同じセルに同じ ID を 2 度書くと候補が重複する | 示せる（`rev1457/exp1.py`） | 無し | 残課題 |
 
 ## 手順 8 の記録
 
