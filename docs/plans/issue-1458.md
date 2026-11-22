@@ -103,10 +103,10 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 | 項目 | 書くもの |
 | --- | --- |
 | 旧 | `b37059d0d0f6ff317fddadfd2cd866eab10e5cd9`（周の base） |
-| 新 | `a1348a0f7062ded2a13320f5a26ebbd6bfde5671`（2 パス目の指摘対応の後に回し直した。前の回は `5968a03b`・`a329ca3e` で同じ結果） |
-| 入力の出どころ | サンプル——`scripts/test-check-screens.py` の試料のうち外部の profile を持たないもの全部（周の base の時点の試料と、この周で足した外部の profile の無い試料）。127 件（外部の profile の行を値つきで持たない試料。この周で足した `ext-none-old-spec-loop`・`ext-setting-empty` を含む）。比べたのは終了コードと標準出力＋標準エラーの全文 |
+| 新 | `09937d9178583ca589f876b991dac093e9ead6f2`（N-2 の直しの後に回し直した。前の回は `5968a03b`・`a329ca3e`・`a1348a0f`（127 件・差分 0）） |
+| 入力の出どころ | サンプル——`scripts/test-check-screens.py` の試料のうち外部の profile を持たないもの全部（周の base の時点の試料と、この周で足した外部の profile の無い試料）。128 件（外部の profile の行を値つきで持たない試料。この周で足した `ext-none-old-spec-loop`・`ext-setting-empty`・`ext-setting-two-empty` を含む）。比べたのは終了コードと標準出力＋標準エラーの全文 |
 | 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので、`<tmp>` に揃える——比較に関係ない置き場所の違い） |
-| 結果 | 比べた 127 件・差分 0 件・一覧に無い差分 0 件。陽性対照: 新側の `起票の候補` の条件を `if False:` にした写しで差分 2 件（`marker-without-number` ほか）——差分を検出する |
+| 結果 | 比べた 128 件・差分 0 件・一覧に無い差分 0 件。陽性対照: 新側の `起票の候補` の条件を `if False:` にした写しで差分 2 件（`marker-without-number` ほか）——差分を検出する |
 | 回した場所 | リポジトリの外（scratchpad。旧は `git archive <旧> plugins/screen-spec plugins/spec-loop` で取り出した木） |
 
 #### 承認済みの変更の一覧
@@ -128,7 +128,7 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `ffc5d09197c58c3d6bf1b88b55423e94e94dee62`・終点（指摘対応の最後のコミット）: `a1348a0f7062ded2a13320f5a26ebbd6bfde5671`。陽性対照: 新しい試料を起点の本体（`ffc5d091`）に当てると `ext-base-mismatch`・`ext-base-unset`・`ext-base-unset-both`（止めた理由の文言）と `ext-setting-empty-and-valued`（終了コード 0）の 4 件が赤、終点の本体で全部緑
 - check-all（run-serial 越し）: `ffc5d091` で 102 本 OK（失敗 0）
 - 狭いパス: Verifier（sonnet）を `ffc5d091`→`a1348a0f` に当てた——反証 0 件・所見 2 件（N-1: 空の `外部の profile,` の行が 2 つだけの試料が無く、「値つきの行と並んだときだけ数える」変異が素通りする／N-2: 空の行を 2 つ置いた settings が周の base で 0、終点で 1——B1 の「外部の profile を書いていない案件で同じ」から外れる）。自分で設計した変異 6 つのうち 5 つ赤。報告は起動元に届かず、記録（transcript）から読んだ。
-- マージ前の判断（線 `推奨で決めて起票（後退・未達を含む）`）: N-2 は狭いパスの指摘で、この周の受入基準 B1 を破る（この周の 2 パス目の直しが持ち込んだ後退）——推奨を決める前にまず直す（`references/absent-lines.md` の「満たしていない受入基準は、推奨を決める前にまず周が直す」）。N-1 は同じ直しの試料で埋まる。直しの起点: `9b8c4083d8e4bd144a4bf8a00285a6e39b28b12f`
+- マージ前の判断（線 `推奨で決めて起票（後退・未達を含む）`）: N-2 は狭いパスの指摘で、この周の受入基準 B1 を破る（この周の 2 パス目の直しが持ち込んだ後退）——推奨を決める前にまず直す（`references/absent-lines.md` の「満たしていない受入基準は、推奨を決める前にまず周が直す」）。N-1 は同じ直しの試料で埋まる。直しの起点: `9b8c4083d8e4bd144a4bf8a00285a6e39b28b12f`・終点: `09937d9178583ca589f876b991dac093e9ead6f2`（値のある行があるときだけ空の行も数える）。陽性対照（同じ試料 `ext-setting-two-empty`: 空の行 2 つ）: 直す前の本体 `a1348a0f` で終了コード 1（赤）、周の base `b37059d0` と直した後で 0（緑）。差分テストを回し直した（128 件・差分 0）
 - check-all（run-serial 越し）: `fe3a6e3a` で 1 本落ちた（check-plan-counts——件数の行が無かった。`79d7f709` で足した。ほかの 99 本は OK・2 本 CACHED）。`test-check-screens.py`（run-serial 越し）は `5968a03b` の木で緑（試料 162・変異 130・references の崩し 35）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を取った。外部の profile の試料は走らせる場所（cwd）を案件の根と別にし、`CLAUDE.md` を docs の親で探すことが観測に効くようにした（変異「案件の根を docs の親にしない」が `ext-good` で落ちる）
 - 割り目: 割らない（cruise の周）
