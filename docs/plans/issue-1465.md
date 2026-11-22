@@ -74,7 +74,10 @@
   `/code-review`（high）指摘 6 件——採否は下の表。「直す」は 0 件
 - 2 パス目: 該当なし（1 パス目の指摘対応の成果物の差分 0 行。起点 `16290c6b`。`git diff 16290c6b -- ':(top)' ':(top,exclude)docs/plans/issue-1465.md'` が空・`git status --porcelain` に計画ファイルのほかが出ない）
 - 狭いパス: 該当なし
-- 外部レビュー: PR 後に `external-reviews.py` で見る
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` が 3）
+- PR #1473 の CI（run 44991493452）: 全部緑。spec-loop 系 `spec-loop` 353・`spec-loop-tools` 318・`spec-loop-generate` 299・`spec-loop-render` 242・`spec-loop-tables` 161 秒——最長 353 秒は 583 秒より約 4 割短い（受入基準 3）。
+  run 全体は 11 分 02 秒（分割前の 2 つの run は 14 分 41 秒・12 分 39 秒）。律速は `spec-loop-autopilot-loop` 658 秒（分割前 430・627 秒）で、1 回の測りなので同時に走るジョブが増えた影響かは判別していない（CR3 の残課題）
+- ローカルの `check-all.py`: 失敗 0（53 本を回し 48 本は CACHED）
 - 実験: 分割前後のステップを全キーの JSON の多重集合で比べ、違いは足した checkout 3 つだけ（run ステップは 94 と 94）。
   陽性対照（`test-check-alloy.py` の行を抜いた写し）では、その 1 ステップが不一致として出た（run ステップは 94 と 93）
 
@@ -95,7 +98,7 @@
 
 ## 手順 8
 
-- この周の起票: 0 件（起票候補なし）
+- この周の起票: 1 件（#1474——CR5 の `test-check-all.py` の時間依存。手順 8 で利用者が承認した、2026-11-22）
 
 ## 既知の限界・決着済みの論点
 
@@ -113,7 +116,7 @@
 | CR2: 計画の「`spec-loop-generate` の grep は `plugins.yml` の外に 0 件」は誤り。`test-scaffold.py:5727` の「CI の spec-loop-generate の半分（438 秒）」が古くなる | 示せる（`git grep -l` が 10 件） | 無し | 残課題（計画の記述は訂正。`test-scaffold.py` の注記は #1361 当時の値で、`触らない:` の範囲） |
 | CR3: ジョブが 12＋docs 1 で 13 本になり、並行する PR で同時実行の上限に当たりうる | 示せない（上限・待ち行列の実測が無い） | 無し | 残課題 |
 | CR4: 受入基準 3 に数の線が無く、run 全体の律速（`spec-loop-autopilot-loop`）を見ない | 示せない（基準の書き方への指摘） | 無し（基準は手順 3 で固定） | 残課題。PR には run 全体の壁時計も併せて貼る |
-| CR5: `test-check-all.py` の #1040 の契約のケースが負荷で落ちる（既存） | 示せる（`/code-review` の実行で exit 1） | 2 に触れるが、この周の差分の外の既存の時間依存で、Verifier の実行・下のローカルの `check-all.py` では緑 | 残課題（既存。不安定なテスト） |
+| CR5: `test-check-all.py` の #1040 の契約のケースが負荷で落ちる（既存） | 示せる（`/code-review` の実行で exit 1） | 2 に触れるが、この周の差分の外の既存の時間依存で、Verifier の実行・下のローカルの `check-all.py` では緑 | 残課題（既存。不安定なテスト）。利用者の承認で #1474 に起票 |
 | CR6: `spec-loop-tables` の見出しコメントが画面の表の関門を screen-spec のものと書き、`spec-loop` の見出しが PPTX の描画に触れない | 示せる（`plugins.yml` 446 行と 263 行） | 無し（コメントでステップは同じ） | 残課題 |
 
 - 効いた行: R-02（CR1・CR2・CR6——計画とコメントの記述を事実と照らした）
