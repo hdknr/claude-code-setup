@@ -116,7 +116,7 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 ## 未解決の判断・確認待ち
 
 - 仕様の穴 G1〜G4 は推奨で決めた（上の表）。確認の Issue: G1 #1482・G2 #1483・G3 #1484・G4 #1485（閉じない。Refs で指す）。
-- PR: #1481。手順 7 のマージは親がする。
+- PR: #1481。PR 側の CI: 13 pass・1 skipping（deploy）を `60d56dfd` で確かめた。外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に宣言が無い）。手順 7 のマージは親がする。
 
 ## 関門の進捗（再開点）
 
