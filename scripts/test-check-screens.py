@@ -494,12 +494,12 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
      f"S-002 レイアウト: 種別 form の既定 'standard'（{EXT_LABEL} の行 L-FORM）と違う 'modal' の根拠に Q&A の番号が無い", ""),
     # ---- B4 重ねる先
     ("ext-base-mismatch", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace(",web-spa\n", ",desktop\n"))}), [], 4,
-     "重ねる先 'desktop' が requirements/screens/settings.csv の profile 'web-spa' と食い違う", "違反"),
+     "重ねる先 'desktop' が requirements/screens/settings.csv の profile 'web-spa' と食い違う", "未設定"),
     ("ext-base-unset", ext(SETTINGS=UNSET_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 4,
-     "重ねる先 'web-spa' が requirements/screens/settings.csv の profile '未設定' と食い違う", "違反"),
+     "requirements/screens/settings.csv の profile が '未設定' で、重ねる組み込みの profile が無い（未設定 には重ねられない）", "違反"),
     ("ext-base-unset-both", ext(SETTINGS=UNSET_SETTINGS + "外部の profile,org/guide org v1\n"),
      prof({"v1": guide(profile=GUIDE_PROFILE.replace(",web-spa\n", ",未設定\n"))}), [], 4,
-     "重ねる先 '未設定' が requirements/screens/settings.csv の profile '未設定' と食い違う（未設定 には重ねられない）", "違反"),
+     "requirements/screens/settings.csv の profile が '未設定' で、重ねる組み込みの profile が無い（未設定 には重ねられない）", "食い違う"),
     # ---- B5 形式の版
     ("ext-version-out", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace("画面,1,", "画面,2,"))}), [], 4, "範囲（1 以上 2 未満）の外", "違反"),
     # ---- B6 読めない
@@ -527,9 +527,9 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
      "種別 form の列 レイアウト の既定が 2 行ある", "違反"),
     # ---- B7 足した列は宣言の順（層のファイルの名前の順・ファイルの中の行の順）に見出し行に入る
     ("ext-two-columns-order", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
-     prof({"v1": {**guide(), f"{GUIDE_DIR}/screens/zz.csv": L_HEAD + "L-COL2,サイズの列,,列,screens.csv,サイズ,,\n"}}), [], 0, "違反 0 件", "見出し行"),
+     prof({"v1": {**guide(), f"{GUIDE_DIR}/screens/zz.csv": L_HEAD + "A-COL2,サイズの列,,列,screens.csv,サイズ,,\n"}}), [], 0, "違反 0 件", "見出し行"),
     ("ext-two-columns-order-in-file", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
-     prof({"v1": guide(rows=L_COL + "L-COL2,サイズの列,,列,screens.csv,サイズ,,\n" + L_STD + L_MODAL + L_LIST + L_FORM + R_ROWS)}), [], 0, "違反 0 件", "見出し行"),
+     prof({"v1": guide(rows=L_COL + "A-COL2,サイズの列,,列,screens.csv,サイズ,,\n" + L_STD + L_MODAL + L_LIST + L_FORM + R_ROWS)}), [], 0, "違反 0 件", "見出し行"),
     # ---- B7 足した列の無い見出し行
     ("ext-header-without-column", ext(S=SW_HEAD + WS1 + WS2), prof(), [], 1,
      f"見出し行が決まり（profile web-spa の列・{EXT_LABEL} の列を足した）", ""),
@@ -537,6 +537,7 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     ("ext-setting-malformed", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org\n"), prof(), [], 1,
      "外部の profile: 'org/guide org' は `<持ち主>/<リポジトリ> <名前> <タグ>` の形でない", ""),
     ("ext-setting-bad-repo", ext(SETTINGS=WEB_SPA + "外部の profile,guide org v1\n"), prof(), [], 1, "の形でない", ""),
+    ("ext-setting-empty-and-valued", ext(SETTINGS=EXT_SETTINGS + "外部の profile,\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
     ("ext-setting-two", ext(SETTINGS=EXT_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
 ]
 CASES += EXT_CASES
@@ -738,16 +739,25 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("既定と違う値は根拠があっても違反にする", "if not self.qa_number.search(whole.tables[SCREENS][key].get(\"根拠\", \"\")):", "if True:", "ext-default-with-basis"),
     ("既定と同じ値も違反にする", "if not value or undecided_profile(value) or value == default:", "if not value or undecided_profile(value):", "ext-good"),
     ("既定を種別で引かない", "                if row.get(\"種別\") != kind:\n", "                if False:\n", "ext-good"),
-    ("重ねる先を照らさない", "        if self.profile not in PROFILES or layer.base != self.profile:\n", "        if False:\n", "ext-base-mismatch"),
-    ("未設定 に重ねさせる", "        if self.profile not in PROFILES or layer.base != self.profile:\n", "        if layer.base != self.profile:\n", "ext-base-unset-both"),
+    ("重ねる先を照らさない", "        if layer.base != self.profile:\n", "        if False:\n", "ext-base-mismatch"),
+    ("未設定 に重ねさせる", "        if self.profile not in PROFILES:\n            raise Stop(", "        if False:\n            raise Stop(", "ext-base-unset-both"),
+    ("足す列を行の ID の順にする", "        for target, column, rid in uses:\n",
+     "        ids = {(tables.get(row[\"表\"].strip()), row[\"列\"].strip()): r for r, row in layer.rows.items()}\n"
+     "        for t in external.columns:\n            external.columns[t].sort(key=lambda c: ids.get((t, c), \"\"))\n"
+     "        for target, column, rid in uses:\n", "ext-two-columns-order"),
+    ("足す列を行の ID の順にする（ファイルの中）", "        for target, column, rid in uses:\n",
+     "        ids = {(tables.get(row[\"表\"].strip()), row[\"列\"].strip()): r for r, row in layer.rows.items()}\n"
+     "        for t in external.columns:\n            external.columns[t].sort(key=lambda c: ids.get((t, c), \"\"))\n"
+     "        for target, column, rid in uses:\n", "ext-two-columns-order-in-file"),
+    ("空の値の行を数えない", "== EXTERNAL_KEY]\n        if not values:", "== EXTERNAL_KEY]\n        values = [v for v in values if v]\n        if not values:", "ext-setting-empty-and-valued"),
     ("足す列を宣言の逆の順にする", "external.columns[target].append(column)", "external.columns[target].insert(0, column)", "ext-two-columns-order"),
     ("足す列を名前の順にする", " + added.get(path, []) for path in TABLES}", " + sorted(added.get(path, [])) for path in TABLES}", "ext-two-columns-order-in-file"),
     ("足す列を見出し行に求めない", " + added.get(path, [])", "", "ext-good"),
     ("案件の根を docs の親にしない", "project=self.docs.resolve().parent", "project=None", "ext-good"),
     ("形式の版の範囲を変える", "EXTERNAL_RANGE = (\"1\", \"2\")", "EXTERNAL_RANGE = (\"1\", \"3\")", "ext-version-out"),
-    ("設定の行が 2 つあっても通す", "        if len(values) >= 2:\n", "        if False:\n", "ext-setting-two"),
+    ("設定の行が 2 つあっても通す", "        if len(values) >= 2:  #", "        if False:  #", "ext-setting-two"),
     ("設定の行の形を見ない", "if len(parts) != 3 or not EXTERNAL_REPO.fullmatch(parts[0]):", "if len(parts) != 3:", "ext-setting-bad-repo"),
-    ("設定の空の値を外さない", "        values = [value for value in values if value]\n", "", "ext-setting-empty"),
+    ("設定の空の値を外さない", "        if not values[0]:\n            return None\n", "", "ext-setting-empty"),
     ("spec-loop に読む部分が無いのを見ない", "        if not path.is_file():\n", "        if False:\n", "ext-old-spec-loop"),
     ("検査の中で止めたのを 4 にしない", "    except Stop as e:\n        print(f\"止めた: {e}\", file=sys.stderr)\n        return 4\n    except Unreadable as e:",
      "    except Unreadable as e:", "ext-base-mismatch"),

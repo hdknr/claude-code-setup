@@ -45,7 +45,7 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - spec-loop が見つからない・版が範囲の外なら、検査の前に 4 で止める（名指しした spec-loop が spec-loop でなければ、ほかを探さずに止める）
 - ファイルを書かない（Q&A の番号を振らない。spec-loop を読み込むときの `__pycache__` も書かない）
 - 外部の profile（#1458）: `settings.csv` に `外部の profile` の行が無ければ、spec-loop の `external-profile.py` を読み込まず、今までと同じに検査する（spec-loop にそのファイルが無くても）
-- `外部の profile` の行が 2 つある・値が `<持ち主>/<リポジトリ> <名前> <タグ>` の形でなければ違反
+- `外部の profile` の行が 2 つある（値の空の行も数える）・値が `<持ち主>/<リポジトリ> <名前> <タグ>` の形でなければ違反
 - 外部の profile は spec-loop の `external-profile.py` で読む（探し方・タグの時点の読み出し・形式の版の範囲を写さない）。案件の根（`CLAUDE.md` を探す場所）は `docs` の親
 - 外部の profile を読めない（spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・画面の層が無い・形式の版が範囲の外）なら、検査の前に 4 で止める——外部の profile を外して検査を続けない
 - 画面の層の `重ねる先` が `settings.csv` の `profile`（`未設定` を含む）と違えば、検査の前に 4 で止める
@@ -530,12 +530,13 @@ class Checker:
         if not rows or [cell.strip() for cell in rows[0]] != SETTINGS_COLUMNS:
             return None  # 見出し行の違反は read_profile が出している
         values = [row[1].strip() if len(row) > 1 else "" for row in rows[1:] if row and row[0].strip() == EXTERNAL_KEY]
-        values = [value for value in values if value]
         if not values:
             return None
-        if len(values) >= 2:
+        if len(values) >= 2:  # 値の空の行も数える（`profile` の行と同じ数え方）
             self.report.violations.append(f"{SETTINGS} {EXTERNAL_KEY}: 行が {len(values)} つある（案件に 1 つまで）")
             return False
+        if not values[0]:
+            return None
         parts = values[0].split()
         if len(parts) != 3 or not EXTERNAL_REPO.fullmatch(parts[0]):
             self.report.violations.append(f"{SETTINGS} {EXTERNAL_KEY}: {values[0]!r} は `<持ち主>/<リポジトリ> <名前> <タグ>` の形でない")
@@ -566,9 +567,10 @@ class Checker:
             raise Stop(f"{label} を読めない: {e}") from None
         except Exception as e:  # noqa: BLE001 — git が無い・パスが読めないなど。外部の profile を外して検査を続けない
             raise Stop(f"{label} を読めない: {type(e).__name__}: {e}") from None
-        if self.profile not in PROFILES or layer.base != self.profile:
-            raise Stop(f"{label} の層 {EXTERNAL_LAYER} の 重ねる先 {layer.base!r} が {SETTINGS} の {PROFILE_KEY} {self.profile!r} と食い違う"
-                       f"（{UNSET} には重ねられない）")
+        if self.profile not in PROFILES:
+            raise Stop(f"{label}: {SETTINGS} の {PROFILE_KEY} が {self.profile!r} で、重ねる組み込みの profile が無い（{UNSET} には重ねられない）")
+        if layer.base != self.profile:
+            raise Stop(f"{label} の層 {EXTERNAL_LAYER} の 重ねる先 {layer.base!r} が {SETTINGS} の {PROFILE_KEY} {self.profile!r} と食い違う")
         external = External(repo, name, tag, source)
         tables = {path.rsplit("/", 1)[1]: path for path in TABLES}
         builtin = PROFILES[self.profile]["columns"] if self.profile in PROFILES else {}
