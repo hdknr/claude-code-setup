@@ -104,10 +104,10 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 | 項目 | 書くもの |
 | --- | --- |
 | 旧 | `64e41878be4eace2a420d09e424a73a14006ced8`（周の base） |
-| 新 | （差分テストを回した成果物の SHA を回した後に書く） |
-| 入力の出どころ | サンプルと生成——(1) `init`: 正本の試料（`scripts/test-write-screens.py` の正本の試料と、基盤の profile が無い・画面の層が無い・`重ねる先` が空の正本）× 引数の組（省く・`--prefix`・`--profile`・誤った値）。(2) `check-screens.py`: `scripts/test-check-screens.py` の試料の全部。件数は回した後に書く |
+| 新 | `fb37d7dc`（実装のコミット） |
+| 入力の出どころ | サンプルと生成——(1) `init`: 正本の試料 9 つ（空の v1・基盤要件と Q&A と機能一覧つき・置き済み・版が無い・重ね合わせの違反・作業中の版が v2・基盤の profile に画面の層が無い・`重ねる先` が空・v2 に置いた基盤の profile に画面の層が無い）× 引数の組 12（省く・`--prefix SCR-`・`--profile web-spa`・`--profile 未設定`・`--profile desktop`・`--prefix s-`・`Q-`・`TBD-`・`F-`・`--profile web-spa --prefix A1-`・値の無い `--prefix`・知らない引数）= 108 件。終了コード・出力・書いたファイルの中身を比べた。(2) `check-screens.py`: `scripts/test-check-screens.py` の試料の全部 167 件（外部の profile の試料を含む）を同じ `run_one` で旧と新に当て、終了コードと出力を比べた。計 275 件 |
 | 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので `<tmp>` に揃える） |
-| 結果 | （回した後に書く） |
+| 結果 | 比べた 275 件・差分 0 件・一覧に無い差分 0 件。陽性対照 2 つ: 新側の `base_initial` の「画面の層が無い」を `web-spa` を返す形にした写しで差分 4 件（`base-no-screen` と `base-no-screen-v2` の引数を省く・`--prefix SCR-`）、新側の `load_external` の既定の重なりの判定を外した写しで差分 1 件（`ext-default-duplicate`）——どちらも差分を検出する。スクリプトは scratchpad の `diff-1460/difftest.py`（残さない） |
 | 回した場所 | リポジトリの外（scratchpad。旧は `git archive <旧> plugins/screen-spec plugins/spec-loop` で取り出した木） |
 
 #### 承認済みの変更の一覧
@@ -121,8 +121,10 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1460-init-from-platform-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1460`・起点 `64e41878`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `64e41878be4eace2a420d09e424a73a14006ced8`
-- 関門: まだ当てていない
-- 交絡を潰した手順: （回した後に書く）
+- 1 パス目の指摘対応の起点（0 行の判定）: `fb37d7dc`（関門の 2 つに渡した時点の HEAD の成果物。以後の計画ファイルだけのコミットは除いて判定する）
+- 関門 1 パス目: Verifier と `/code-review` に `fb37d7dc` を渡した（結果は回収後に書く）
+- 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を init と check-screens の両方で取った。基盤の profile の試料は、clone を案件の根（docs の親）の `CLAUDE.md` の行で探させ、環境変数 `SPEC_PROFILE_CLONE`・`GIT_*` を外した（手元の環境で別の clone を読まない）。platform-spec を読み込まないことは、読み込まれたら印を書く偽の platform-spec を隣に置き、読み込む変異で印が出ること（陽性対照）を取った
+- 回帰テスト: `test-write-screens.py`（run-serial 越し）は `fb37d7dc` の木で緑（試料 61・変異 56・雛形の崩し 14・references の崩し 11・platform-spec の写しの崩し 3）。`test-check-screens.py` は同じ木で緑（試料 167・変異 137・references の崩し 35）
 - 割り目: 割らない（cruise の周）
 
 ## 既知の限界・決着済みの論点
