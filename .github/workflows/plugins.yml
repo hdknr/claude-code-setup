@@ -145,8 +145,8 @@ jobs:
       - name: check-all.py のテスト
         run: python3 scripts/test-check-all.py
 
-  # dev-loop の周の道具（worktree・周の探索・不在の点検・長期トークン・台帳・マージ）と、cruise の道具（親 Issue・子プロセス・片付け）と、
-  # コードブロックとコメントの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせと、orca・cmux のタブ一致規則のテスト
+  # dev-loop の周の道具（worktree・周の探索・依存と仕様への戻しと形式検査の歯止め・読んだ成果物の集計・外部レビュー bot・不在の点検・長期トークン・台帳・関門の照合）と、
+  # orca・cmux のタブ一致規則のテスト。重い 2 つは下の dev-loop-commit-gate・dev-loop-cruise に分けた（#1463。1 本では 878 秒で run 全体の律速だった）
   dev-loop:
     runs-on: ubuntu-latest
     steps:
@@ -173,14 +173,8 @@ jobs:
       - name: 読んだ成果物の集計のテスト（#1157）
         run: python3 scripts/test-artifact-reads.py
 
-      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194）
-        run: python3 scripts/test-line-effects.py
-
       - name: 外部レビュー bot のコメントの取り出しのテスト（#997）
         run: python3 scripts/test-external-reviews.py
-
-      - name: コミットの検証の印の hook のテスト（#1192）
-        run: python3 scripts/test-commit-gate.py
 
       # 本体は CI から呼ばない（入力が利用者の ~/.claude にある）。テストだけ回す。
       - name: 不在の前の環境点検のテスト（#394）
@@ -191,6 +185,38 @@ jobs:
 
       - name: 複数 Issue の台帳のテスト（#390）
         run: python3 scripts/test-ledger.py
+
+      - name: 関門の照合のテスト（#1043）
+        run: python3 scripts/test-check-gates.py
+
+      # 本体は plugins/orca・plugins/cmux の SKILL.md の共通手順ブロック（写しを作らず抜き出して流す）。
+      - name: orca・cmux のタブ一致規則のテスト（#202）
+        run: python3 scripts/test-tab-match.py
+
+  # dev-loop のコミットの検証の印の hook のテスト（1 本で重い。#1463）
+  dev-loop-commit-gate:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: コミットの検証の印の hook のテスト（#1192）
+        run: python3 scripts/test-commit-gate.py
+
+  # dev-loop の委譲文の行の台帳と PR のマージの手続きのテストと、cruise の道具（親 Issue・子プロセス・片付け）と、
+  # コードブロックとコメントの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせのテスト（#1463。ジョブの名前より広い）
+  dev-loop-cruise:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194）
+        run: python3 scripts/test-line-effects.py
 
       - name: 親 Issue の一覧から台帳を作るテスト（#446）
         run: python3 scripts/test-parent-issue.py
@@ -206,13 +232,6 @@ jobs:
 
       - name: PR のマージの手続きのテスト（#389）
         run: python3 scripts/test-merge-pr.py
-
-      - name: 関門の照合のテスト（#1043）
-        run: python3 scripts/test-check-gates.py
-
-      # 本体は plugins/orca・plugins/cmux の SKILL.md の共通手順ブロック（写しを作らず抜き出して流す）。
-      - name: orca・cmux のタブ一致規則のテスト（#202）
-        run: python3 scripts/test-tab-match.py
 
   # cruise の順番待ちのテスト（1 本で重い）
   cruise-run-serial:
