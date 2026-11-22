@@ -538,6 +538,8 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
      "外部の profile: 'org/guide org' は `<持ち主>/<リポジトリ> <名前> <タグ>` の形でない", ""),
     ("ext-setting-bad-repo", ext(SETTINGS=WEB_SPA + "外部の profile,guide org v1\n"), prof(), [], 1, "の形でない", ""),
     ("ext-setting-empty-and-valued", ext(SETTINGS=EXT_SETTINGS + "外部の profile,\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
+    ("ext-setting-two-empty", with_files(web_spa(), **{SETTINGS_CSV: WEB_SPA + "外部の profile,\n外部の profile,\n"}), prof(), [], 0,
+     "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "外部の profile"),
     ("ext-setting-two", ext(SETTINGS=EXT_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
 ]
 CASES += EXT_CASES
@@ -755,8 +757,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("足す列を見出し行に求めない", " + added.get(path, [])", "", "ext-good"),
     ("案件の根を docs の親にしない", "project=self.docs.resolve().parent", "project=None", "ext-good"),
     ("形式の版の範囲を変える", "EXTERNAL_RANGE = (\"1\", \"2\")", "EXTERNAL_RANGE = (\"1\", \"3\")", "ext-version-out"),
-    ("設定の行が 2 つあっても通す", "        if len(values) >= 2:  #", "        if False:  #", "ext-setting-two"),
+    ("設定の行が 2 つあっても通す", "        if len(values) >= 2 and any(values):  #", "        if False:  #", "ext-setting-two"),
     ("設定の行の形を見ない", "if len(parts) != 3 or not EXTERNAL_REPO.fullmatch(parts[0]):", "if len(parts) != 3:", "ext-setting-bad-repo"),
+    ("空の行だけが 2 つでも違反にする", "        if len(values) >= 2 and any(values):  #", "        if len(values) >= 2:  #", "ext-setting-two-empty"),
     ("設定の空の値を外さない", "        if not values[0]:\n            return None\n", "", "ext-setting-empty"),
     ("spec-loop に読む部分が無いのを見ない", "        if not path.is_file():\n", "        if False:\n", "ext-old-spec-loop"),
     ("検査の中で止めたのを 4 にしない", "    except Stop as e:\n        print(f\"止めた: {e}\", file=sys.stderr)\n        return 4\n    except Unreadable as e:",
