@@ -41,11 +41,14 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **引数で名指しした clone があれば、環境変数と `CLAUDE.md` を見ない。**
 - **環境変数があれば、`CLAUDE.md` の行を見ない。**
 - **名指し（引数・環境変数・行）が git のリポジトリでなければ、次の探し方に落ちずに 4**——黙って別の clone を読まない。
+- **名指しが git のリポジトリの中のサブディレクトリ（リポジトリの根でない）なら 4**——外のリポジトリを clone として読まない（bare のリポジトリは git のディレクトリそのものが根）。
+- **環境変数 `GIT_DIR`・`GIT_WORK_TREE`・`GIT_INDEX_FILE`・`GIT_COMMON_DIR` を子の git に渡さない**——フックの中などで走らせても、名指しの clone を読む。
 - **どこにも見つからなければ 4**（「無い」の 3 にしない）。
 - **`CLAUDE.md` の行は、ほかのリポジトリの行を使わない**——リポジトリの名前が一致する行だけ。
 - **同じリポジトリの行が 2 行以上なら 4**——どれを使うか決めない。
 - **`CLAUDE.md` のコードフェンスの中の行を宣言と読まない**（読み方は `check-tlc.py` の `scan_declarations`）。
 - **タグが無ければ 4**——ブランチや同じ名前の別の参照に落ちない（`refs/tags/` だけを見る）。
+- **タグの名前に版の記法（`v2~1`・`v2^` など、参照の名前に使えない形）を書いたら 4**——たどった先のタグの無いコミットを読まない。
 - **作業ツリーではなくタグの時点の中身を読む**——作業ツリーが違っても、別のブランチに居ても、タグの内容を返す。
 - **clone の作業ツリー・HEAD・参照を変えない**（`rev-parse`・`ls-tree`・`cat-file` だけを走らせる）。
 - **形式の版が下限より小さければ 4、上限と同じか大きければ 4**（下限は含み、上限は含まない）。
@@ -55,9 +58,12 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **`profile.csv` の見出しが `層,形式の版,ファイル,重ねる先` でなければ 4。**
 - **同じ層が 2 行あれば 4。**
 - **層の表の先頭 3 列が `ID,要約,リンク` でなければ 4。**
-- **ID が空か、同じ層の中で重なれば 4**（層のファイルが複数でも、層の中で重なれば 4）。
+- **層の表の見出しに同じ列の名前が 2 つあれば 4**——後ろの列が前の列（`リンク` を含む）を黙って上書きしない。
+- **ID が空なら 4。**
+- **ID が同じ層の中で重なれば 4**（層のファイルが複数でも、層の中で重なれば 4）。
 - **列の数が見出しと合わない行があれば 4。**
-- **`ファイル` がどのファイルにも当たらない・リポジトリの外を指すなら 4。**
+- **`ファイル` がどのファイルにも当たらなければ 4。**
+- **`ファイル` が profile のディレクトリの外を指すなら 4**（そこに表が在っても読まない）。
 - **層の中身（先頭 3 列より後ろ）を解釈しない**——列の名前と値をそのまま持ち、比べるだけ。
 - **先頭 3 列より後ろの列だけが違う行も「変わった」に出す。**
 - **古いタグに在って新しいタグに無い ID を「消えた」に出す。**
@@ -65,6 +71,7 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **`リンク` のファイルがタグの時点に無ければ切れた**（作業ツリーに在っても）。
 - **`リンク` の `#節` が、指す `.md` の見出しの id のどれにも当たらなければ切れた**（id は GitHub と同じ作り方。重なった見出しは `-1`・`-2`）。
 - **見出しの id は、コードフェンスの中の `#` の行から作らない。**
+- **BOM つきの `.md` の先頭の見出しも id にする。**
 - **リポジトリの外を指す `リンク`（`..` で根より上）は切れた。**
 - **外の URL（`https:` などのスキームを持つ `リンク`）は見ない**——切れたにしない。
 - **`diff` の切れたリンクは、新しいタグの時点で見る。**
@@ -158,9 +165,22 @@ class Layer:
 # ---- 探し方
 
 
+GIT_ENV_DROP = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")
+
+
+def _child_env() -> dict:
+    return {k: v for k, v in os.environ.items() if k not in GIT_ENV_DROP}
+
+
 def _is_repo(path: Path) -> bool:
-    proc = subprocess.run(["git", "-C", str(path), "rev-parse", "--git-dir"], capture_output=True, text=True)
-    return proc.returncode == 0
+    """path が git のリポジトリの根か（bare なら git のディレクトリそのもの）。"""
+    env = _child_env()
+    bare = subprocess.run(["git", "-C", str(path), "rev-parse", "--is-bare-repository"], capture_output=True, text=True, env=env)
+    if bare.returncode != 0:
+        return False
+    key = "--absolute-git-dir" if bare.stdout.strip() == "true" else "--show-toplevel"
+    top = subprocess.run(["git", "-C", str(path), "rev-parse", key], capture_output=True, text=True, env=env)
+    return top.returncode == 0 and Path(top.stdout.strip()).resolve() == path
 
 
 def find_clone(repo: str, clone: str | None = None, project: str | Path | None = None, env=None) -> tuple[Path, str]:
@@ -198,7 +218,7 @@ def find_clone(repo: str, clone: str | None = None, project: str | Path | None =
 def _named(path: Path, source: str) -> tuple[Path, str]:
     path = path.expanduser().resolve()
     if not path.is_dir() or not _is_repo(path):
-        raise Undetermined(f"{source} が指す {path} は git のリポジトリでない（次の探し方には進まない）")
+        raise Undetermined(f"{source} が指す {path} は git のリポジトリ（の根）でない（次の探し方には進まない）")
     return path, source
 
 
@@ -206,13 +226,15 @@ def _named(path: Path, source: str) -> tuple[Path, str]:
 
 
 def _git(clone: Path, *args: str, data: bytes | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(clone), *args], input=data, capture_output=True)
+    return subprocess.run(["git", "-C", str(clone), *args], input=data, capture_output=True, env=_child_env())
 
 
 def resolve_tag(clone: Path, tag: str) -> str:
     """タグが指すコミットの SHA。タグが無ければ Undetermined（ブランチには落ちない）。"""
     if not tag or tag.startswith("-"):
         raise Undetermined(f"タグの名前が違う: {tag!r}")
+    if _git(clone, "check-ref-format", f"refs/tags/{tag}").returncode != 0:
+        raise Undetermined(f"タグの名前が参照の名前に使えない形（版の記法はたどらない）: {tag!r}")
     proc = _git(clone, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
     if proc.returncode != 0:
         raise Undetermined(f"{clone} にタグ {tag} が無い（手元の clone で git fetch --tags してから読み直す）")
@@ -333,6 +355,8 @@ def read_layer(clone: Path, commit: str, name: str, layer: str, low: str, high: 
         if not rows or tuple(rows[0][:3]) != LAYER_HEAD:
             raise Undetermined(f"{path} の先頭の列が `{','.join(LAYER_HEAD)}` でない: {rows[0][:3] if rows else '（空）'}")
         head = rows[0]
+        if len(set(head)) != len(head):
+            raise Undetermined(f"{path} の見出しに同じ列の名前が 2 つある: {head}")
         for i, r in enumerate(rows[1:], start=2):
             if len(r) != len(head):
                 raise Undetermined(f"{path} の {i} 行目の列の数が {len(r)}（見出しは {len(head)}）")
@@ -397,7 +421,7 @@ def check_links(clone: Path, commit: str, layer: Layer) -> list[tuple[str, str, 
             continue
         if anchor and rel.endswith(".md") and rel in files:
             if rel not in cache:
-                cache[rel] = heading_ids(read_blob(clone, commit, rel).decode("utf-8", "replace"))
+                cache[rel] = heading_ids(read_blob(clone, commit, rel).decode("utf-8", "replace").removeprefix("\ufeff"))
             if anchor not in cache[rel]:
                 broken.append((rid, link, f"節 #{anchor} が {rel} の見出しに無い"))
     return broken

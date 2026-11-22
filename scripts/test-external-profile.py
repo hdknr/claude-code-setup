@@ -43,6 +43,8 @@ MUTATIONS = {
     "環境変数があっても CLAUDE.md を先に見る": [
         ("    if env.get(ENV_CLONE):\n", "    if env.get(ENV_CLONE) and not (Path(project) if project else Path.cwd()).joinpath(\"CLAUDE.md\").exists():\n")],
     "名指しが git のリポジトリでなくても使う": [("    if not path.is_dir() or not _is_repo(path):\n", "    if False:\n")],
+    "サブディレクトリも clone とする": [("    return top.returncode == 0 and Path(top.stdout.strip()).resolve() == path\n", "    return top.returncode == 0\n")],
+    "GIT_DIR を子の git に渡す": [("if k not in GIT_ENV_DROP}", "if True}")],
     "どこにも無ければ案件の根を使う": [("    raise Undetermined(\n        f\"{repo} の手元の clone が見つからない",
                                   "    return root.resolve(), \"無し\"\n    raise Undetermined(\n        f\"{repo} の手元の clone が見つからない")],
     "ほかのリポジトリの行も使う": [("parts[0] == repo", "True")],
@@ -50,6 +52,7 @@ MUTATIONS = {
     "フェンスの中の行も宣言と読む": [("tlc.scan_declarations(text, (DECL_KEY,))[DECL_KEY]",
                                  "[l[len(DECL_KEY):] for l in text.splitlines() if l.startswith(DECL_KEY)]")],
     "タグが無ければブランチに落ちる": [('f"refs/tags/{tag}^{{commit}}"', 'f"{tag}^{{commit}}"')],
+    "版の記法をたどる": [('    if _git(clone, "check-ref-format", f"refs/tags/{tag}").returncode != 0:\n', "    if False:\n")],
     "HEAD の中身を読む": [('f"{commit}:{path}"', 'f"HEAD:{path}"')],
     "タグを checkout する": [("    return proc.stdout.decode().strip()\n",
                            "    _git(clone, \"checkout\", \"-q\", \"--detach\", tag)\n    return proc.stdout.decode().strip()\n")],
@@ -60,9 +63,13 @@ MUTATIONS = {
     "profile.csv の見出しを見ない": [("if not rows or tuple(rows[0]) != PROFILE_COLUMNS:", "if not rows:")],
     "同じ層が 2 行でも読む": [("        if layer in out:\n", "        if False:\n")],
     "層の表の先頭 3 列を見ない": [("tuple(rows[0][:3]) != LAYER_HEAD", "False")],
+    "見出しの同じ名前を許す": [("        if len(set(head)) != len(head):\n", "        if False:\n")],
+    "ID が空でも読む": [("            if not rid:\n", "            if False:\n")],
     "ID が重なっても読む": [("            if rid in result.rows:\n", "            if False:\n")],
     "列の数を見ない": [("            if len(r) != len(head):\n", "            if False:\n")],
     "ファイルが当たらなくても読む": [("    if not matched:\n", "    if False:\n")],
+    "ファイルが profile の外でも読む": [('rel = _safe_rel(row.file) if row.file and not row.file.startswith("/") else None', "rel = posixpath.normpath(row.file)"),
+                                    ('    pattern = f"{base_dir}/{rel}"\n', '    pattern = posixpath.normpath(f"{base_dir}/{rel}")\n')],
     "後ろの列の値を整える": [("result.rows[rid] = dict(zip(head, r))", "result.rows[rid] = {k: v.strip().lower() for k, v in zip(head, r)}")],
     "先頭 3 列だけを比べる": [("cols = sorted(set(o[rid]) | set(n[rid]))", "cols = list(LAYER_HEAD)")],
     "消えた行を出さない": [('"消えた": sorted(set(o) - set(n)),', '"消えた": [],')],
@@ -71,6 +78,7 @@ MUTATIONS = {
                                      "        if rel not in files and rel not in dirs and not (clone / rel).exists():\n")],
     "節を見ない": [("            if anchor not in cache[rel]:\n", "            if False:\n")],
     "フェンスの中の見出しから id を作る": [("                fence = None\n            continue\n        h = HEADING_RE", "                fence = None\n        h = HEADING_RE")],
+    "BOM つきの .md の先頭の見出しを落とす": [('.decode("utf-8", "replace").removeprefix("\\ufeff"))', '.decode("utf-8", "replace"))')],
     "リポジトリの外を指すリンクを切れたにしない": [("        if rel is None:\n            broken.append(", "        if rel is None:\n            continue\n            broken.append(")],
     "外の URL も見る": [("if not link or SCHEME_RE.match(link):", "if not link:")],
     "diff の切れたを古いタグで見る": [("broken = check_links(clone, new_commit, new) if new else []", "broken = check_links(clone, old_commit, new) if new else []")],
@@ -87,7 +95,9 @@ V1 = {
                             "I-3,外,https://example.com/x,,\n"
                             "I-4,無し,,,\n"
                             "I-6,外へ,../outside.md,,\n"
-                            "I-7,手元だけ,docs/untracked.md,,\n",
+                            "I-7,手元だけ,docs/untracked.md,,\n"
+                            "I-8,BOM,docs/bom.md#先頭,,\n",
+    "docs/bom.md": "\ufeff# 先頭\n",
     f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,一覧,/docs/guide.md,一覧\n",
     f"{PROFILE}/screens/b.csv": "ID,要約,リンク,幅,高さ\nS-2,詳細,docs/old.md,100,\"2\n00\"\n",
     "docs/guide.md": GUIDE,
@@ -100,7 +110,8 @@ V2[f"{PROFILE}/infra.csv"] = ("\ufeffID,要約,リンク,言語,備考\n"
                               "I-4,無し,,,\n"
                               "I-5,偽,docs/guide.md#偽の見出し,,\n"
                               "I-6,外へ,../outside.md,,\n"
-                              "I-7,手元だけ,docs/untracked.md,,\n")
+                              "I-7,手元だけ,docs/untracked.md,,\n"
+                              "I-8,BOM,docs/bom.md#先頭,,\n")
 V2[f"{PROFILE}/screens/a.csv"] = "ID,要約,リンク,種類\nS-1,一覧,/docs/guide.md,一覧 \n"
 del V2["docs/old.md"]
 
@@ -111,6 +122,10 @@ BAD = {
     "bad-layer-head": {f"{PROFILE}/screens/a.csv": "id,要約,リンク,種類\nS-1,一覧,,一覧\n"},
     "bad-dup-id": {f"{PROFILE}/screens/b.csv": "ID,要約,リンク,幅,高さ\nS-1,重なり,,1,2\n"},
     "bad-cols": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,一覧,,一覧,余り\n"},
+    "bad-dup-col": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,リンク\nS-1,一覧,docs/guide.md,docs/missing.md\n"},
+    "bad-empty-id": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\n,空,,x\n"},
+    "bad-outside-file": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,../shared.csv,\n画面,1,screens/*.csv,\n",
+                         "spec-profile/shared.csv": "ID,要約,リンク\nZ-1,外,\n"},
     "bad-missing-file": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,missing.csv,\n"},
 }
 
@@ -210,13 +225,13 @@ def run(mod, argv, tmp: Path):
 def expected_in_range(v: str, lo: str, hi: str) -> bool:
     """本体を使わない期待: 4 桁に 0 で揃え、各桁を 6 桁の 0 埋めの文字列にして文字列で並べる。"""
     def key(s):
-        parts = s.split(".") + ["0"] * (4 - len(s.split(".")))
+        parts = s.split(".") + ["0"] * (6 - len(s.split(".")))
         return "".join(p.rjust(6, "0") for p in parts)
     return key(lo) <= key(v) < key(hi)
 
 
 def gen_version(rng: random.Random) -> str:
-    parts = [str(rng.randint(0, 12)) for _ in range(rng.randint(1, 3))]
+    parts = [str(rng.randint(0, 12)) for _ in range(rng.randint(1, 4))]
     if rng.random() < 0.3:
         parts.append("0")  # 末尾の .0 の有無を混ぜる
     return ".".join(parts)
@@ -268,6 +283,8 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
     o["引数が git でない（環境変数は在る）"] = find("--clone", str(work / "plain"), env=str(work / "envclone"))
     o["行が git でない"] = find(decl=f"外部の profile の clone: {R} {work / 'plain'}\n")
     o["どこにも無い"] = find()
+    o["環境変数が git でない（行は在る）"] = find(decl=line, env=str(work / "plain"))
+    o["引数がリポジトリの中のサブディレクトリ"] = find("--clone", str(prof / "docs"))
     o["ほかのリポジトリの行だけ"] = find(decl=f"外部の profile の clone: other/repo {work / 'declclone'}\n")
     o["同じリポジトリの行が 2 行"] = find(decl=line + f"外部の profile の clone: {R} {work / 'envclone'}\n")
     o["フェンスの中の行だけ"] = find(decl="```text\n" + line + "```\n")
@@ -293,6 +310,12 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
     o["check v1（基盤・下限より小さい）"] = ck("v1", "基盤=1.3,2")
     o["check v1（基盤・上限ちょうど）"] = ck("v1", "基盤=1,1.2")
     o["check タグが無い（ブランチ v9 は在る）"] = ck("v9", "基盤=1,2")
+    o["check 版の記法 v2~1"] = ck("v2~1", "基盤=1,2")
+    os.environ["GIT_DIR"] = str(work / "envclone" / ".git")
+    try:
+        o["check v1（基盤・GIT_DIR がほかを指す）"] = ck("v1", "基盤=1,2")
+    finally:
+        os.environ.pop("GIT_DIR", None)
     o["check 層が無い"] = ck("v1", "運用=1,2")
     o["check 層が無い・切れた層"] = ck("v1", "運用=1,2", "基盤=1,2")
     for t in BAD:
@@ -346,6 +369,8 @@ def main() -> int:
         check("引数が git のリポジトリでなければ、環境変数に落ちず 4（A1）", o["引数が git でない（環境変数は在る）"][0] == 4
               and "次の探し方には進まない" in o["引数が git でない（環境変数は在る）"][1])
         check("行が git のリポジトリでなければ 4", o["行が git でない"][0] == 4)
+        check("環境変数が git のリポジトリでなければ、行に落ちず 4（A1）", o["環境変数が git でない（行は在る）"][0] == 4)
+        check("リポジトリの中のサブディレクトリは clone にしない: 4（A1）", o["引数がリポジトリの中のサブディレクトリ"][0] == 4)
         check("どこにも無ければ 4 で、gh では取りに行かないと言う（A1・A7）", o["どこにも無い"][0] == 4 and "gh では取りに行かない" in o["どこにも無い"][1])
         check("ほかのリポジトリの行だけなら 4", o["ほかのリポジトリの行だけ"][0] == 4)
         check("同じリポジトリの行が 2 行なら 4", o["同じリポジトリの行が 2 行"][0] == 4)
@@ -354,10 +379,11 @@ def main() -> int:
         c1 = o["check v1（基盤）"]
         check("check v1 の基盤: 切れたリンクがあって 1（A4）", c1[0] == 1)
         check("在る節（#認証）と重なった見出しの -1（#データベース-1）は切れない（A4）", "I-1 " not in c1[1] and "I-2 " not in c1[1])
+        check("BOM つきの .md の先頭の見出しへのリンクは切れない（A4）", "I-8 " not in c1[1])
         check("外の URL と空のリンクは見ない（A4）", "I-3 " not in c1[1] and "I-4 " not in c1[1])
         check("リポジトリの外を指すリンクは切れた（A4）", "切れた: I-6 ../outside.md（リポジトリの外を指す）" in c1[1])
         check("作業ツリーにだけ在るファイルへのリンクは切れた（A2・A4）", "切れた: I-7 docs/untracked.md（ファイルがその時点に無い）" in c1[1])
-        check("BOM つきの CSV を読む・6 行（A8 の陽性対照）", "形式の版 1.2・6 行" in c1[1])
+        check("BOM つきの CSV を読む・6 行（A8 の陽性対照）", "形式の版 1.2・7 行" in c1[1])
         check("check の前後で clone の HEAD・作業ツリー・参照が変わらない（A2）", o["check v1 の前後で clone が変わらない"] is True)
         check("作業ツリーの中身がタグと違っても、別のブランチに居ても、タグの中身を読む（A2）",
               o["check v1（基盤・作業ツリーを書き換えた）"] == c1)
@@ -369,10 +395,12 @@ def main() -> int:
         check("下限より小さい形式の版は 4（A3・A7）", o["check v1（基盤・下限より小さい）"][0] == 4)
         check("上限ちょうどの形式の版は 4（A3）", o["check v1（基盤・上限ちょうど）"][0] == 4)
         check("タグが無ければ、同じ名前のブランチがあっても 4（A7）", o["check タグが無い（ブランチ v9 は在る）"][0] == 4)
+        check("タグの名前の版の記法（v2~1）はたどらず 4（A7）", o["check 版の記法 v2~1"][0] == 4)
+        check("GIT_DIR がほかのリポジトリを指していても、名指しの clone を読む（A1・A2）", o["check v1（基盤・GIT_DIR がほかを指す）"] == c1)
         check("求めた層が無ければ 3（無い）（A7）", o["check 層が無い"][0] == 3 and "無い:" in o["check 層が無い"][1])
         check("無い層と切れた層を一緒に求めると 1（1 が 3 より強い）", o["check 層が無い・切れた層"][0] == 1)
         check("読めない形式の版（1a）は 4（A3）", o["check bad-version"][0] == 4 and "[基盤] 判定できなかった" in o["check bad-version"][1])
-        for t in ("bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-id", "bad-cols", "bad-missing-file"):
+        for t in ("bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file"):
             check(f"表の形が違う {t} は 4（A8）", o[f"check {t}"][0] == 4)
         check("画面の層の後ろの列が違っても、層ごとに読める・改行入りの値も読む（A6）",
               o.get("read_layer の画面の行", {}).get("S-2", {}).get("高さ") == "2\n00"
@@ -412,6 +440,15 @@ def main() -> int:
         check("README の中身の表が本体と原本を挙げる", "| `scripts/external-profile.py` |" in readme and "| `references/external-profile.md` |" in readme)
 
         print("\n変異テスト（壊したのに観測がそろったままなら失格）")
+        # 出力の中のテンポラリのパスは、試料の置き場所（<tmp>/correct と、変異の <tmp>/s）で違う——置き場所を揃えて比べる
+        norm = lambda obs: repr(obs).replace("<tmp>/correct/", "<w>/").replace("<tmp>/s/", "<w>/")
+        # 陰性対照: 壊さない写しは「殺せない」——比べ方が何でも違うと言うなら、変異を殺せたことにならない
+        ident = tmp / "identity"
+        ident.mkdir()
+        shutil.copy(SCRIPT, ident / "external-profile.py")
+        shutil.copy(SCRIPT.parent / "check-tlc.py", ident / "check-tlc.py")
+        same = scenario(load_module(ident / "external-profile.py", "ident"), ident, "s", template, seed)
+        check("陰性対照: 壊さない写しの観測は正しい本体と同じ（比べ方が判別している）", norm(same) == norm(o))
         for i, (name, pairs) in enumerate(MUTATIONS.items()):
             mutated = source
             absent = [n for n, _ in pairs if n not in mutated]
@@ -437,7 +474,6 @@ def main() -> int:
                 check(f"変異を殺せる: {name}", True)
                 continue
             # 出力の中のテンポラリのパスは、試料の置き場所（correct と s）で違う——置き場所を揃えて比べる
-            norm = lambda obs: repr(obs).replace("<tmp>/correct/", "<w>/").replace(f"<tmp>/mut-{i}/s/", "<w>/")
             check(f"変異を殺せる: {name}", norm(got) != norm(o))
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
