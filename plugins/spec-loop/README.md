@@ -25,6 +25,8 @@
 | `scripts/qa-to-pptx.py` | Q&A 表からレビュー会用の PPTX を作る（標準ライブラリのみ） |
 | `references/hearing.md` | v1 で要求がまだ無いときと利用者が求めたときに、決定表の骨組みを作る前に業務の前提・判断の基準・優先順位を対話で聞き出す初回ヒアリング（req-loop の手順 0）の決まり |
 | `references/intake.md` | 持ち込まれた動くコード（PR・ブランチ・ディレクトリ）から要求の候補を起こす取り込みの段（req-loop の手順 3a）の決まり |
+| `references/external-profile.md` | 外部の profile（パターンの持ち主のリポジトリの `spec-profile/<名前>/`）の置き場所・`profile.csv` の列・層の表の先頭 3 列・形式の版の範囲・リンクの書き方・探し方の決まり（#1455） |
+| `scripts/external-profile.py` | 外部の profile を中身を知らずに読む——手元の clone の探し方・タグの時点の読み出し（checkout しない）・形式の版の範囲・リンクの検査・2 つのタグの間の差分。platform-spec と screen-spec が読み込んで使う（標準ライブラリと `git`） |
 | `scripts/intake-code.py` | 取り込みの段の機械で決まる部分——持ち込まれたコードを読むだけで写し（`snapshot`）、候補の JSON を検査して Q&A 表の回答待ちの行にし、基盤要件との食い違いを照らす（`rows`）（標準ライブラリと `git`） |
 | `scripts/review-meeting.py` | モックと Q&A 表で進めるレビュー会の機械で決まる部分——会の記録（`reviews/<日付>/notes.csv`）を読んで回答の候補と指摘を出し（`notes`。何も書かない）、指摘の振り分けを検査して回答待ちの行として起票し（`rows`）、資料に載る質問を画面の表の逆引きで画面ごとにまとめる（`groups`。`qa-to-pptx.py --groups` に渡す）（標準ライブラリだけ） |
 | `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
