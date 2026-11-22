@@ -242,6 +242,7 @@ TESTS: list[str] = [
     "test-rework-metrics.py",
     "test-rework-report.py",
     "test-intake-code.py",
+    "test-external-profile.py",
     "test-review-meeting.py",
     "test-parent-checklist.py",
     "test-green-list.py",
