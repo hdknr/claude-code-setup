@@ -85,10 +85,10 @@ Issue 本文（外部入力。先頭が `<!-- cruise-followup: #1425 -->`、2 �
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `100d1940`・終点（指摘対応の最後のコミット）: `c7f5534b`
 - 狭いパス: Verifier（sonnet）を `100d1940`→`c7f5534b` に当てた——反証 0 件。Verifier が設計した変異 4 本（M1「ただし」を「残った・出た」に戻す・M2 cruise §4 の除外を削る・M3 子の 4 の記録の行を潰す・M4 child-cycle.md の除外を削る）は**すべて既存の検査を素通り**——文書の結論の整合は検査の守備範囲の外で、証明手段は計画どおり読み比べ（陽性対照: 1 行消すと skill-metrics --check は赤）。後退ではない（記録だけ）。
   Verifier は序盤に worktree で `git checkout --detach` を走らせ、同じコミットのまま `git symbolic-ref` でブランチに付け直したと申告——親が `git status --branch`・`git log -1`・reflog で確かめた（ブランチ・HEAD `38f90dd6`・clean）。2 パス目の Verifier は run-serial の待ちプロセスを `pkill` で止めたと申告（ほかの周の順番待ちに触れた可能性がある）。
+- PR: #1454（先端 `f2d8900f` で PR 側の CI 全部 SUCCESS・deploy SKIPPED・MERGEABLE）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。PR コメントに関門の結果・採否・狭いパスの振り分けを書いた。手順 7 のマージは親がする。
 - 交絡を潰した手順: 実験なし（読み比べと既存のテスト。陽性対照は base と HEAD の grep——base の「当て直しの後に残った指摘」の 2 は除外を持たず、HEAD は持つ）
 - 受入基準ごとの判定: B1〜B3 は 2 パス目の Verifier と狭いパスの Verifier が読み比べで一致と報告し、親が grep で引いて確かめた。B4 は `test-check-gates.py` 緑（Verifier 3 体と /code-review 2 回）。B5・B6 は check-plugin-versions・check-version-bump・skill-metrics --check 緑。B7 は上の関門の記録（Verifier × 1・2 パス目、/code-review × 1・2 パス目に B1〜B3 を渡した）。check-all（run-serial 越し）は 3 回目（`c7f5534b`＋計画）で失敗 0。
 - 1 パス目の指摘対応の起点（0 行の判定）: `4b313b78bea1d0d9119d65dd46060f2455799b26`
-- 交絡を潰した手順: 実験なし（読み比べと既存のテスト）
 - 割り目: 割らない（cruise の周）
 
 ```dev-loop-gates
