@@ -122,7 +122,11 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 
 - 周の在り処: ブランチ `issue/1460-init-from-platform-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1460`・起点 `64e41878`・base の参照 `origin/main`（refs/remotes/origin/HEAD）・base の SHA `64e41878be4eace2a420d09e424a73a14006ced8`
 - 1 パス目の指摘対応の起点（0 行の判定）: `fb37d7dc`（関門の 2 つに渡した時点の HEAD の成果物。以後の計画ファイルだけのコミットは除いて判定する）
-- 関門 1 パス目: Verifier と `/code-review` に `fb37d7dc` を渡した（結果は回収後に書く）
+- 関門 1 パス目: Verifier（sonnet・dev-loop:dev-loop-verifier。verifier.md 250 行を読んだ）を `fb37d7dc` に当てた——反証 0 件（気づき 3 件は下の採否の表）。報告は起動元に届かず、親が回した。
+  Verifier の未確認: `test-screen-spec-pages.py`・`test-screen-gate.py`・`test-check-screens.py` の単体（run-serial の順番待ち）、11 の表の正規化を外す確かめ・承認済みの一覧の 6 本・取り出した木の rev-parse。
+  前者 3 本は親の check-all（run-serial 越し。`65ae5893` の木＝成果物は `fb37d7dc` と同じ）で OK（`test-check-screens.py` 111 秒・`test-screen-gate.py` 29 秒・`test-screen-spec-pages.py` 54 秒・`test-scaffold-screens.py`・`test-build-mock.py` も OK）。
+  Verifier の差分テストの陽性対照: `base_initial` の基盤無しの戻り値を変えた写しで差分 6 件。`/code-review`（high）を `fb37d7dc` に当てた（結果は回収後に書く）。
+- check-all（run-serial 越し）: `65ae5893` で 1 本落ちた（check-plan-counts——件数の行が無かった。`5fda6505` で足した。ほかは OK・78 本 CACHED）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を init と check-screens の両方で取った。基盤の profile の試料は、clone を案件の根（docs の親）の `CLAUDE.md` の行で探させ、環境変数 `SPEC_PROFILE_CLONE`・`GIT_*` を外した（手元の環境で別の clone を読まない）。platform-spec を読み込まないことは、読み込まれたら印を書く偽の platform-spec を隣に置き、読み込む変異で印が出ること（陽性対照）を取った
 - 回帰テスト: `test-write-screens.py`（run-serial 越し）は `fb37d7dc` の木で緑（試料 61・変異 56・雛形の崩し 14・references の崩し 11・platform-spec の写しの崩し 3）。`test-check-screens.py` は同じ木で緑（試料 167・変異 137・references の崩し 35）
 - 割り目: 割らない（cruise の周）
@@ -131,6 +135,14 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 
 - 外部の profile の足した列を `add`・`build-mock.py`・MkDocs のフックはまだ知らない（#1458 で原本に書いた限界）——`init` が足した列つきで置いた表に `add` は断る。この Issue の範囲の外。
 - 基盤の profile の設定（`shared/platform/settings.csv`）の値の形の検査は platform-spec の `check-infra-profile.py` が持ち、screen-spec は写さない（読めなければ P1 のとおり止める）。
+
+### 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-1（Verifier の気づき）`hint` の出力が、基盤の profile が無いときも `基盤の profile: … が無い` の 1 行だけ増え、差分テストは `init` しか比べていない | 示せる（Verifier の実走） | 無し——「振る舞いを変えない」は A2（`init` が書くもの・終了コード・出力）と A6（`check-screens.py`）だけで、`hint` は Issue の要件どおり基盤の profile の名指しを出すために変える口（A1 の「`hint` がその初期値を出す」）。承認済みの変更の一覧は差分テストの比べる範囲（`init`・`check-screens.py`）の一覧で、`hint` はその範囲に入れていない | 残課題（記録だけ） |
+| V1-2（Verifier の気づき）設定の項目の重なりのエラー文の空白が揃っていない | 示せる（文） | 無し（文言） | 残課題 |
+| V1-3（Verifier の気づき）`--external` だけを渡すと 4 | 示せる | 無し（設計どおり——省いた `--profile` は `未設定` で、`未設定` には重ねられない。A3） | 残課題（決着） |
 
 ## 手順 8 の記録
 
