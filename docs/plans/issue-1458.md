@@ -130,3 +130,7 @@ spec-loop の `screen-gate.py`（子のプロセスで CLI を呼ぶ）。外部
 - 外部の profile のリンクが切れているかは見ない（spec-loop の `external-profile.py check` が見る）。
 - 語彙はセルの値をそのまま比べる（`、` で区切らない）。
 - 外部の profile は案件に 1 つまで（G1）。
+
+## 手順 8 の記録
+
+- この周の起票: 3 件（仕様の穴 G1〜G3 の確認の Issue。番号は立てたときにここへ書く）
