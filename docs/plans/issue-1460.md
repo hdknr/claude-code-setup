@@ -103,11 +103,11 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 
 | 項目 | 書くもの |
 | --- | --- |
-| 旧 | `64e41878be4eace2a420d09e424a73a14006ced8`（周の base） |
-| 新 | `49457ada`（1 パス目の指摘対応の後に回し直した。前の回は `fb37d7dc`（275 件・差分 0）） |
-| 入力の出どころ | サンプルと生成——(1) `init`: 正本の試料 9 つ（空の v1・基盤要件と Q&A と機能一覧つき・置き済み・版が無い・重ね合わせの違反・作業中の版が v2・基盤の profile に画面の層が無い・`重ねる先` が空・v2 に置いた基盤の profile に画面の層が無い）× 引数の組 12（省く・`--prefix SCR-`・`--profile web-spa`・`--profile 未設定`・`--profile desktop`・`--prefix s-`・`Q-`・`TBD-`・`F-`・`--profile web-spa --prefix A1-`・値の無い `--prefix`・知らない引数）= 108 件。終了コード・出力・書いたファイルの中身を比べた。(2) `check-screens.py`: `scripts/test-check-screens.py` の試料の全部 167 件（外部の profile の試料を含む）を同じ `run_one` で旧と新に当て、終了コードと出力を比べた。計 275 件 |
-| 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので `<tmp>` に揃える） |
-| 結果 | 比べた 275 件・差分 0 件・一覧に無い差分 0 件。陽性対照 2 つ: 新側の `base_initial` の「画面の層が無い」を `web-spa` を返す形にした写しで差分 4 件（`base-no-screen` と `base-no-screen-v2` の引数を省く・`--prefix SCR-`）、新側の `load_external` の既定の重なりの判定を外した写しで差分 1 件（`ext-default-duplicate`）——どちらも差分を検出する。スクリプトは scratchpad の `diff-1460/difftest.py`（残さない） |
+| 旧 | `f0b04da8d5c8ee49b8e1b4ed1683c7d9f822824d`（main を取り込んだ後に式を当て直した周の base。取り込み前の回は `64e41878`） |
+| 新 | `6805bfc3`（main の取り込みの後。前の回: `633adbec`（287 件・差分 0）・`49457ada`（275 件・差分 0）・`fb37d7dc`（275 件・差分 0）） |
+| 入力の出どころ | サンプルと生成——(1) `init`: 正本の試料 10（空の v1・基盤要件と Q&A と機能一覧つき・置き済み・版が無い・重ね合わせの違反・作業中の版が v2・基盤の profile に画面の層が無い・`重ねる先` が空・v2 に置いた基盤の profile に画面の層が無い・画面の層が無く profile 名に空白（2 パス目の CR2-1 で足した））× 引数の組 12（省く・`--prefix SCR-`・`--profile web-spa`・`--profile 未設定`・`--profile desktop`・`--prefix s-`・`Q-`・`TBD-`・`F-`・`--profile web-spa --prefix A1-`・値の無い `--prefix`・知らない引数）= 120 件。終了コード・出力・書いたファイルの中身を比べた。(2) `check-screens.py`: `scripts/test-check-screens.py` の試料の全部 167 件（外部の profile の試料を含む）を同じ `run_one` で旧と新に当て、終了コードと出力を比べた。計 287 件 |
+| 正規化した項目 | 出力の一時ディレクトリのパス（新旧で別の場所に置くので `<tmp>`・`<root>` に揃える） |
+| 結果 | 比べた 287 件・差分 0 件・一覧に無い差分 0 件。陽性対照: 新側の `base_initial` の「画面の層が無い」を `web-spa` を返す形にした写しで差分 4 件、新側の `load_external` の既定の重なりの判定を外した写しで差分 1 件（`ext-default-duplicate`）、直す前の `49457ada` に CR2-1 の試料を当てて差分 2 件——どれも差分を検出する。Verifier の陽性対照: 1 パス目 6 件・2 パス目 30 件。スクリプトは scratchpad の `diff-1460/difftest.py`（残さない） |
 | 回した場所 | リポジトリの外（scratchpad。旧は `git archive <旧> plugins/screen-spec plugins/spec-loop` で取り出した木） |
 
 #### 承認済みの変更の一覧
@@ -126,14 +126,40 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
   Verifier の未確認: `test-screen-spec-pages.py`・`test-screen-gate.py`・`test-check-screens.py` の単体（run-serial の順番待ち）、11 の表の正規化を外す確かめ・承認済みの一覧の 6 本・取り出した木の rev-parse。
   前者 3 本は親の check-all（run-serial 越し。`65ae5893` の木＝成果物は `fb37d7dc` と同じ）で OK（`test-check-screens.py` 111 秒・`test-screen-gate.py` 29 秒・`test-screen-spec-pages.py` 54 秒・`test-scaffold-screens.py`・`test-build-mock.py` も OK）。
   Verifier の差分テストの陽性対照: `base_initial` の基盤無しの戻り値を変えた写しで差分 6 件。`/code-review`（high）を `fb37d7dc` に当てた——指摘 7 件（重要 2・nit 5。下の採否の表）。報告は親が回した。差し戻し: 1 パス目の指摘対応（CR1-1・CR1-2 を直す）。
-- check-all（run-serial 越し）: `65ae5893` で 1 本落ちた（check-plan-counts——件数の行が無かった。`5fda6505` で足した。ほかは OK・78 本 CACHED）
+- check-all（run-serial 越し）: main の取り込みの後の `6805bfc3` で 23 本を回して失敗 0（ほかは CACHED）。`65ae5893` で 1 本落ちた（check-plan-counts——件数の行が無かった。`5fda6505` で足した。ほかは OK・78 本 CACHED）
 - 交絡を潰した手順: 差分テストは陽性対照（新側を壊した写しで差分が出る）を init と check-screens の両方で取った。基盤の profile の試料は、clone を案件の根（docs の親）の `CLAUDE.md` の行で探させ、環境変数 `SPEC_PROFILE_CLONE`・`GIT_*` を外した（手元の環境で別の clone を読まない）。platform-spec を読み込まないことは、読み込まれたら印を書く偽の platform-spec を隣に置き、読み込む変異で印が出ること（陽性対照）を取った
 - 回帰テスト: `test-write-screens.py`（run-serial 越し）は `fb37d7dc` の木で緑（試料 61・変異 56・雛形の崩し 14・references の崩し 11・platform-spec の写しの崩し 3）。`test-check-screens.py` は同じ木で緑（試料 167・変異 137・references の崩し 35）
 - 1 パス目の指摘対応: `49457ada`（CR1-1・CR1-2）。`test-write-screens.py` は緑（試料 64・変異 59）。check-all（run-serial 越し）は `49457ada` の成果物で緑（23 本を回した・失敗 0・ほかは CACHED）。差分テストを `49457ada` で回し直した（275 件・差分 0）
 - 0 行の判定: `git diff fb37d7dc -- ':(top)' ':(top,exclude)docs/plans/issue-1460.md'` は 3 ファイル（profiles.md・write-screens.py・test-write-screens.py）——2 パス目を回す
 - 2 パス目: 割り目——割らない（cruise の周）。Verifier（sonnet）を `49457ada` に当てた——反証 0 件（`test-write-screens.py` 緑・差分テスト 275 件差分 0・Verifier の陽性対照（`settings.csv` の行順の入れ替え）で差分 30 件・承認済みの一覧の 6 本は反証の条件に当たらない・`49457ada` 以降の差は計画ファイルだけ。正規化を外した差分 90 件は先頭の数件を見てパスの違いだけ）。報告は起動元に届かず、記録（transcript）から読んだ。`/code-review`（high）を `49457ada` に当てた——指摘 5 件（重要 1・nit 4。下の 2 パス目の採否の表）。報告は記録（transcript）から読んだ。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と手順 6 の 2 パス目（`/code-review`）
-- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `46832b48a8d4718fc4aeb874f17da9a7bb1106ef`
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `46832b48a8d4718fc4aeb874f17da9a7bb1106ef`・終点（指摘対応の最後のコミット）: `633adbece2c61b19109fe5bc02e0396a3418b75e`（`git merge-base --is-ancestor` で起点が終点の祖先であることを確かめた）
+- 2 パス目の指摘対応: CR2-1 を直した（`633adbec`）。`test-write-screens.py` 緑（試料 65・変異 60）。check-all（run-serial 越し）は直しの木で 103 本を回して失敗 0。
+  陽性対照（同じ試料 `base-no-screen-name-with-space`）: 直す前の本体 `49457ada` に差分テスト（この試料を足した 287 件）を当てると差分 2 件（引数を省く・`--prefix SCR-` で、旧は 0 で `profile,未設定`・新は 4）、直した `633adbec` で差分 0 件。
+- 狭いパス: Verifier（sonnet）を `46832b48`→`633adbec` に当てた——反証 1 件（N-1: 写せる形の確かめを `row is None` の戻りと `not row.base` の戻りの間に動かす変異が、既存の 65 試料を素通りする——画面の層は在るが `重ねる先` が空で profile 名に空白がある試料が無い。Verifier が足した試料で変異は赤、直した本体は緑。本体は正しく、試料の穴）。
+  ほかの変異 3 つは赤、2 つは等価変異で素通り。報告は起動元に届かず、記録（transcript）から読んだ。1 回目の狭いパスの Verifier は利用上限で止まって報告が無く、上限が解けた後に起こし直した（その 1 回）。
+- main の取り込み: `6805bfc3`（`f0b04da8`——#1471 の `external-profile.py` の `~` の展開。screen-spec の版は main で 0.8.0 のまま——このブランチの 0.9.0 と衝突しない）。取り込みで変わった検査: `plugins/spec-loop/scripts/external-profile.py`・`scripts/test-external-profile.py`（M）。周の base を当て直すと `f0b04da8d5c8ee49b8e1b4ed1683c7d9f822824d`
 - 割り目: 割らない（cruise の周）
+
+```dev-loop-gates
+周の base: 64e41878be4eace2a420d09e424a73a14006ced8
+関門: Verifier 1 fb37d7dcfa5823654a0dfa420664aabe2a99a4a8 反証=0
+関門: /code-review 1 fb37d7dcfa5823654a0dfa420664aabe2a99a4a8 指摘=7
+関門: Verifier 2 49457ada0f794370f9c6ab21def76779d9addd2e 反証=0
+関門: /code-review 2 49457ada0f794370f9c6ab21def76779d9addd2e 指摘=5
+関門: 狭いパス 46832b48a8d4718fc4aeb874f17da9a7bb1106ef 633adbece2c61b19109fe5bc02e0396a3418b75e 反証=1
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+受入基準: A7 満たす
+受入基準: A8 満たす
+受入基準: A9 満たす
+受入基準: A10 満たす
+受入基準: A11 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
 
 ## 既知の限界・決着済みの論点
 
@@ -168,3 +194,31 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 ## 手順 8 の記録
 
 - この周の起票: 1 件（仕様の穴 P1 の確認の Issue）
+
+### 振り分け（`references/found-lines.md`）
+
+| 行 | 出所 | 実物で失敗を示せるか | 振り分け | 仕様の穴か | 行き先 |
+| --- | --- | --- | --- | --- | --- |
+| `hint` の出力が基盤の profile が無いときも 1 行増える | Verifier 1 パス目 V1-1 | 示せる | 記録だけ（`hint` は Issue の要件で変える口。受入基準の「同じ」は `init` と `check-screens.py`） | — | — |
+| 設定の項目の重なりのエラー文の空白 | Verifier 1 パス目 V1-2 | 示せる（文） | 記録だけ（文言） | — | — |
+| `load_external` の文言が settings.csv を前提・`--external` だけで選んでいない「未設定」が出る | /code-review 1 パス目 CR1-3 | 示せる（文言） | 記録だけ（`check-screens.py` の出力は変えない——A6） | — | — |
+| A5 の罠は実行の読み込みしか拾わない・`profiles.md` と docstring が platform-spec のファイルを名指す | /code-review 1 パス目 CR1-4・2 パス目 CR2-5 | 示せる（文） | 記録だけ（名指しは写しの出所と人への案内で、読み込む箇所ではない。A5 の「指す」の読み方は PR コメントで人間に渡す） | — | — |
+| 試料の同じ文字列への `replace`・見出し行全体を比べていない | /code-review 1 パス目 CR1-5 | 示せる | 記録だけ（試料の穴） | — | — |
+| `--profile` だけを渡すと名指しの外部の profile を黙って落とす | /code-review 1 パス目 CR1-6 | 示せる | 記録だけ（設計どおり——A3。注記はまれに役立つ改善） | — | — |
+| `init` の「初期値を引いた」が出ないことを見る試料が無い | /code-review 2 パス目 CR2-2 | 示せる（変異の読み） | 記録だけ（試料の穴。変異は `hint` の手順で殺せている） | — | — |
+| スキルの手順 2 で「`web-spa` だけ（外部の profile なし）」を選べない | /code-review 2 パス目 CR2-3 | 示せる（文） | 記録だけ（明示で `--external なし` は渡せる。組み込みの profile が 1 つの間のまれな選び方） | — | — |
+| スキルの手順 3 の「0 以外なら何も書かれていない」が途中の失敗と食い違う | /code-review 2 パス目 CR2-4 | 示せる（文） | 記録だけ（文言。途中の失敗はまれ） | — | — |
+| 名指しの無い基盤の profile で、profile 名に空白があると 4 で止まる | /code-review 2 パス目 CR2-1 | 示せる | 直す（その周が持ち込んだ後退・A2）——周の中で直し（`633adbec`）、狭いパスで消えたことを確かめた。台帳には足さない | 穴でない | — |
+| 画面の層は在るが `重ねる先` が空で profile 名に空白がある試料が無く、確かめを 2 つの戻りの間に動かす変異が素通りする | 狭いパス N-1 | 示せる（変異） | 記録だけ（試料の穴。本体は正しい。A9 は A1・A3・A4・A5 の判定の変異で、A2 の判定は差分テストが持つ） | — | — |
+
+- 切り分けの層: 戻し先なし——#1461 の切り方（#1458 が読む・#1459 が起票の候補・#1460 が初期値）で範囲は分かれていた。関門の指摘は `base_initial` の確かめの順序に集まり、別の周に分けても同じ指摘になる。
+- 焼き戻す学び: 1 パス目の直し（確かめを足す）が、名指しの無い入力の振る舞いを変えた——#1458 と同じ型（受入基準に「振る舞いを変えない」がある周で直すときは、直した形を差分テストの入力に足して回し直す）。この計画ファイルに残す（CLAUDE.md・Skill には足さない）。
+
+### 効いた行（手順 8）
+
+- 効いた行: V-05（狭いパス N-1——Verifier が当てた変異。報告の項 5・6）
+- 効いた行: V-06（狭いパス N-1——素通りした変異の陽性対照）
+- 効いた行: R-01（2 パス目 CR2-1——差分テストの試料が後退を判別していない）
+- 効いた行: R-02（1 パス目 CR1-1・CR1-2・CR1-3、2 パス目 CR2-3・CR2-4・CR2-5——記述と振る舞いの事実確認）
+- 効いた行: R-04（1 パス目 CR1-4・CR1-5、2 パス目 CR2-2——当てられていない変異と試料）
+- 効いた行: なし（1 パス目 V1-1・V1-2・V1-3・CR1-6・CR1-7）
