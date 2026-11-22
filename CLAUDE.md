@@ -99,6 +99,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **`snapshot` は正本で `fetch`・`rev-parse`・`ls-tree`・`cat-file`・`check-ignore` だけを走らせて正本の外か（`.gitignore` に外された）`build/` の下へ写し（マージしない）、`rows` はスキルが書いた候補の JSON を検査して作業中の版の Q&A 表に `確認中`・`未回答` の行で足す**
       （回答・状態・反映先の鍵は違反。足した表全体を `check-qa-csv.py` に当ててから書く）。基盤要件の 3 項目はコードの目印と機械で照らし、ほかの食い違いはスキルが引いた正本の文が在るかだけを見る。
       決まりの原本は `references/intake.md`、守る／守らないは docstring を正とする。テストは `scripts/test-intake-code.py`）
+    - `scripts/external-profile.py` - **外部の profile（パターンの持ち主のリポジトリの `spec-profile/<名前>/`）を中身を知らずに読む共通の部分**（#1455。platform-spec と screen-spec が読み込んで使い、写さない）——
+      手元の clone の探し方（引数 → 環境変数 `SPEC_PROFILE_CLONE` → 案件の `CLAUDE.md` の行。**`gh` では取りに行かない**）・タグの時点の読み出し（`rev-parse`・`ls-tree`・`cat-file` だけ。**checkout しない**）・形式の版の範囲（呼ぶ側が渡す）・リンクの検査・2 つのタグの間の ID を鍵にした差分。
+      **見つからない・タグが無い・形式の版が範囲の外は 4（判定できなかった）、求めた層が無いのは 3（無い）**。層の中身（先頭 3 列 `ID,要約,リンク` より後ろ）は解釈しない。決まりの原本は `references/external-profile.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-profile.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。**`--links` で質問ごとのリンク（画面の表から作るモックの `#screen=`）を外から受けて質問の頁に載せ、
       渡さなければ前と同じバイト**——#1100。**`--groups` で質問のまとめ方（画面ごと・テーマ）を外から受けて並べ、`--groups`・`--links` のときは表紙に見た目の注記**——#1082。テストは
@@ -533,6 +536,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-intake-code.py` - spec-loop の持ち込まれたコードの取り込み（#998）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**正本と取り込む元は一時ディレクトリに本物の git リポジトリで作り（PR は bare の `origin` の `refs/pull/<n>/head`）、
     写した前後で正本の参照・HEAD・`git status` が変わらないことと、足した表に本物の `check-qa-csv.py` が通ることを見る**——本物の GitHub には届かない
+  - `test-external-profile.py` - spec-loop の外部の profile を読む共通の部分（#1455）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**profile のリポジトリ（2 つのタグ・基盤と画面の 2 つの層・形の違う表のタグ）と案件は一時ディレクトリに本物の git リポジトリで作り**（`HOME`・`GIT_CONFIG_GLOBAL` を差し替え、`SPEC_PROFILE_CLONE` を外す）、
+    作業ツリーを書き換え・別のブランチに居ても、タグの中身を読み clone を変えないことと、**本体の定数が `references/external-profile.md` と一致すること**を見る。形式の版の範囲は `random` で生成した版でも当てる（seed は出力に出す）
   - `test-review-meeting.py` - spec-loop のレビュー会の記録の口（#1082）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**正本（2 つの版・画面の表・`reviews/<日付>/`）は試料ごとに一時ディレクトリに作り、写した `scripts/` を `python3 -I` で走らせる**。
     `notes` が何も書かないこと・起票の番号と起票元と対象・指摘を落とさないこと・画面の表の逆引き（遷移先では引かない）と、**本体の定数が `references/tree.md` の「レビュー会の記録」と一致すること**を見る
