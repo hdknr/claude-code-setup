@@ -497,6 +497,9 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
      "重ねる先 'desktop' が requirements/screens/settings.csv の profile 'web-spa' と食い違う", "違反"),
     ("ext-base-unset", ext(SETTINGS=UNSET_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 4,
      "重ねる先 'web-spa' が requirements/screens/settings.csv の profile '未設定' と食い違う", "違反"),
+    ("ext-base-unset-both", ext(SETTINGS=UNSET_SETTINGS + "外部の profile,org/guide org v1\n"),
+     prof({"v1": guide(profile=GUIDE_PROFILE.replace(",web-spa\n", ",未設定\n"))}), [], 4,
+     "重ねる先 '未設定' が requirements/screens/settings.csv の profile '未設定' と食い違う（未設定 には重ねられない）", "違反"),
     # ---- B5 形式の版
     ("ext-version-out", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace("画面,1,", "画面,2,"))}), [], 4, "範囲（1 以上 2 未満）の外", "違反"),
     # ---- B6 読めない
@@ -522,6 +525,11 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     ("ext-default-empty-value", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,detail,\n")}), [], 4, "既定の値が空", "違反"),
     ("ext-default-duplicate", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,form,modal\n")}), [], 4,
      "種別 form の列 レイアウト の既定が 2 行ある", "違反"),
+    # ---- B7 足した列は宣言の順（層のファイルの名前の順・ファイルの中の行の順）に見出し行に入る
+    ("ext-two-columns-order", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
+     prof({"v1": {**guide(), f"{GUIDE_DIR}/screens/zz.csv": L_HEAD + "L-COL2,サイズの列,,列,screens.csv,サイズ,,\n"}}), [], 0, "違反 0 件", "見出し行"),
+    ("ext-two-columns-order-in-file", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
+     prof({"v1": guide(rows=L_COL + "L-COL2,サイズの列,,列,screens.csv,サイズ,,\n" + L_STD + L_MODAL + L_LIST + L_FORM + R_ROWS)}), [], 0, "違反 0 件", "見出し行"),
     # ---- B7 足した列の無い見出し行
     ("ext-header-without-column", ext(S=SW_HEAD + WS1 + WS2), prof(), [], 1,
      f"見出し行が決まり（profile web-spa の列・{EXT_LABEL} の列を足した）", ""),
@@ -730,7 +738,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("既定と違う値は根拠があっても違反にする", "if not self.qa_number.search(whole.tables[SCREENS][key].get(\"根拠\", \"\")):", "if True:", "ext-default-with-basis"),
     ("既定と同じ値も違反にする", "if not value or undecided_profile(value) or value == default:", "if not value or undecided_profile(value):", "ext-good"),
     ("既定を種別で引かない", "                if row.get(\"種別\") != kind:\n", "                if False:\n", "ext-good"),
-    ("重ねる先を照らさない", "        if layer.base != self.profile:\n", "        if False:\n", "ext-base-mismatch"),
+    ("重ねる先を照らさない", "        if self.profile not in PROFILES or layer.base != self.profile:\n", "        if False:\n", "ext-base-mismatch"),
+    ("未設定 に重ねさせる", "        if self.profile not in PROFILES or layer.base != self.profile:\n", "        if layer.base != self.profile:\n", "ext-base-unset-both"),
+    ("足す列を宣言の逆の順にする", "external.columns[target].append(column)", "external.columns[target].insert(0, column)", "ext-two-columns-order"),
+    ("足す列を名前の順にする", " + added.get(path, []) for path in TABLES}", " + sorted(added.get(path, [])) for path in TABLES}", "ext-two-columns-order-in-file"),
     ("足す列を見出し行に求めない", " + added.get(path, [])", "", "ext-good"),
     ("案件の根を docs の親にしない", "project=self.docs.resolve().parent", "project=None", "ext-good"),
     ("形式の版の範囲を変える", "EXTERNAL_RANGE = (\"1\", \"2\")", "EXTERNAL_RANGE = (\"1\", \"3\")", "ext-version-out"),

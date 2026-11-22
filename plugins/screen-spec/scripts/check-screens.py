@@ -566,8 +566,9 @@ class Checker:
             raise Stop(f"{label} を読めない: {e}") from None
         except Exception as e:  # noqa: BLE001 — git が無い・パスが読めないなど。外部の profile を外して検査を続けない
             raise Stop(f"{label} を読めない: {type(e).__name__}: {e}") from None
-        if layer.base != self.profile:
-            raise Stop(f"{label} の層 {EXTERNAL_LAYER} の 重ねる先 {layer.base!r} が {SETTINGS} の {PROFILE_KEY} {self.profile!r} と食い違う")
+        if self.profile not in PROFILES or layer.base != self.profile:
+            raise Stop(f"{label} の層 {EXTERNAL_LAYER} の 重ねる先 {layer.base!r} が {SETTINGS} の {PROFILE_KEY} {self.profile!r} と食い違う"
+                       f"（{UNSET} には重ねられない）")
         external = External(repo, name, tag, source)
         tables = {path.rsplit("/", 1)[1]: path for path in TABLES}
         builtin = PROFILES[self.profile]["columns"] if self.profile in PROFILES else {}
