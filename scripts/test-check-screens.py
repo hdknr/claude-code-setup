@@ -432,8 +432,8 @@ GUIDE_MD = f"# ガイド\n\n## レイアウト\n\n{BODY_MARK}\n\n## 標準\n\n##
 EXT_LABEL = "外部の profile org/guide の org（タグ v1）"
 
 
-def guide(profile: str = GUIDE_PROFILE, rows: str = L_ROWS, head: str = L_HEAD) -> dict[str, str]:
-    return {f"{GUIDE_DIR}/profile.csv": profile, f"{GUIDE_DIR}/screens/layout.csv": head + rows, "docs/guide.md": GUIDE_MD}
+def guide(profile: str = GUIDE_PROFILE, rows: str = L_ROWS, head: str = L_HEAD, md: str = GUIDE_MD) -> dict[str, str]:
+    return {f"{GUIDE_DIR}/profile.csv": profile, f"{GUIDE_DIR}/screens/layout.csv": head + rows, "docs/guide.md": md}
 
 
 def prof(tags: dict | None = None, **options) -> tuple:
@@ -543,6 +543,88 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     ("ext-setting-two", ext(SETTINGS=EXT_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
 ]
 CASES += EXT_CASES
+
+# ---- 既定の答え（#1459）: 画面の層の種類 `答え` の行を、誰が決めるかで内部・共有の起票の候補に出す
+A_LIST = "A-LIST,ページ番号で送る,docs/guide.md#一覧,答え,仕様書,一覧の送り方,,\n"  # 利用者 → 共有
+A_PATH = "A-PATH,パスは名詞の複数形,docs/guide.md#パス,答え,screens.csv,パス,,\n"  # 開発者 → 内部
+A_FILE = "A-FILE,署名付き URL で配る,docs/guide.md#ファイル,答え,仕様書,ファイル出力・印刷,,開発者\n"  # 2 人のうち開発者の部分だけ
+A_DIALOG = "A-DIALOG,モーダルにする,docs/guide.md#ダイアログ,答え,仕様書,ダイアログの実体,,\n"  # 2 人 → 両方
+A_FRAME = "A-FRAME,標準の外枠,docs/guide.md#外枠,答え,共通仕様,アプリの外枠,,\n"  # 共通仕様の小見出し → 共有
+A_TAB = "A-TAB,同じタブで開く,docs/guide.md#タブ,答え,transitions.csv,種類,,\n"  # 遷移の列 → 共有
+A_ROWS = A_LIST + A_PATH + A_FILE + A_DIALOG + A_FRAME + A_TAB
+ANSWER_MARK = "既定の答えの本文の目印-91c2"  # リンク先の本文。出力に出てはならない（C3）
+ANSWER_MD = GUIDE_MD + f"\n## 一覧\n\n{ANSWER_MARK}\n\n## パス\n\n## ファイル\n\n## ダイアログ\n\n## 外枠\n\n## タブ\n"
+ANSWER_LIST = (f"起票の候補: shared/qa.csv: 一覧の送り方（利用者が決める）——推奨: ページ番号で送る（{EXT_LABEL} の行 A-LIST・docs/guide.md#一覧）。"
+               "起票するなら質問に A-LIST を書く")
+ANSWER_PATH = (f"起票の候補: spec/qa-dev.csv: パス（開発者が決める）——{EXT_LABEL} の既定を採る: パスは名詞の複数形（行 A-PATH・docs/guide.md#パス）。"
+               "起票するなら質問に A-PATH を書く")
+ANSWER_TALLY = "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 {} 件"
+
+
+def ans(rows: str = A_ROWS) -> tuple:
+    return prof({"v1": guide(rows=L_ROWS + rows, md=ANSWER_MD)})
+
+
+def ans_qa(shared: str = "", internal: str = "") -> dict[str, object]:
+    """外部の profile を重ねた正本の Q&A 表に行を足す（起票した跡）。"""
+    files = ext()
+    files[QA] = files[QA] + shared
+    files[QA_DEV] = files[QA_DEV] + internal
+    return files
+
+
+ANSWER_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
+    # ---- 誰が決めるかで分かれる（C1）。終了コードは候補の無い同じ正本と同じ 0（C6）。本文を出さない（C3）
+    ("ans-shared", ext(), ans(), [], 0, ANSWER_LIST, ANSWER_MARK),
+    ("ans-internal", ext(), ans(), [], 0, ANSWER_PATH, "shared/qa.csv: パス"),
+    ("ans-narrowed", ext(), ans(), [], 0, "起票の候補: spec/qa-dev.csv: ファイル出力・印刷（開発者が決める）", "shared/qa.csv: ファイル出力・印刷"),
+    ("ans-both-shared", ext(), ans(), [], 0, "起票の候補: shared/qa.csv: ダイアログの実体（利用者が決める）——推奨: モーダルにする", "spec/qa-dev.csv: 一覧の送り方"),
+    ("ans-both-internal", ext(), ans(), [], 0, "起票の候補: spec/qa-dev.csv: ダイアログの実体（開発者が決める）", "spec/qa-dev.csv: アプリの外枠"),
+    ("ans-common", ext(), ans(), [], 0, "起票の候補: shared/qa.csv: アプリの外枠（利用者が決める）——推奨: 標準の外枠", "spec/qa-dev.csv: 種類"),
+    ("ans-transition", ext(), ans(), [], 0, "起票の候補: shared/qa.csv: 種類（利用者が決める）——推奨: 同じタブで開く", "止めた"),
+    ("ans-tally", ext(), ans(), [], 0, ANSWER_TALLY.format(7), "違反:"),
+    ("ans-split-ok", ext(), ans(A_DIALOG.replace(",,\n", ",,利用者\n") + A_DIALOG.replace("A-DIALOG,", "A-DIALOG2,").replace(",,\n", ",,開発者\n")), [], 0,
+     "spec/qa-dev.csv: ダイアログの実体（開発者が決める）——" + EXT_LABEL + " の既定を採る: モーダルにする（行 A-DIALOG2", "止めた"),
+    # 陽性対照（C3）: 同じ目印を要約に置けば出力に出る——出力の見張りが目印を判別している
+    ("ans-summary-shown", ext(), ans(A_LIST.replace("ページ番号で送る", ANSWER_MARK)), [], 0, f"推奨: {ANSWER_MARK}", "止めた"),
+    # ---- 起票した跡で消える（C4）
+    ("ans-suppressed-shared", ans_qa(shared="Q-R-004,要求確定,一覧の送り方（A-LIST）をどうするか,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_TALLY.format(6), "shared/qa.csv: 一覧の送り方"),
+    ("ans-suppressed-internal", ans_qa(internal="D-S-002,仕様レビュー,パスの形（A-PATH）,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_TALLY.format(6), "spec/qa-dev.csv: パス"),
+    ("ans-suppressed-other-table", ans_qa(internal="D-S-002,仕様レビュー,一覧の送り方（A-LIST）,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_LIST, "止めた"),
+    ("ans-suppressed-other-table-internal", ans_qa(shared="Q-R-004,要求確定,パス（A-PATH）の話,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_PATH, "止めた"),
+    ("ans-id-in-answer", ans_qa(shared="Q-R-004,要求確定,一覧の送り方をどうするか,A: はい / B: いいえ,A,A-LIST に合わせる,未回答,—,確認中,\n"), ans(), [], 0, ANSWER_LIST, "止めた"),
+    ("ans-id-boundary", ans_qa(shared="Q-R-004,要求確定,別の行 A-LISTX のこと,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0, ANSWER_LIST, "止めた"),
+    # ---- 答えの行が決まりに合わなければ 4（C5）
+    ("ans-bad-table", ext(), ans(A_LIST.replace(",仕様書,", ",画面,")), [], 4, "行 A-LIST: 答えの表 '画面' は", "違反"),
+    ("ans-not-item", ext(), ans(A_TAB.replace(",transitions.csv,", ",screen-items.csv,")), [], 4,
+     "行 A-TAB: screen-items.csv の '種類' は profile web-spa の誰が決めるかの項目でない", "違反"),
+    ("ans-wrong-place", ext(), ans(A_FRAME.replace(",共通仕様,", ",仕様書,")), [], 4, "行 A-FRAME: 仕様書 の 'アプリの外枠' は profile web-spa の誰が決めるかの項目でない", "違反"),
+    ("ans-empty-item", ext(), ans(A_LIST.replace(",一覧の送り方,", ",,")), [], 4, "行 A-LIST: 列が空", "違反"),
+    ("ans-empty-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ",,")), [], 4, "行 A-LIST: 要約が空", "違反"),
+    ("ans-empty-link", ext(), ans(A_LIST.replace(",docs/guide.md#一覧,", ",,")), [], 4, "行 A-LIST: リンクが空", "違反"),
+    ("ans-bad-value", ext(), ans(A_LIST.replace(",,\n", ",,管理者\n")), [], 4, "行 A-LIST: 答えの値 '管理者' は", "違反"),
+    ("ans-value-not-decider", ext(), ans(A_LIST.replace(",,\n", ",,開発者\n")), [], 4, "行 A-LIST: 一覧の送り方 を決めるのは 利用者 で、開発者 ではない", "違反"),
+    # 候補の行にそのまま出す欄（1 パス目の指摘対応）: 改行は出力の行を割り、Q&A の番号の形は振っていない番号を出す
+    ("ans-newline-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ',"一行目\n違反: 注入された行",')), [], 4, "行 A-LIST: 要約 に改行か制御文字がある", "違反: 注入"),
+    ("ans-newline-link", ext(), ans(A_LIST.replace(",docs/guide.md#一覧,", ',"docs/guide.md#一覧\r\n起票の候補: 偽",')), [], 4, "行 A-LIST: リンク に改行か制御文字がある", "起票の候補: 偽"),
+    ("ans-linesep-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ",一行目\u2028違反: 注入された行,")), [], 4, "行 A-LIST: 要約 に改行か制御文字がある", "違反: 注入"),
+    ("ans-linesep-link", ext(), ans(A_LIST.replace(",docs/guide.md#一覧,", ",docs/guide.md#一覧\u2029起票の候補: 偽,")), [], 4, "行 A-LIST: リンク に改行か制御文字がある", "起票の候補: 偽"),
+    ("ans-newline-id", ext(), ans(A_LIST.replace("A-LIST,", '"D-S-778\nx",')), [], 4, "の答えの行: ID に改行か制御文字がある", "違反"),
+    ("ans-qa-number-value", ext(), ans(A_LIST.replace(",,\n", ",,Q-R-999\n")), [], 4, "行 A-LIST: 値 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-table", ext(), ans(A_LIST.replace(",仕様書,", ",Q-R-998,")), [], 4, "行 A-LIST: 表 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-item", ext(), ans(A_LIST.replace(",一覧の送り方,", ",Q-R-997,")), [], 4, "行 A-LIST: 列 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ",Q-R-002 と同じにする,")), [], 4, "行 A-LIST: 要約 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-id", ext(), ans(A_LIST.replace("A-LIST,", "D-S-777,")), [], 4, "の答えの行: ID に Q&A の番号の形がある", "違反"),
+    ("ans-duplicate", ext(), ans(A_LIST + A_LIST.replace("A-LIST,", "A-LIST2,")), [], 4,
+     "行 A-LIST2: 一覧の送り方 の利用者が決める部分の答えが 2 行ある（A-LIST と）", "違反"),
+    ("ans-duplicate-part", ext(), ans(A_DIALOG + A_DIALOG.replace("A-DIALOG,", "A-DIALOG2,").replace(",,\n", ",,開発者\n")), [], 4,
+     "行 A-DIALOG2: ダイアログの実体 の開発者が決める部分の答えが 2 行ある（A-DIALOG と）", "違反"),
+]
+CASES += ANSWER_CASES
 
 
 failures: list[str] = []
@@ -780,6 +862,41 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("足した列を全部読む前に語彙の列を照らす", "                uses.append((target, column, rid))\n            elif kind == EXTERNAL_DEFAULT:",
      "                if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:\n                    raise Stop(\"早すぎる照合\")\n                uses.append((target, column, rid))\n            elif kind == EXTERNAL_DEFAULT:",
      "ext-vocab-after-add"),
+    # ---- 既定の答え（#1459）
+    ("答えの行を種類として読まない", "            if kind == EXTERNAL_ANSWER:\n                self.read_answer(external, rid, row, where)\n                continue\n", "", "ans-shared"),
+    ("答えを候補に出さない", "        self.answer_candidates(external, whole)\n", "", "ans-shared"),
+    ("共有の候補にリンクを付けない", "text = f\"推奨: {summary}（{external.label} の行 {rid}・{link}）\"", "text = f\"推奨: {summary}（{external.label} の行 {rid}）\"", "ans-shared"),
+    ("決める人で分けない", "        targets = builtin[\"deciders\"][item]\n", "        targets = (SHARED_QA,)\n", "ans-internal"),
+    ("決める人の部分で絞らない", "            targets = tuple(t for t in targets if DECIDED_BY[t] == value)\n", "", "ans-narrowed"),
+    ("決める人が 2 人の項目を片方にする", "        targets = builtin[\"deciders\"][item]\n", "        targets = builtin[\"deciders\"][item][:1]\n", "ans-both-internal"),
+    ("共有と内部の Q&A 表を取り違える", "rows = whole.qa if target == SHARED_QA else whole.internal", "rows = whole.internal if target == SHARED_QA else whole.qa", "ans-suppressed-other-table"),
+    ("起票した跡を見ない", "            if any(mention.search(r.get(\"質問\") or \"\") for r in rows.values()):\n", "            if False:\n", "ans-suppressed-shared"),
+    ("内部の起票した跡を見ない", "rows = whole.qa if target == SHARED_QA else whole.internal", "rows = whole.qa", "ans-suppressed-internal"),
+    ("行の ID の境目を見ない", "mention = re.compile(rf\"(?<![A-Za-z0-9_-]){re.escape(rid)}(?![A-Za-z0-9_-])\")", "mention = re.compile(re.escape(rid))", "ans-id-boundary"),
+    ("答えの表を見ない", "        if table not in places:\n", "        if False:\n", "ans-bad-table"),
+    ("答えの項目を見ない", "        if item not in places[table]:\n", "        if False:\n", "ans-not-item"),
+    ("小見出しの置き場所を見ない", "places.update({place: builtin[part] for place, part in ANSWER_PLACES.items()})",
+     "places.update({place: builtin[\"screen\"] + builtin[\"common\"] for place in ANSWER_PLACES})", "ans-wrong-place"),
+    ("答えの空の列を見ない", "        if not item:\n            raise Stop(f\"{where}: 列が空\")", "        if False:\n            raise Stop(f\"{where}: 列が空\")", "ans-empty-item"),
+    ("答えの空の要約を見ない", "        if not summary:\n", "        if False:\n", "ans-empty-summary"),
+    ("答えの空のリンクを見ない", "        if not link:\n", "        if False:\n", "ans-empty-link"),
+    ("決まりに無い答えの値を通す", "            if value not in DECIDED_BY.values():\n", "            if False:\n", "ans-bad-value"),
+    ("決めない人の値を通す", "            if not targets:\n", "            if False:\n", "ans-value-not-decider"),
+    ("内部の候補にもう一方の表の跡も当てる", "rows = whole.qa if target == SHARED_QA else whole.internal", "rows = whole.qa if target == SHARED_QA else {**whole.qa, **whole.internal}",
+     "ans-suppressed-other-table-internal"),
+    ("答えの欄の制御文字を見ない", "            if any(unicodedata.category(ch).startswith(\"C\") or unicodedata.category(ch) in LINE_BREAKING for ch in text):\n", "            if False:\n", "ans-newline-summary"),
+    ("行の区切りの文字を通す", "LINE_BREAKING = (\"Zl\", \"Zp\")", "LINE_BREAKING = ()", "ans-linesep-summary"),
+    ("リンクの行の区切りを通す", "LINE_BREAKING = (\"Zl\", \"Zp\")", "LINE_BREAKING = (\"Zl\",)", "ans-linesep-link"),
+    ("ID の制御文字を見ない", "            if any(unicodedata.category(ch).startswith(\"C\") or unicodedata.category(ch) in LINE_BREAKING for ch in text):\n",
+     "            if name != \"ID\" and any(unicodedata.category(ch).startswith(\"C\") for ch in text):\n", "ans-newline-id"),
+    ("表・列・値の番号の形を見ない", "(\"表\", table), (\"列\", item), (\"値\", value)):", "):", "ans-qa-number-value"),
+    ("表の番号の形を見ない", "(\"表\", table), (\"列\", item)", "(\"列\", item)", "ans-qa-number-table"),
+    ("列の番号の形を見ない", "(\"表\", table), (\"列\", item)", "(\"表\", table)", "ans-qa-number-item"),
+    ("起票した跡を質問のほかの欄でも見る", "if any(mention.search(r.get(\"質問\") or \"\") for r in rows.values()):", "if any(mention.search(\" \".join(str(v) for v in r.values())) for r in rows.values()):", "ans-id-in-answer"),
+    ("答えの欄の Q&A の番号の形を見ない", "            if self.qa_number.search(text):\n", "            if False:\n", "ans-qa-number-summary"),
+    ("答えの ID の番号の形を出す", "at = f\"{external.label} の答えの行\" if name == \"ID\" else where", "at = where", "ans-qa-number-id"),
+    ("答えの重なりを見ない", "            if (item, target) in external.answers:\n", "            if False:\n", "ans-duplicate"),
+    ("答えの重なりを項目だけで見る", "            if (item, target) in external.answers:\n", "            if any(k[0] == item for k in external.answers):\n", "ans-split-ok"),
     ("表から指されない仕様書を見ない", "elif name not in referenced:", "elif False:", "prose-orphan"),
     ("common.md を表から指されない仕様書に数える", "            if name == COMMON:\n", "            if False:\n", "prose-common-not-orphan"),
     ("仕様書を 2 つの画面が指すのを見ない", "elif document in documents:", "elif False:", "doc-shared"),
@@ -925,6 +1042,9 @@ def profile_mismatches(module, profiles: str, directories: list[str]) -> list[st
     # 各項目を誰が決めるか（共有の Q&A 表か spec/qa-dev.csv か）が書いてある
     items = [n for names in module.PROFILES["web-spa"]["columns"].values() for n in names] + screen + common
     same("誰が決めるかの項目", sorted(items), sorted(deciders))
+    # 起票する表の写し（既定の答えの候補の行き先。#1459）——順も見る（決める人が 2 人の項目は候補をこの順に出す）
+    same("誰が決めるかの起票する表", {k: list(v) for k, v in module.PROFILES["web-spa"]["deciders"].items()},
+         {name: ticked(row[-1]) for name, row in deciders.items()})
     for name, row in deciders.items():
         if not re.fullmatch(r"(`shared/qa\.csv`|`spec/qa-dev\.csv`)(・(`shared/qa\.csv`|`spec/qa-dev\.csv`))*", row[-1]):
             problems.append(f"誰が決めるか: {name} の起票する表 {row[-1]!r} が共有の Q&A 表か spec/qa-dev.csv でない")
@@ -944,6 +1064,7 @@ def external_mismatches(module, profiles: str, tables: str) -> list[str]:
         setting = section(part, "### 設定の行")
         layer = section(part, "### 画面の層")
         kinds = section(layer, "#### 行の種類")
+        answer = section(layer, "#### 既定の答え")
         accepted = section(part, "### 受け付ける形式の版")
         settings = section(tables, "## 案件ごとの設定（`settings.csv`）")
     except ValueError as e:
@@ -953,7 +1074,13 @@ def external_mismatches(module, profiles: str, tables: str) -> list[str]:
     by_name = {ticked(r[0])[0]: r for r in columns}
     same("画面の層の表", [p.rsplit("/", 1)[1] for p in module.TABLES], ticked(by_name.get("表", ["", ""])[1]))
     same("行の種類", list(module.EXTERNAL_KINDS), [ticked(r[0])[0] for r in rows_of(kinds)])
-    same("足す・語彙・既定", [module.EXTERNAL_ADD, module.EXTERNAL_VOCAB, module.EXTERNAL_DEFAULT], [ticked(r[0])[0] for r in rows_of(kinds)])
+    same("足す・語彙・既定・答え", [module.EXTERNAL_ADD, module.EXTERNAL_VOCAB, module.EXTERNAL_DEFAULT, module.EXTERNAL_ANSWER], [ticked(r[0])[0] for r in rows_of(kinds)])
+    # 既定の答え（#1459）
+    named = {"screen": "仕様書", "common": "共通仕様"}
+    same("答えの小見出しの表", [(k, named[v]) for k, v in module.ANSWER_PLACES.items()], re.findall(r"`([^`]+)`（(仕様書|共通仕様)の小見出し）", answer))
+    answer_rows = {ticked(r[0])[0]: r for r in rows_of(answer)}
+    same("答えの値", list(module.DECIDED_BY.values()), ticked(answer_rows.get("値", ["", ""])[1]))
+    same("候補の行き先", [(module.SHARED_QA, "共有"), (module.INTERNAL_QA, "内部")], re.findall(r"起票する表が `([^`]+)` の部分——\*\*(共有|内部)の Q&A 表の候補", answer))
     same("層の名前", [module.EXTERNAL_LAYER], re.findall(r"`profile\.csv` の層 `([^`]+)` の表", layer))
     found = re.search(r"\| `([0-9.]+)` \| `([0-9.]+)` \|", accepted)
     same("形式の版の範囲", module.EXTERNAL_RANGE, (found.group(1), found.group(2)) if found else None)
@@ -969,6 +1096,10 @@ EXTERNAL_MUTATIONS = [
     ("層の名前を変える", "profiles", "`profile.csv` の層 `画面` の表", "`profile.csv` の層 `screens` の表"),
     ("形式の版の上限を変える", "profiles", "| `1` | `2` |", "| `1` | `3` |"),
     ("設定の行の名前を変える", "profiles", "外部の profile,<持ち主>/<リポジトリ> <名前> <タグ>", "外部 profile,<持ち主>/<リポジトリ> <名前> <タグ>"),
+    ("答えの種類を消す", "profiles", "| `答え` | 組み込みの profile の項目の既定の答え。", "| 答え | 組み込みの profile の項目の既定の答え。"),
+    ("答えの小見出しの表の名前を変える", "profiles", "`仕様書`（仕様書の小見出し）", "`画面の仕様書`（仕様書の小見出し）"),
+    ("答えの値を変える", "profiles", "| `値` | 空か、`利用者`・`開発者` のどちらか。", "| `値` | 空か、`利用者`・`開発者`・`管理者` のどれか。"),
+    ("候補の行き先を入れ替える", "profiles", "起票する表が `shared/qa.csv` の部分——**共有", "起票する表が `spec/qa-dev.csv` の部分——**共有"),
     ("設定の表の行を消す", "tables", "| `外部の profile` | 組み込みの profile の上に重ねる外部の profile。", "| 外部の profile | 組み込みの profile の上に重ねる外部の profile。"),
 ]
 
@@ -1049,6 +1180,8 @@ PROFILE_MUTATIONS = [
     ("言い回しを変える", "`N/A。実現方式が未定` と書いておける", "`N/A。方式が未定` と書いておける"),
     ("誰が決めるかを落とす", "| `一覧の送り方` | 利用者 | `shared/qa.csv` |\n", ""),
     ("起票する表を変える", "| `パス` | 開発者 | `spec/qa-dev.csv` |", "| `パス` | 開発者 | 開発者が決める |"),
+    ("起票する表を入れ替える", "| `パス` | 開発者 | `spec/qa-dev.csv` |", "| `パス` | 開発者 | `shared/qa.csv` |"),
+    ("起票する表の順を変える", "| 見た目と閉じ方は利用者、URL は開発者 | `shared/qa.csv`・`spec/qa-dev.csv` |", "| 見た目と閉じ方は利用者、URL は開発者 | `spec/qa-dev.csv`・`shared/qa.csv` |"),
     ("節の名前を変える", "`## 実現方式: <profile>` を 1 つ置き、下の「仕様書の小見出し」", "`## 方式: <profile>` を 1 つ置き、下の「仕様書の小見出し」"),
 ]
 
