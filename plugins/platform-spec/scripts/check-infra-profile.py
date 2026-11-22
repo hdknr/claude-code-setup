@@ -279,7 +279,7 @@ class Checker:
                 continue
             key, value = fields[0].strip(), fields[1].strip()
             if key not in SETTING_KEYS + SETTING_OPTIONAL:
-                self.violations.append(f"{where}: 項目 {key!r} は決まりの外（{'・'.join(SETTING_KEYS + SETTING_OPTIONAL)} のどれか）")
+                self.violations.append(f"{where}: 項目 {key!r} は決まりの外（{'・'.join(SETTING_KEYS)} のどれか）")  # 文言は #1456 のまま（任意の項目は「案件の設定」の原本が持つ）
                 continue
             if key in found:
                 self.violations.append(f"{where}: 項目 {key} が 2 行ある")
