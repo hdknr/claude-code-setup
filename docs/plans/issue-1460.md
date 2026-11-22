@@ -117,7 +117,7 @@ platform-spec（#1456）の決まり: 案件の基盤の profile は正本の版
 ## 未解決の判断・確認待ち
 
 - 仕様の穴 P1 は推奨で決めた（上の表）。確認の Issue: #1498（閉じない。Refs で指す）。
-- PR: #1497。手順 7 のマージは親がする。
+- PR: #1497。PR 側の CI: 13 pass・1 skipping（deploy）を `26ea7292` で確かめた。mergeable: MERGEABLE。外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に宣言が無い）。手順 7 のマージは親がする。
 
 ## 関門の進捗（再開点）
 
