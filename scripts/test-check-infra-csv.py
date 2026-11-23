@@ -18,6 +18,11 @@
    **根拠の Q&A の状態の名前が `check-qa-csv.py` の状態にある**ことも見る。
 6. **言語の判定（`is_python`）**——`Python`・`Python 3.12`・`python3` は Python、`TypeScript`・`Pythonic` でない語・空は Python でない。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
+8. **末尾の任意の列 `profile の行`（#1456）**——7 列の後ろに置いた表を通し（中身は見ない）、その後ろにさらに列・別の名前の 8 列目は違反のまま、
+   行の列の数は見出しの数と比べる。**spec-loop の `scripts/` だけを写した一時ディレクトリで通る**（platform-spec を置かない案件）ことと、
+   **spec-loop の `scripts/`・`templates/` が platform-spec の名前（`platform-spec`・`platform_spec`・`PLATFORM_SPEC`）を探す・求める先に持たない**こと（探さない・要求しない）も見る
+   （**例外は `scripts/profile-gate.py` だけ**——`profile の行` に値があるときだけ platform-spec を探す関門。#1457。値が無ければ探さないことは `test-profile-gate.py` が見る）
+   ——Python は docstring とコメントの外の文字列と名前（説明の文に名前が出るのは探すことではない）、ほかのファイルは全文。名前を 1 つ植えると見つかる陽性対照つき。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
@@ -38,6 +43,9 @@ PLUGIN = REAL_REPO / "plugins" / "spec-loop"
 SCRIPTS = PLUGIN / "scripts"
 TARGET = "check-infra-csv.py"
 TREE = PLUGIN / "references" / "tree.md"
+TEMPLATES = PLUGIN / "templates"
+# spec-loop のスクリプトと雛形に現れてはならない platform-spec の名前（探さない・要求しない——#1456）
+PLATFORM_NAMES = re.compile(r"platform[-_]spec", re.IGNORECASE)
 
 I = "shared/infra.csv"
 Q = "shared/qa.csv"
@@ -60,6 +68,11 @@ NFR = N_HEAD + "N-002,注文の受付,可用性,99.9,%,月の稼働で,契約\nN
 ROWS = ("言語,Python 3.12,社内の保守の担当が読める,なし,,Q-F-001,決定\n"
         "DBMS,PostgreSQL 16,ライセンスの費用が要らない,運用費は月 2 万円,N-002・N-004,Q-F-002,決定\n"
         "ホスティング環境,AWS,既存の契約,月 5 万円,N-002,Q-F-003,決定\n")
+# 末尾の任意の列 `profile の行`（#1456）。中身は見ないので、空・複数・印・何でも通る
+P_HEAD = I_HEAD.replace("状態\n", "状態,profile の行\n")
+P_ROWS = (ROWS.replace(",Q-F-001,決定\n", ",Q-F-001,決定,LANG-1\n")
+          .replace(",Q-F-002,決定\n", ",Q-F-002,決定,\n")
+          .replace(",Q-F-003,決定\n", ",Q-F-003,決定,HOST-1・HOST-2 TBD\n"))
 GOOD = {I: I_HEAD + ROWS, Q: QA, N: NFR}
 
 
@@ -106,6 +119,17 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
         "ホスティング環境,AWS,既存の契約,月 5 万円,N-002,Q-F-003,決定", "ホスティング環境,,,,,Q-F-005,未決定")), None, 3, "暫定（1 件）", ""),
     # ---- 形式の違反（1）
     ("見出しの順が違う", infra(ROWS).copy() | {I: "決定,項目,理由,費用への影響,水準,根拠,状態\n" + ROWS}, None, 1, "見出しの行が決まりと違う", ""),
+    # ---- 末尾の任意の列 `profile の行`（#1456）
+    ("profile の行を足す", {I: P_HEAD + P_ROWS, Q: QA, N: NFR}, None, 0, "OK（shared/infra.csv（3 行）", "未決定"),
+    ("profile の行の後ろにさらに列", {I: P_HEAD.replace("profile の行\n", "profile の行,版\n") + P_ROWS.replace("\n", ",1\n"), Q: QA, N: NFR},
+     None, 1, "見出しの行が決まりと違う", ""),
+    ("8 列目の名前が違う", {I: P_HEAD.replace("profile の行", "profile") + P_ROWS, Q: QA, N: NFR}, None, 1, "見出しの行が決まりと違う", ""),
+    ("profile の行の前に列を挟む", {I: I_HEAD.replace("状態\n", "版,状態,profile の行\n") + P_ROWS.replace(",決定,", ",1,決定,"), Q: QA, N: NFR},
+     None, 1, "見出しの行が決まりと違う", ""),
+    ("profile の行を足した表の列の数", {I: P_HEAD + P_ROWS + "監視,a,b,c,,Q-F-006,決定\n", Q: QA, N: NFR}, None, 1,
+     "shared/infra.csv:5: 列の数が 7（見出しは 8）", ""),
+    ("profile の行を足しても状態を照らす", {I: P_HEAD + P_ROWS.replace(",Q-F-001,決定,", ",Q-F-001,暫定,"), Q: QA, N: NFR}, None, 1,
+     "状態 '暫定' なのに、根拠 Q-F-001 の Q&A の状態が '反映済み'", ""),
     ("列を足す", {I: I_HEAD.replace("状態", "状態,版") + ROWS.replace("決定\n", "決定,1\n"), Q: QA, N: NFR}, None, 1, "見出しの行が決まりと違う", ""),
     ("列の数", infra(ROWS + "監視,a,b\n"), None, 1, "shared/infra.csv:5: 列の数が 3", ""),
     ("項目の重複", infra(ROWS + "言語,Java,x,y,,Q-F-006,決定\n"), None, 1, "shared/infra.csv:5: 項目 が 2 行目と重複: 言語", ""),
@@ -140,8 +164,14 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("見出しを見ない", "    if header != COLUMNS:", "    if False:", "見出しの順が違う"),
-    ("列の数を見ない", "        if len(fields) != len(COLUMNS):", "        if False:", "列の数"),
+    ("見出しを見ない", "    if header != COLUMNS and header != COLUMNS + [PROFILE_COLUMN]:", "    if False:", "見出しの順が違う"),
+    ("profile の行を受けない", "    if header != COLUMNS and header != COLUMNS + [PROFILE_COLUMN]:", "    if header != COLUMNS:", "profile の行を足す"),
+    ("8 列目を何でも受ける", "    if header != COLUMNS and header != COLUMNS + [PROFILE_COLUMN]:",
+     "    if header != COLUMNS and header[:len(COLUMNS)] + header[len(COLUMNS) + 1:] != COLUMNS:", "8 列目の名前が違う"),
+    ("profile の行の後ろも受ける", "    if header != COLUMNS and header != COLUMNS + [PROFILE_COLUMN]:",
+     "    if header != COLUMNS and header[:len(COLUMNS) + 1] != COLUMNS + [PROFILE_COLUMN]:", "profile の行の後ろにさらに列"),
+    ("列の数を見ない", "        if len(fields) != len(header):", "        if False:", "列の数"),
+    ("行の列の数を 7 と比べる", "        if len(fields) != len(header):", "        if len(fields) != len(COLUMNS):", "profile の行を足す"),
     ("項目の重複を見ない", "            if item in items:", "            if False:", "項目の重複"),
     ("状態の値を見ない", "        if state_known and state not in INFRA_STATES:", "        if False:", "状態の値"),
     ("内部の番号を見ない", "            if qa.is_internal_number(number):", "            if False:", "根拠が内部の表"),
@@ -254,8 +284,10 @@ def reference_mismatches(module, tree: str, qa_states: list[str]) -> list[str]:
     if f"版の中の `{module.INFRA}` に置く" not in infra:
         problems.append(f"置き場所（{module.INFRA}）が tree.md に無い")
     columns = [row[0].strip("`") for row in rows_of(section(infra, "### 列"))]
-    if columns != module.COLUMNS:
-        problems.append(f"列が違う（tree.md {columns} ／ 本体 {module.COLUMNS}）")
+    if columns != module.COLUMNS + [module.PROFILE_COLUMN]:
+        problems.append(f"列が違う（tree.md {columns} ／ 本体 {module.COLUMNS} と任意の列 {module.PROFILE_COLUMN}）")
+    if f"**`{module.PROFILE_COLUMN}` は任意の列である**——置くなら `状態` の後ろの末尾に置く" not in infra:
+        problems.append(f"任意の列 {module.PROFILE_COLUMN} を末尾に置くことが tree.md に無い")
     required = re.search(r"必ず置く項目は ((?:`[^`]+`・)+`[^`]+`) の", infra)
     items = tuple(re.findall(r"`([^`]+)`", required.group(1))) if required else None
     if items != module.REQUIRED_ITEMS:
@@ -290,7 +322,55 @@ REFERENCE_MUTATIONS = [
      "| `暫定` | 利用者がまだ確かめていない暫定の回答で決めた（`qa-csv.md` の「暫定の回答」） | `確認中` |"),
     ("空でよい列を変える", "| `確認中` | `決定`・`理由`・`費用への影響`・`水準` |", "| `確認中` | `決定`・`理由`・`水準` |"),
     ("置き場所を変える", "版の中の `shared/infra.csv` に置く", "版の中の `requirements/infra.csv` に置く"),
+    ("任意の列を消す", "| `profile の行` | 任意の列（#1456）", "| profile の行 | 任意の列（#1456）"),
+    ("任意の列の置き場所を変える", "置くなら `状態` の後ろの末尾に置く", "置くなら `項目` の前に置く"),
 ]
+
+
+def code_lines(text: str) -> list[tuple[int, str]]:
+    """Python のコードのうち、探す・求める先になりうるもの（docstring とコメントの外の文字列と名前）を (行, 値) で。"""
+    import ast
+    tree = ast.parse(text)
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                docstrings.add(id(first.value))
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings:
+            out.append((node.lineno, node.value))
+        elif isinstance(node, ast.Name):
+            out.append((node.lineno, node.id))
+        elif isinstance(node, ast.Attribute):
+            out.append((node.lineno, node.attr))
+    return out
+
+
+def platform_mentions(roots: list[Path]) -> list[str]:
+    """spec-loop のスクリプトと雛形のうち、platform-spec の名前を探す・求める先に持つ所（ファイル:行）（#1456）。
+    Python は docstring とコメントの外の文字列と名前だけを見る（説明の文に名前が出るのは探すことではない）。ほかのファイルは全文を見る。"""
+    hits = []
+    for root in roots:
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or "__pycache__" in path.parts:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            pairs = code_lines(text) if path.suffix == ".py" else list(enumerate(text.splitlines(), start=1))
+            hits.extend(f"{path.relative_to(root.parent)}:{number}" for number, value in pairs if PLATFORM_NAMES.search(value))
+    return sorted(set(hits))
+
+
+# platform-spec の名前を持ってよい spec-loop のファイル（#1457。`profile の行` に値があるときだけ探す関門）
+PLATFORM_ALLOWED = ("scripts/profile-gate.py",)
+
+
+def platform_outside_gate(hits: list[str]) -> list[str]:
+    return [hit for hit in hits if hit.rsplit(":", 1)[0] not in PLATFORM_ALLOWED]
 
 
 def copy_scripts(dest: Path) -> Path:
@@ -336,6 +416,17 @@ def main() -> int:
 
         problems = python_problems(module)
         check("言語の判定が期待どおりでない", not problems, "; ".join(problems))
+
+        # platform-spec を探さない・要求しない（#1456）。写した scripts/ だけで「profile の行を足す」が 0 なのは上の試料で見た
+        found = platform_mentions([SCRIPTS, TEMPLATES])
+        hits = platform_outside_gate(found)
+        check("spec-loop のスクリプトか雛形が platform-spec の名前を持つ（profile-gate.py の外）", not hits, ", ".join(hits))
+        check("profile-gate.py が platform-spec の名前を持たない（例外が空振り）", any(h.startswith("scripts/profile-gate.py:") for h in found))
+        planted = tmp_path / "planted"
+        shutil.copytree(TEMPLATES, planted / "templates", ignore=shutil.ignore_patterns("__pycache__"))
+        (planted / "templates" / "x.py").write_text('ROOT = "plugins/platform-spec"\n', encoding="utf-8")
+        check("platform-spec の名前を植えても見つからない（見張りが空振り）",
+              platform_outside_gate(platform_mentions([copy_scripts(planted / "scripts"), planted / "templates"])) == ["templates/x.py:1"])
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):

@@ -416,6 +416,217 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
 ]
 
 
+# ---- 外部の profile（#1458）。profile のリポジトリは試料ごとに一時の git リポジトリで作る（`run_one` の ("profile", …)）
+GUIDE_DIR = "spec-profile/org"
+GUIDE_PROFILE = "層,形式の版,ファイル,重ねる先\n画面,1,screens/*.csv,web-spa\n"
+L_HEAD = "ID,要約,リンク,種類,表,列,種別,値\n"
+L_COL = "L-COL,レイアウトの列,docs/guide.md#レイアウト,列,screens.csv,レイアウト,,\n"
+L_STD = "L-STD,標準のレイアウト,docs/guide.md#標準,語彙,screens.csv,レイアウト,,standard\n"
+L_MODAL = "L-MODAL,モーダル,docs/guide.md#モーダル,語彙,screens.csv,レイアウト,,modal\n"
+L_LIST = "L-LIST,一覧は標準,docs/guide.md#種別ごと,既定,screens.csv,レイアウト,list,standard\n"
+L_FORM = "L-FORM,入力は標準,docs/guide.md#種別ごと,既定,screens.csv,レイアウト,form,standard\n"
+R_ROWS = "R-1,担当者,,語彙,screens.csv,主たる利用者,,担当者\nR-2,管理者,,語彙,screens.csv,主たる利用者,,管理者\n"
+L_ROWS = L_COL + L_STD + L_MODAL + L_LIST + L_FORM + R_ROWS
+BODY_MARK = "ガイドの本文の目印-7f3a"  # リンク先の本文。検査の出力に出てはならない（B9）
+GUIDE_MD = f"# ガイド\n\n## レイアウト\n\n{BODY_MARK}\n\n## 標準\n\n## モーダル\n\n## 種別ごと\n"
+EXT_LABEL = "外部の profile org/guide の org（タグ v1）"
+
+
+def guide(profile: str = GUIDE_PROFILE, rows: str = L_ROWS, head: str = L_HEAD, md: str = GUIDE_MD) -> dict[str, str]:
+    return {f"{GUIDE_DIR}/profile.csv": profile, f"{GUIDE_DIR}/screens/layout.csv": head + rows, "docs/guide.md": md}
+
+
+def prof(tags: dict | None = None, **options) -> tuple:
+    """("profile", 設定)。tags はタグ → profile のリポジトリのファイル（全部）。既定は v1 に guide()。"""
+    return ("profile", {"tags": tags if tags is not None else {"v1": guide()}, **options})
+
+
+EXT_SETTINGS = WEB_SPA + "外部の profile,org/guide org v1\n"
+SE_HEAD = SW_HEAD.replace(",パス\n", ",パス,レイアウト\n")
+# 入口（top）の画面は既定の無い種別で modal——根拠に Q&A の番号が無くても通る（種別で既定を引くことを見る）
+ES1 = WS1.replace(",Q-R-002,/orders\n", ",F-001,/orders,modal\n")
+ES2 = WS2.replace("\n", ",standard\n")
+
+
+def ext(**changes) -> dict[str, object]:
+    """外部の profile を web-spa に重ねた正しい正本。"""
+    files = web_spa()
+    files[SETTINGS_CSV] = EXT_SETTINGS
+    files[S] = SE_HEAD + ES1 + ES2
+    for key, value in changes.items():
+        path = {"S": S, "I": I, "T": T, "SETTINGS": SETTINGS_CSV}[key]
+        if value is None:
+            files.pop(path)
+        else:
+            files[path] = value
+    return files
+
+
+def es2(layout: str, basis: str = "F-002") -> str:
+    return WS2.replace(",F-002,/orders/new\n", f",{basis},/orders/new,{layout}\n")
+
+
+EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
+    # ---- 陰性対照（B2・B3・B7・B9）
+    ("ext-good", ext(), prof(), [], 0, f"{EXT_LABEL}（", BODY_MARK),
+    ("ext-good-quiet", ext(), prof(), [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件", BODY_MARK),
+    ("ext-good-from-env", ext(), prof(env=True, claude_md=False), [], 0, "環境変数 SPEC_PROFILE_CLONE", "違反:"),
+    ("ext-vocab-after-add", ext(), prof({"v1": guide(rows=L_STD + L_MODAL + L_COL + L_LIST + L_FORM + R_ROWS)}), [], 0, "違反 0 件", "止めた"),
+    ("ext-default-with-basis", ext(S=SE_HEAD + ES1 + es2("modal", "F-002、Q-R-002")), prof(), [], 0, "違反 0 件", "既定"),
+    ("ext-vocab-marker-skip", ext(S=SE_HEAD + ES1 + es2("未定（Q-R-002）")), prof(), [], 3, "S-002 レイアウト: 未決定の印", "語彙"),
+    ("ext-vocab-undecided-na", ext(S=SE_HEAD + ES1 + es2(UNDECIDED)), prof(), [], 0, "違反 0 件", "語彙"),
+    ("ext-vocab-empty", ext(S=SE_HEAD + ES1 + es2("")), prof(), [], 0, "違反 0 件", "語彙"),
+    ("ext-setting-empty", with_files(web_spa(), **{SETTINGS_CSV: WEB_SPA + "外部の profile,\n"}), prof(), [], 0, "違反 0 件", "外部の profile org"),
+    # ---- B1: 外部の profile の無い案件は、外部の profile を読む部分の無い spec-loop でも今までどおり
+    ("ext-none-old-spec-loop", web_spa(), prof(drop_ext=True), [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "違反:"),
+    # ---- B2 語彙の外の値
+    ("ext-vocab-outside", ext(S=SE_HEAD + ES1 + es2("wide")), prof(), [], 1,
+     f"S-002 レイアウト: 'wide' は {EXT_LABEL} の語彙（standard・modal）に無い", ""),
+    ("ext-vocab-core-column", ext(S=SE_HEAD + ES1.replace(",担当者,", ",経理,") + ES2), prof(), [], 1,
+     f"S-001 主たる利用者: '経理' は {EXT_LABEL} の語彙（担当者・管理者）に無い", ""),
+    ("ext-vocab-items", ext(), prof({"v1": guide(rows=L_ROWS + "M-1,一覧,,語彙,screen-items.csv,まとまり,,一覧\n")}), [], 1,
+     f"I-002 まとまり: '操作' は {EXT_LABEL} の語彙（一覧）に無い", ""),
+    ("ext-tag-v2-vocab", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org v2\n"),
+     prof({"v1": guide(), "v2": guide(rows=L_COL + L_STD + L_LIST + L_FORM + R_ROWS)}), [], 1,
+     "S-001 レイアウト: 'modal' は 外部の profile org/guide の org（タグ v2） の語彙（standard）に無い", ""),
+    # ---- B3 既定と違う値の根拠
+    ("ext-default-no-basis", ext(S=SE_HEAD + ES1 + es2("modal")), prof(), [], 1,
+     f"S-002 レイアウト: 種別 form の既定 'standard'（{EXT_LABEL} の行 L-FORM）と違う 'modal' の根拠に Q&A の番号が無い", ""),
+    # ---- B4 重ねる先
+    ("ext-base-mismatch", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace(",web-spa\n", ",desktop\n"))}), [], 4,
+     "重ねる先 'desktop' が requirements/screens/settings.csv の profile 'web-spa' と食い違う", "未設定"),
+    ("ext-base-unset", ext(SETTINGS=UNSET_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 4,
+     "requirements/screens/settings.csv の profile が '未設定' で、重ねる組み込みの profile が無い（未設定 には重ねられない）", "違反"),
+    ("ext-base-unset-both", ext(SETTINGS=UNSET_SETTINGS + "外部の profile,org/guide org v1\n"),
+     prof({"v1": guide(profile=GUIDE_PROFILE.replace(",web-spa\n", ",未設定\n"))}), [], 4,
+     "requirements/screens/settings.csv の profile が '未設定' で、重ねる組み込みの profile が無い（未設定 には重ねられない）", "食い違う"),
+    # ---- B5 形式の版
+    ("ext-version-out", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace("画面,1,", "画面,2,"))}), [], 4, "範囲（1 以上 2 未満）の外", "違反"),
+    # ---- B6 読めない
+    ("ext-no-clone", ext(), prof(claude_md=False), [], 4, "の手元の clone が見つからない", "違反"),
+    ("ext-tag-missing", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org v9\n"), prof(), [], 4, "タグ v9 が無い", "違反"),
+    ("ext-layer-missing", ext(), prof({"v1": {f"{GUIDE_DIR}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n",
+                                              f"{GUIDE_DIR}/infra.csv": "ID,要約,リンク\n"}}), [], 4, "層 画面 が", "違反"),
+    ("ext-old-spec-loop", ext(), prof(drop_ext=True), [], 4, "spec-loop に external-profile.py が無い", "違反"),
+    ("ext-bad-tail-columns", ext(), prof({"v1": guide(head="ID,要約,リンク,種類,表,列,種別\n",
+                                                       rows="".join(r.rsplit(",", 1)[0] + "\n" for r in L_ROWS.splitlines(keepends=True)))}),
+     [], 4, "先頭の 3 列の後ろが `種類,表,列,種別,値` でない", "違反"),
+    ("ext-bad-kind", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語い,screens.csv,レイアウト,,x\n")}), [], 4, "種類 '語い' は", "違反"),
+    ("ext-bad-table", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,foo.csv,レイアウト,,x\n")}), [], 4, "表 'foo.csv' は", "違反"),
+    ("ext-empty-column", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,screens.csv,,,x\n")}), [], 4, "行 X-1: 列が空", "違反"),
+    ("ext-add-existing", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,列,screens.csv,パス,,\n")}), [], 4, "列 パス は screens.csv に既に在る", "違反"),
+    ("ext-vocab-empty-value", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,screens.csv,レイアウト,,\n")}), [], 4, "語彙の値が空", "違反"),
+    ("ext-vocab-unknown-column", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,語彙,screens.csv,色,,赤\n")}), [], 4,
+     "行 X-1: 列 色 は screens.csv に無い", "違反"),
+    ("ext-default-not-screens", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,transitions.csv,操作,list,x\n")}), [], 4,
+     "既定は screens.csv の列にだけ書く", "違反"),
+    ("ext-default-bad-kind", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,grid,standard\n")}), [], 4,
+     "種別 'grid' は決まった種別", "違反"),
+    ("ext-default-empty-value", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,detail,\n")}), [], 4, "既定の値が空", "違反"),
+    ("ext-default-duplicate", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,レイアウト,form,modal\n")}), [], 4,
+     "種別 form の列 レイアウト の既定が 2 行ある", "違反"),
+    # ---- B7 足した列は宣言の順（層のファイルの名前の順・ファイルの中の行の順）に見出し行に入る
+    ("ext-two-columns-order", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
+     prof({"v1": {**guide(), f"{GUIDE_DIR}/screens/zz.csv": L_HEAD + "A-COL2,サイズの列,,列,screens.csv,サイズ,,\n"}}), [], 0, "違反 0 件", "見出し行"),
+    ("ext-two-columns-order-in-file", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
+     prof({"v1": guide(rows=L_COL + "A-COL2,サイズの列,,列,screens.csv,サイズ,,\n" + L_STD + L_MODAL + L_LIST + L_FORM + R_ROWS)}), [], 0, "違反 0 件", "見出し行"),
+    # ---- B7 足した列の無い見出し行
+    ("ext-header-without-column", ext(S=SW_HEAD + WS1 + WS2), prof(), [], 1,
+     f"見出し行が決まり（profile web-spa の列・{EXT_LABEL} の列を足した）", ""),
+    # ---- B8 設定の行
+    ("ext-setting-malformed", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org\n"), prof(), [], 1,
+     "外部の profile: 'org/guide org' は `<持ち主>/<リポジトリ> <名前> <タグ>` の形でない", ""),
+    ("ext-setting-bad-repo", ext(SETTINGS=WEB_SPA + "外部の profile,guide org v1\n"), prof(), [], 1, "の形でない", ""),
+    ("ext-setting-empty-and-valued", ext(SETTINGS=EXT_SETTINGS + "外部の profile,\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
+    ("ext-setting-two-empty", with_files(web_spa(), **{SETTINGS_CSV: WEB_SPA + "外部の profile,\n外部の profile,\n"}), prof(), [], 0,
+     "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "外部の profile"),
+    ("ext-setting-two", ext(SETTINGS=EXT_SETTINGS + "外部の profile,org/guide org v1\n"), prof(), [], 1, "外部の profile: 行が 2 つある", ""),
+]
+CASES += EXT_CASES
+
+# ---- 既定の答え（#1459）: 画面の層の種類 `答え` の行を、誰が決めるかで内部・共有の起票の候補に出す
+A_LIST = "A-LIST,ページ番号で送る,docs/guide.md#一覧,答え,仕様書,一覧の送り方,,\n"  # 利用者 → 共有
+A_PATH = "A-PATH,パスは名詞の複数形,docs/guide.md#パス,答え,screens.csv,パス,,\n"  # 開発者 → 内部
+A_FILE = "A-FILE,署名付き URL で配る,docs/guide.md#ファイル,答え,仕様書,ファイル出力・印刷,,開発者\n"  # 2 人のうち開発者の部分だけ
+A_DIALOG = "A-DIALOG,モーダルにする,docs/guide.md#ダイアログ,答え,仕様書,ダイアログの実体,,\n"  # 2 人 → 両方
+A_FRAME = "A-FRAME,標準の外枠,docs/guide.md#外枠,答え,共通仕様,アプリの外枠,,\n"  # 共通仕様の小見出し → 共有
+A_TAB = "A-TAB,同じタブで開く,docs/guide.md#タブ,答え,transitions.csv,種類,,\n"  # 遷移の列 → 共有
+A_ROWS = A_LIST + A_PATH + A_FILE + A_DIALOG + A_FRAME + A_TAB
+ANSWER_MARK = "既定の答えの本文の目印-91c2"  # リンク先の本文。出力に出てはならない（C3）
+ANSWER_MD = GUIDE_MD + f"\n## 一覧\n\n{ANSWER_MARK}\n\n## パス\n\n## ファイル\n\n## ダイアログ\n\n## 外枠\n\n## タブ\n"
+ANSWER_LIST = (f"起票の候補: shared/qa.csv: 一覧の送り方（利用者が決める）——推奨: ページ番号で送る（{EXT_LABEL} の行 A-LIST・docs/guide.md#一覧）。"
+               "起票するなら質問に A-LIST を書く")
+ANSWER_PATH = (f"起票の候補: spec/qa-dev.csv: パス（開発者が決める）——{EXT_LABEL} の既定を採る: パスは名詞の複数形（行 A-PATH・docs/guide.md#パス）。"
+               "起票するなら質問に A-PATH を書く")
+ANSWER_TALLY = "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 {} 件"
+
+
+def ans(rows: str = A_ROWS) -> tuple:
+    return prof({"v1": guide(rows=L_ROWS + rows, md=ANSWER_MD)})
+
+
+def ans_qa(shared: str = "", internal: str = "") -> dict[str, object]:
+    """外部の profile を重ねた正本の Q&A 表に行を足す（起票した跡）。"""
+    files = ext()
+    files[QA] = files[QA] + shared
+    files[QA_DEV] = files[QA_DEV] + internal
+    return files
+
+
+ANSWER_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
+    # ---- 誰が決めるかで分かれる（C1）。終了コードは候補の無い同じ正本と同じ 0（C6）。本文を出さない（C3）
+    ("ans-shared", ext(), ans(), [], 0, ANSWER_LIST, ANSWER_MARK),
+    ("ans-internal", ext(), ans(), [], 0, ANSWER_PATH, "shared/qa.csv: パス"),
+    ("ans-narrowed", ext(), ans(), [], 0, "起票の候補: spec/qa-dev.csv: ファイル出力・印刷（開発者が決める）", "shared/qa.csv: ファイル出力・印刷"),
+    ("ans-both-shared", ext(), ans(), [], 0, "起票の候補: shared/qa.csv: ダイアログの実体（利用者が決める）——推奨: モーダルにする", "spec/qa-dev.csv: 一覧の送り方"),
+    ("ans-both-internal", ext(), ans(), [], 0, "起票の候補: spec/qa-dev.csv: ダイアログの実体（開発者が決める）", "spec/qa-dev.csv: アプリの外枠"),
+    ("ans-common", ext(), ans(), [], 0, "起票の候補: shared/qa.csv: アプリの外枠（利用者が決める）——推奨: 標準の外枠", "spec/qa-dev.csv: 種類"),
+    ("ans-transition", ext(), ans(), [], 0, "起票の候補: shared/qa.csv: 種類（利用者が決める）——推奨: 同じタブで開く", "止めた"),
+    ("ans-tally", ext(), ans(), [], 0, ANSWER_TALLY.format(7), "違反:"),
+    ("ans-split-ok", ext(), ans(A_DIALOG.replace(",,\n", ",,利用者\n") + A_DIALOG.replace("A-DIALOG,", "A-DIALOG2,").replace(",,\n", ",,開発者\n")), [], 0,
+     "spec/qa-dev.csv: ダイアログの実体（開発者が決める）——" + EXT_LABEL + " の既定を採る: モーダルにする（行 A-DIALOG2", "止めた"),
+    # 陽性対照（C3）: 同じ目印を要約に置けば出力に出る——出力の見張りが目印を判別している
+    ("ans-summary-shown", ext(), ans(A_LIST.replace("ページ番号で送る", ANSWER_MARK)), [], 0, f"推奨: {ANSWER_MARK}", "止めた"),
+    # ---- 起票した跡で消える（C4）
+    ("ans-suppressed-shared", ans_qa(shared="Q-R-004,要求確定,一覧の送り方（A-LIST）をどうするか,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_TALLY.format(6), "shared/qa.csv: 一覧の送り方"),
+    ("ans-suppressed-internal", ans_qa(internal="D-S-002,仕様レビュー,パスの形（A-PATH）,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_TALLY.format(6), "spec/qa-dev.csv: パス"),
+    ("ans-suppressed-other-table", ans_qa(internal="D-S-002,仕様レビュー,一覧の送り方（A-LIST）,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_LIST, "止めた"),
+    ("ans-suppressed-other-table-internal", ans_qa(shared="Q-R-004,要求確定,パス（A-PATH）の話,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0,
+     ANSWER_PATH, "止めた"),
+    ("ans-id-in-answer", ans_qa(shared="Q-R-004,要求確定,一覧の送り方をどうするか,A: はい / B: いいえ,A,A-LIST に合わせる,未回答,—,確認中,\n"), ans(), [], 0, ANSWER_LIST, "止めた"),
+    ("ans-id-boundary", ans_qa(shared="Q-R-004,要求確定,別の行 A-LISTX のこと,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"), ans(), [], 0, ANSWER_LIST, "止めた"),
+    # ---- 答えの行が決まりに合わなければ 4（C5）
+    ("ans-bad-table", ext(), ans(A_LIST.replace(",仕様書,", ",画面,")), [], 4, "行 A-LIST: 答えの表 '画面' は", "違反"),
+    ("ans-not-item", ext(), ans(A_TAB.replace(",transitions.csv,", ",screen-items.csv,")), [], 4,
+     "行 A-TAB: screen-items.csv の '種類' は profile web-spa の誰が決めるかの項目でない", "違反"),
+    ("ans-wrong-place", ext(), ans(A_FRAME.replace(",共通仕様,", ",仕様書,")), [], 4, "行 A-FRAME: 仕様書 の 'アプリの外枠' は profile web-spa の誰が決めるかの項目でない", "違反"),
+    ("ans-empty-item", ext(), ans(A_LIST.replace(",一覧の送り方,", ",,")), [], 4, "行 A-LIST: 列が空", "違反"),
+    ("ans-empty-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ",,")), [], 4, "行 A-LIST: 要約が空", "違反"),
+    ("ans-empty-link", ext(), ans(A_LIST.replace(",docs/guide.md#一覧,", ",,")), [], 4, "行 A-LIST: リンクが空", "違反"),
+    ("ans-bad-value", ext(), ans(A_LIST.replace(",,\n", ",,管理者\n")), [], 4, "行 A-LIST: 答えの値 '管理者' は", "違反"),
+    ("ans-value-not-decider", ext(), ans(A_LIST.replace(",,\n", ",,開発者\n")), [], 4, "行 A-LIST: 一覧の送り方 を決めるのは 利用者 で、開発者 ではない", "違反"),
+    # 候補の行にそのまま出す欄（1 パス目の指摘対応）: 改行は出力の行を割り、Q&A の番号の形は振っていない番号を出す
+    ("ans-newline-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ',"一行目\n違反: 注入された行",')), [], 4, "行 A-LIST: 要約 に改行か制御文字がある", "違反: 注入"),
+    ("ans-newline-link", ext(), ans(A_LIST.replace(",docs/guide.md#一覧,", ',"docs/guide.md#一覧\r\n起票の候補: 偽",')), [], 4, "行 A-LIST: リンク に改行か制御文字がある", "起票の候補: 偽"),
+    ("ans-linesep-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ",一行目\u2028違反: 注入された行,")), [], 4, "行 A-LIST: 要約 に改行か制御文字がある", "違反: 注入"),
+    ("ans-linesep-link", ext(), ans(A_LIST.replace(",docs/guide.md#一覧,", ",docs/guide.md#一覧\u2029起票の候補: 偽,")), [], 4, "行 A-LIST: リンク に改行か制御文字がある", "起票の候補: 偽"),
+    ("ans-newline-id", ext(), ans(A_LIST.replace("A-LIST,", '"D-S-778\nx",')), [], 4, "の答えの行: ID に改行か制御文字がある", "違反"),
+    ("ans-qa-number-value", ext(), ans(A_LIST.replace(",,\n", ",,Q-R-999\n")), [], 4, "行 A-LIST: 値 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-table", ext(), ans(A_LIST.replace(",仕様書,", ",Q-R-998,")), [], 4, "行 A-LIST: 表 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-item", ext(), ans(A_LIST.replace(",一覧の送り方,", ",Q-R-997,")), [], 4, "行 A-LIST: 列 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-summary", ext(), ans(A_LIST.replace(",ページ番号で送る,", ",Q-R-002 と同じにする,")), [], 4, "行 A-LIST: 要約 に Q&A の番号の形がある", "違反"),
+    ("ans-qa-number-id", ext(), ans(A_LIST.replace("A-LIST,", "D-S-777,")), [], 4, "の答えの行: ID に Q&A の番号の形がある", "違反"),
+    ("ans-duplicate", ext(), ans(A_LIST + A_LIST.replace("A-LIST,", "A-LIST2,")), [], 4,
+     "行 A-LIST2: 一覧の送り方 の利用者が決める部分の答えが 2 行ある（A-LIST と）", "違反"),
+    ("ans-duplicate-part", ext(), ans(A_DIALOG + A_DIALOG.replace("A-DIALOG,", "A-DIALOG2,").replace(",,\n", ",,開発者\n")), [], 4,
+     "行 A-DIALOG2: ダイアログの実体 の開発者が決める部分の答えが 2 行ある（A-DIALOG と）", "違反"),
+]
+CASES += ANSWER_CASES
+
+
 failures: list[str] = []
 
 
@@ -447,6 +658,29 @@ def copy_plugin(source: Path, dest: Path) -> Path:
     return dest
 
 
+def build_profile_repo(root: Path, tags: dict[str, dict[str, str]], env: dict[str, str]) -> None:
+    """外部の profile のリポジトリ（本物の git）。タグの順にファイルを全部置き直してコミットし、タグを付ける。"""
+    assert_in_tmp(root)
+    git_env = {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+                        "-c", "tag.gpgsign=false", *args], check=True, capture_output=True, env=git_env)
+
+    root.mkdir(parents=True)
+    git("init", "-q", "-b", "main")
+    for tag, files in tags.items():
+        for path in [p for p in root.rglob("*") if p.is_file() and ".git" not in p.relative_to(root).parts]:
+            path.unlink()
+        for rel, body in files.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "--allow-empty", "-m", tag)
+        git("tag", tag)
+
+
 def snapshot(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
 
@@ -465,13 +699,31 @@ def run_one(plugin: Path, sibling: Path, case_dir: Path, case) -> tuple[int, str
         path.write_bytes(body if isinstance(body, bytes) else body.encode("utf-8"))
     home = case_dir / "home"
     home.mkdir()
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "SCREEN_SPEC_SPEC_LOOP")}
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "SCREEN_SPEC_SPEC_LOOP", "SPEC_PROFILE_CLONE")
+           and not k.startswith("GIT_")}
     env["HOME"] = str(home)
     script = plugin / "scripts" / TARGET
     extra: list[str] = []
+    cwd = case_dir
     if how is not None:
         kind = how[0]
-        if kind == "version":
+        if kind == "profile":
+            # 外部の profile のリポジトリ（#1458）。タグごとにファイルを全部置き直してコミットし、タグを付ける。
+            # 走らせる場所（cwd）は案件の根（docs の親）と別にする——`CLAUDE.md` を docs の親で探すことを見る
+            options = how[1]
+            guide_repo = case_dir / "guide"
+            build_profile_repo(guide_repo, options["tags"], env)
+            if options.get("claude_md", True):
+                (case_dir / "CLAUDE.md").write_text("# 案件\n\n外部の profile の clone: org/guide guide\n", encoding="utf-8")
+            if options.get("env"):
+                env["SPEC_PROFILE_CLONE"] = str(guide_repo)
+            if options.get("drop_ext"):
+                old = copy_spec_loop(case_dir / "old-spec-loop")
+                (old / "scripts" / "external-profile.py").unlink()
+                extra = ["--spec-loop", str(old)]
+            cwd = case_dir / "elsewhere"
+            cwd.mkdir()
+        elif kind == "version":
             extra = ["--spec-loop", str(copy_spec_loop(case_dir / "alt-spec-loop", version=how[1]))]
         elif kind == "name":
             extra = ["--spec-loop", str(copy_spec_loop(case_dir / "alt-spec-loop", name=how[1]))]
@@ -499,7 +751,7 @@ def run_one(plugin: Path, sibling: Path, case_dir: Path, case) -> tuple[int, str
     # 書かないことは、正本だけでなく走らせた場所（cwd）と、読み込む spec-loop・screen-spec の写し（`__pycache__`）でも見る
     watched = (case_dir, sibling.parent)
     before = [snapshot(root) for root in watched]
-    proc = subprocess.run([sys.executable, "-I", str(script), *argv, *extra], capture_output=True, text=True, cwd=case_dir, env=env)
+    proc = subprocess.run([sys.executable, "-I", str(script), *argv, *extra], capture_output=True, text=True, cwd=cwd, env=env)
     out = proc.stdout + proc.stderr
     if [snapshot(root) for root in watched] != before:
         out += "\n<<正本か走らせた場所か読み込んだプラグインにファイルを書いた>>"
@@ -562,6 +814,89 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("コードブロックの中の見出しを数える", "opened = FENCE.match(line.lstrip())\n            if fence is not None:\n", "opened = None\n            if fence is not None:\n", "heading-in-fence"),
     ("最初の見出しの画面ID を見ない", "if title is None or key not in title[2]:", "if title is None:", "prose-title-without-id"),
     ("無い仕様書を見ない", "self.report.violations.append(f\"{SCREENS} {key} 仕様書: {path} が無い\")", "pass", "prose-file-missing"),
+    # ---- 外部の profile（#1458）
+    ("語彙の外の値を見ない", "                    if value not in values:\n", "                    if False:\n", "ext-vocab-outside"),
+    ("語彙を N/A。実現方式が未定 のセルにも当てる", "                    if not value or undecided_profile(value):\n                        continue\n",
+     "                    if not value:\n                        continue\n", "ext-vocab-undecided-na"),
+    ("語彙を項目の表に当てない", "{SCREENS: screens, ITEMS: items, TRANSITIONS: transitions}", "{SCREENS: screens, ITEMS: {}, TRANSITIONS: transitions}", "ext-vocab-items"),
+    ("既定と違う値の根拠を見ない", "if not self.qa_number.search(whole.tables[SCREENS][key].get(\"根拠\", \"\")):", "if False:", "ext-default-no-basis"),
+    ("既定と違う値は根拠があっても違反にする", "if not self.qa_number.search(whole.tables[SCREENS][key].get(\"根拠\", \"\")):", "if True:", "ext-default-with-basis"),
+    ("既定と同じ値も違反にする", "if not value or undecided_profile(value) or value == default:", "if not value or undecided_profile(value):", "ext-good"),
+    ("既定を種別で引かない", "                if row.get(\"種別\") != kind:\n", "                if False:\n", "ext-good"),
+    ("重ねる先を照らさない", "        if layer.base != self.profile:\n", "        if False:\n", "ext-base-mismatch"),
+    ("未設定 に重ねさせる", "        if self.profile not in PROFILES:\n            raise Stop(", "        if False:\n            raise Stop(", "ext-base-unset-both"),
+    ("足す列を行の ID の順にする", "        for target, column, rid in uses:\n",
+     "        ids = {(tables.get(row[\"表\"].strip()), row[\"列\"].strip()): r for r, row in layer.rows.items()}\n"
+     "        for t in external.columns:\n            external.columns[t].sort(key=lambda c: ids.get((t, c), \"\"))\n"
+     "        for target, column, rid in uses:\n", "ext-two-columns-order"),
+    ("足す列を行の ID の順にする（ファイルの中）", "        for target, column, rid in uses:\n",
+     "        ids = {(tables.get(row[\"表\"].strip()), row[\"列\"].strip()): r for r, row in layer.rows.items()}\n"
+     "        for t in external.columns:\n            external.columns[t].sort(key=lambda c: ids.get((t, c), \"\"))\n"
+     "        for target, column, rid in uses:\n", "ext-two-columns-order-in-file"),
+    ("空の値の行を数えない", "== EXTERNAL_KEY]\n        if not values:", "== EXTERNAL_KEY]\n        values = [v for v in values if v]\n        if not values:", "ext-setting-empty-and-valued"),
+    ("足す列を宣言の逆の順にする", "external.columns[target].append(column)", "external.columns[target].insert(0, column)", "ext-two-columns-order"),
+    ("足す列を名前の順にする", " + added.get(path, []) for path in TABLES}", " + sorted(added.get(path, [])) for path in TABLES}", "ext-two-columns-order-in-file"),
+    ("足す列を見出し行に求めない", " + added.get(path, [])", "", "ext-good"),
+    ("案件の根を docs の親にしない", "project=self.docs.resolve().parent", "project=None", "ext-good"),
+    ("形式の版の範囲を変える", "EXTERNAL_RANGE = (\"1\", \"2\")", "EXTERNAL_RANGE = (\"1\", \"3\")", "ext-version-out"),
+    ("設定の行が 2 つあっても通す", "        if len(values) >= 2 and any(values):  #", "        if False:  #", "ext-setting-two"),
+    ("設定の行の形を見ない", "if len(parts) != 3 or not EXTERNAL_REPO.fullmatch(parts[0]):", "if len(parts) != 3:", "ext-setting-bad-repo"),
+    ("空の行だけが 2 つでも違反にする", "        if len(values) >= 2 and any(values):  #", "        if len(values) >= 2:  #", "ext-setting-two-empty"),
+    ("設定の空の値を外さない", "        if not values[0]:\n            return None\n", "", "ext-setting-empty"),
+    ("spec-loop に読む部分が無いのを見ない", "        if not path.is_file():\n", "        if False:\n", "ext-old-spec-loop"),
+    ("検査の中で止めたのを 4 にしない", "    except Stop as e:\n        print(f\"止めた: {e}\", file=sys.stderr)\n        return 4\n    except Unreadable as e:",
+     "    except Unreadable as e:", "ext-base-mismatch"),
+    ("画面の層の後ろの列を見ない", "            if tuple(row)[len(ext.LAYER_HEAD):] != EXTERNAL_COLUMNS:\n", "            if False:\n", "ext-bad-tail-columns"),
+    ("画面の層の表を見ない", "            if table not in tables:\n", "            if False:\n", "ext-bad-table"),
+    ("画面の層の空の列を見ない", "            if not column:\n", "            if False:\n", "ext-empty-column"),
+    ("既に在る列を足させる", "                if column in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:\n", "                if False:\n", "ext-add-existing"),
+    ("語彙の空の値を見ない", "                if not value:\n                    raise Stop(f\"{where}: 語彙の値が空\")", "                if False:\n                    raise Stop(f\"{where}: 語彙の値が空\")",
+     "ext-vocab-empty-value"),
+    ("既定を screens.csv のほかにも書かせる", "                if target != SCREENS:\n", "                if False:\n", "ext-default-not-screens"),
+    ("既定の種別を見ない", "                if screen_kind not in SCREEN_KINDS:\n", "                if False:\n", "ext-default-bad-kind"),
+    ("既定の空の値を見ない", "                if not value:\n                    raise Stop(f\"{where}: 既定の値が空\")", "                if False:\n                    raise Stop(f\"{where}: 既定の値が空\")",
+     "ext-default-empty-value"),
+    ("既定の重なりを見ない", "                if (column, screen_kind) in external.defaults:\n", "                if False:\n", "ext-default-duplicate"),
+    ("決まりに無い種類を通す", "raise Stop(f\"{where}: 種類 {kind!r}", "None and (f\"{where}: 種類 {kind!r}", "ext-bad-kind"),
+    ("どこにも無い列の語彙を通す", "            if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:\n", "            if False:\n", "ext-vocab-unknown-column"),
+    ("足した列を全部読む前に語彙の列を照らす", "                uses.append((target, column, rid))\n            elif kind == EXTERNAL_DEFAULT:",
+     "                if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:\n                    raise Stop(\"早すぎる照合\")\n                uses.append((target, column, rid))\n            elif kind == EXTERNAL_DEFAULT:",
+     "ext-vocab-after-add"),
+    # ---- 既定の答え（#1459）
+    ("答えの行を種類として読まない", "            if kind == EXTERNAL_ANSWER:\n                self.read_answer(external, rid, row, where)\n                continue\n", "", "ans-shared"),
+    ("答えを候補に出さない", "        self.answer_candidates(external, whole)\n", "", "ans-shared"),
+    ("共有の候補にリンクを付けない", "text = f\"推奨: {summary}（{external.label} の行 {rid}・{link}）\"", "text = f\"推奨: {summary}（{external.label} の行 {rid}）\"", "ans-shared"),
+    ("決める人で分けない", "        targets = builtin[\"deciders\"][item]\n", "        targets = (SHARED_QA,)\n", "ans-internal"),
+    ("決める人の部分で絞らない", "            targets = tuple(t for t in targets if DECIDED_BY[t] == value)\n", "", "ans-narrowed"),
+    ("決める人が 2 人の項目を片方にする", "        targets = builtin[\"deciders\"][item]\n", "        targets = builtin[\"deciders\"][item][:1]\n", "ans-both-internal"),
+    ("共有と内部の Q&A 表を取り違える", "rows = whole.qa if target == SHARED_QA else whole.internal", "rows = whole.internal if target == SHARED_QA else whole.qa", "ans-suppressed-other-table"),
+    ("起票した跡を見ない", "            if any(mention.search(r.get(\"質問\") or \"\") for r in rows.values()):\n", "            if False:\n", "ans-suppressed-shared"),
+    ("内部の起票した跡を見ない", "rows = whole.qa if target == SHARED_QA else whole.internal", "rows = whole.qa", "ans-suppressed-internal"),
+    ("行の ID の境目を見ない", "mention = re.compile(rf\"(?<![A-Za-z0-9_-]){re.escape(rid)}(?![A-Za-z0-9_-])\")", "mention = re.compile(re.escape(rid))", "ans-id-boundary"),
+    ("答えの表を見ない", "        if table not in places:\n", "        if False:\n", "ans-bad-table"),
+    ("答えの項目を見ない", "        if item not in places[table]:\n", "        if False:\n", "ans-not-item"),
+    ("小見出しの置き場所を見ない", "places.update({place: builtin[part] for place, part in ANSWER_PLACES.items()})",
+     "places.update({place: builtin[\"screen\"] + builtin[\"common\"] for place in ANSWER_PLACES})", "ans-wrong-place"),
+    ("答えの空の列を見ない", "        if not item:\n            raise Stop(f\"{where}: 列が空\")", "        if False:\n            raise Stop(f\"{where}: 列が空\")", "ans-empty-item"),
+    ("答えの空の要約を見ない", "        if not summary:\n", "        if False:\n", "ans-empty-summary"),
+    ("答えの空のリンクを見ない", "        if not link:\n", "        if False:\n", "ans-empty-link"),
+    ("決まりに無い答えの値を通す", "            if value not in DECIDED_BY.values():\n", "            if False:\n", "ans-bad-value"),
+    ("決めない人の値を通す", "            if not targets:\n", "            if False:\n", "ans-value-not-decider"),
+    ("内部の候補にもう一方の表の跡も当てる", "rows = whole.qa if target == SHARED_QA else whole.internal", "rows = whole.qa if target == SHARED_QA else {**whole.qa, **whole.internal}",
+     "ans-suppressed-other-table-internal"),
+    ("答えの欄の制御文字を見ない", "            if any(unicodedata.category(ch).startswith(\"C\") or unicodedata.category(ch) in LINE_BREAKING for ch in text):\n", "            if False:\n", "ans-newline-summary"),
+    ("行の区切りの文字を通す", "LINE_BREAKING = (\"Zl\", \"Zp\")", "LINE_BREAKING = ()", "ans-linesep-summary"),
+    ("リンクの行の区切りを通す", "LINE_BREAKING = (\"Zl\", \"Zp\")", "LINE_BREAKING = (\"Zl\",)", "ans-linesep-link"),
+    ("ID の制御文字を見ない", "            if any(unicodedata.category(ch).startswith(\"C\") or unicodedata.category(ch) in LINE_BREAKING for ch in text):\n",
+     "            if name != \"ID\" and any(unicodedata.category(ch).startswith(\"C\") for ch in text):\n", "ans-newline-id"),
+    ("表・列・値の番号の形を見ない", "(\"表\", table), (\"列\", item), (\"値\", value)):", "):", "ans-qa-number-value"),
+    ("表の番号の形を見ない", "(\"表\", table), (\"列\", item)", "(\"列\", item)", "ans-qa-number-table"),
+    ("列の番号の形を見ない", "(\"表\", table), (\"列\", item)", "(\"表\", table)", "ans-qa-number-item"),
+    ("起票した跡を質問のほかの欄でも見る", "if any(mention.search(r.get(\"質問\") or \"\") for r in rows.values()):", "if any(mention.search(\" \".join(str(v) for v in r.values())) for r in rows.values()):", "ans-id-in-answer"),
+    ("答えの欄の Q&A の番号の形を見ない", "            if self.qa_number.search(text):\n", "            if False:\n", "ans-qa-number-summary"),
+    ("答えの ID の番号の形を出す", "at = f\"{external.label} の答えの行\" if name == \"ID\" else where", "at = where", "ans-qa-number-id"),
+    ("答えの重なりを見ない", "            if (item, target) in external.answers:\n", "            if False:\n", "ans-duplicate"),
+    ("答えの重なりを項目だけで見る", "            if (item, target) in external.answers:\n", "            if any(k[0] == item for k in external.answers):\n", "ans-split-ok"),
     ("表から指されない仕様書を見ない", "elif name not in referenced:", "elif False:", "prose-orphan"),
     ("common.md を表から指されない仕様書に数える", "            if name == COMMON:\n", "            if False:\n", "prose-common-not-orphan"),
     ("仕様書を 2 つの画面が指すのを見ない", "elif document in documents:", "elif False:", "doc-shared"),
@@ -707,10 +1042,66 @@ def profile_mismatches(module, profiles: str, directories: list[str]) -> list[st
     # 各項目を誰が決めるか（共有の Q&A 表か spec/qa-dev.csv か）が書いてある
     items = [n for names in module.PROFILES["web-spa"]["columns"].values() for n in names] + screen + common
     same("誰が決めるかの項目", sorted(items), sorted(deciders))
+    # 起票する表の写し（既定の答えの候補の行き先。#1459）——順も見る（決める人が 2 人の項目は候補をこの順に出す）
+    same("誰が決めるかの起票する表", {k: list(v) for k, v in module.PROFILES["web-spa"]["deciders"].items()},
+         {name: ticked(row[-1]) for name, row in deciders.items()})
     for name, row in deciders.items():
         if not re.fullmatch(r"(`shared/qa\.csv`|`spec/qa-dev\.csv`)(・(`shared/qa\.csv`|`spec/qa-dev\.csv`))*", row[-1]):
             problems.append(f"誰が決めるか: {name} の起票する表 {row[-1]!r} が共有の Q&A 表か spec/qa-dev.csv でない")
     return problems
+
+
+def external_mismatches(module, profiles: str, tables: str) -> list[str]:
+    """外部の profile の定数と `references/profiles.md` の「外部の profile」・`references/tables.md` の設定の行（#1458）。"""
+    problems = []
+
+    def same(what: str, ours, theirs) -> None:
+        if ours != theirs:
+            problems.append(f"{what}: 本体 {ours!r} ／ references {theirs!r}")
+
+    try:
+        part = section(profiles, "## 外部の profile")
+        setting = section(part, "### 設定の行")
+        layer = section(part, "### 画面の層")
+        kinds = section(layer, "#### 行の種類")
+        answer = section(layer, "#### 既定の答え")
+        accepted = section(part, "### 受け付ける形式の版")
+        settings = section(tables, "## 案件ごとの設定（`settings.csv`）")
+    except ValueError as e:
+        return [f"references の節が無い: {e}"]
+    columns = rows_of(layer.split("\n#### ")[0])
+    same("画面の層の後ろの列", list(module.EXTERNAL_COLUMNS), [ticked(r[0])[0] for r in columns])
+    by_name = {ticked(r[0])[0]: r for r in columns}
+    same("画面の層の表", [p.rsplit("/", 1)[1] for p in module.TABLES], ticked(by_name.get("表", ["", ""])[1]))
+    same("行の種類", list(module.EXTERNAL_KINDS), [ticked(r[0])[0] for r in rows_of(kinds)])
+    same("足す・語彙・既定・答え", [module.EXTERNAL_ADD, module.EXTERNAL_VOCAB, module.EXTERNAL_DEFAULT, module.EXTERNAL_ANSWER], [ticked(r[0])[0] for r in rows_of(kinds)])
+    # 既定の答え（#1459）
+    named = {"screen": "仕様書", "common": "共通仕様"}
+    same("答えの小見出しの表", [(k, named[v]) for k, v in module.ANSWER_PLACES.items()], re.findall(r"`([^`]+)`（(仕様書|共通仕様)の小見出し）", answer))
+    answer_rows = {ticked(r[0])[0]: r for r in rows_of(answer)}
+    same("答えの値", list(module.DECIDED_BY.values()), ticked(answer_rows.get("値", ["", ""])[1]))
+    same("候補の行き先", [(module.SHARED_QA, "共有"), (module.INTERNAL_QA, "内部")], re.findall(r"起票する表が `([^`]+)` の部分——\*\*(共有|内部)の Q&A 表の候補", answer))
+    same("層の名前", [module.EXTERNAL_LAYER], re.findall(r"`profile\.csv` の層 `([^`]+)` の表", layer))
+    found = re.search(r"\| `([0-9.]+)` \| `([0-9.]+)` \|", accepted)
+    same("形式の版の範囲", module.EXTERNAL_RANGE, (found.group(1), found.group(2)) if found else None)
+    same("設定の行の形", [module.EXTERNAL_KEY], re.findall(r"^([^,\n`]+),<持ち主>/<リポジトリ> <名前> <タグ>$", setting, flags=re.MULTILINE))
+    same("設定の表の行", [module.EXTERNAL_KEY], re.findall(r"^\| `(外部の[^`]*)` \|", settings, flags=re.MULTILINE))
+    return problems
+
+
+EXTERNAL_MUTATIONS = [
+    ("後ろの列の名前を変える", "profiles", "| `種別` | `種類` が `既定` のとき", "| `画面の種別` | `種類` が `既定` のとき"),
+    ("掛ける表を減らす", "profiles", "——`screens.csv`・`screen-items.csv`・`transitions.csv` |", "——`screens.csv`・`transitions.csv` |"),
+    ("行の種類を変える", "profiles", "| `語彙` | 列の値の語彙を 1 つ足す。", "| `値の一覧` | 列の値の語彙を 1 つ足す。"),
+    ("層の名前を変える", "profiles", "`profile.csv` の層 `画面` の表", "`profile.csv` の層 `screens` の表"),
+    ("形式の版の上限を変える", "profiles", "| `1` | `2` |", "| `1` | `3` |"),
+    ("設定の行の名前を変える", "profiles", "外部の profile,<持ち主>/<リポジトリ> <名前> <タグ>", "外部 profile,<持ち主>/<リポジトリ> <名前> <タグ>"),
+    ("答えの種類を消す", "profiles", "| `答え` | 組み込みの profile の項目の既定の答え。", "| 答え | 組み込みの profile の項目の既定の答え。"),
+    ("答えの小見出しの表の名前を変える", "profiles", "`仕様書`（仕様書の小見出し）", "`画面の仕様書`（仕様書の小見出し）"),
+    ("答えの値を変える", "profiles", "| `値` | 空か、`利用者`・`開発者` のどちらか。", "| `値` | 空か、`利用者`・`開発者`・`管理者` のどれか。"),
+    ("候補の行き先を入れ替える", "profiles", "起票する表が `shared/qa.csv` の部分——**共有", "起票する表が `spec/qa-dev.csv` の部分——**共有"),
+    ("設定の表の行を消す", "tables", "| `外部の profile` | 組み込みの profile の上に重ねる外部の profile。", "| 外部の profile | 組み込みの profile の上に重ねる外部の profile。"),
+]
 
 
 def reference_mismatches(module, tables: str, prose: str, boundary: str) -> list[str]:
@@ -789,6 +1180,8 @@ PROFILE_MUTATIONS = [
     ("言い回しを変える", "`N/A。実現方式が未定` と書いておける", "`N/A。方式が未定` と書いておける"),
     ("誰が決めるかを落とす", "| `一覧の送り方` | 利用者 | `shared/qa.csv` |\n", ""),
     ("起票する表を変える", "| `パス` | 開発者 | `spec/qa-dev.csv` |", "| `パス` | 開発者 | 開発者が決める |"),
+    ("起票する表を入れ替える", "| `パス` | 開発者 | `spec/qa-dev.csv` |", "| `パス` | 開発者 | `shared/qa.csv` |"),
+    ("起票する表の順を変える", "| 見た目と閉じ方は利用者、URL は開発者 | `shared/qa.csv`・`spec/qa-dev.csv` |", "| 見た目と閉じ方は利用者、URL は開発者 | `spec/qa-dev.csv`・`shared/qa.csv` |"),
     ("節の名前を変える", "`## 実現方式: <profile>` を 1 つ置き、下の「仕様書の小見出し」", "`## 方式: <profile>` を 1 つ置き、下の「仕様書の小見出し」"),
 ]
 
@@ -826,6 +1219,16 @@ def main() -> int:
         problems = profile_mismatches(module, profiles_md, directories)
         check("本体の profile の定数が references/profiles.md・profiles/ と一致しない", not problems, "; ".join(problems))
         check("崩すと不一致になる: profiles/ のディレクトリを足す", bool(profile_mismatches(module, profiles_md, directories + ["desktop"])))
+        problems = external_mismatches(module, profiles_md, docs["tables"])
+        check("本体の外部の profile の定数が references と一致しない", not problems, "; ".join(problems))
+        for name, which, before, after in EXTERNAL_MUTATIONS:
+            text = profiles_md if which == "profiles" else docs["tables"]
+            if text.count(before) != 1:
+                check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {text.count(before)} 回現れる")
+                continue
+            broken = text.replace(before, after)
+            args = (broken, docs["tables"]) if which == "profiles" else (profiles_md, broken)
+            check(f"崩すと不一致になる: {name}", bool(external_mismatches(module, *args)))
         for name, before, after in PROFILE_MUTATIONS:
             if profiles_md.count(before) != 1:
                 check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {profiles_md.count(before)} 回現れる")
@@ -868,7 +1271,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS) + len(PROFILE_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS) + len(PROFILE_MUTATIONS) + len(EXTERNAL_MUTATIONS) + 1} 件")
     return 0
 
 

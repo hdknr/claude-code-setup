@@ -3,7 +3,8 @@
 screen-spec は spec-loop の決まりに従い、spec-loop は screen-spec に依存しない（#1081 の「spec-loop との境目」）。
 
 screen-spec が従う spec-loop の決まり: Q&A 表の列と番号の形・ツリーと図の決まり・版の重ね合わせ（行の単位で重ねる表を含む）・未決定の印・文体。
-**決まりを写さず、spec-loop のスクリプトを読み込んで使う**——重ね方は `merge-versions.py`、Q&A の番号の形は `check-qa-csv.py`、未決定の印は `check-spec-exit.py`。
+**決まりを写さず、spec-loop のスクリプトを読み込んで使う**——重ね方は `merge-versions.py`、Q&A の番号の形は `check-qa-csv.py`、未決定の印は `check-spec-exit.py`、
+外部の profile（`references/profiles.md` の「外部の profile」）は `external-profile.py`（設定が外部の profile を名指したとき、`init` が外部の profile を書くとき・基盤の profile から初期値を引くときだけ読み込む。無い spec-loop では、そのときだけを止める——下の版の範囲は上げない）。
 
 ## 対応する spec-loop の版
 

@@ -39,15 +39,22 @@ requirements/screens/
 | --- | --- | --- |
 | `画面IDの接頭辞` | `add` が採る画面ID の頭。英大文字で始まり、英大文字と数字が続き、`-` で終わる（`S-`・`SCR-`）。spec-loop の成果物の表の番号の頭（`F-` など）と重ねず、画面ID が Q&A の番号の形（`Q-`・`D-`）や未決定の印（`TBD-`・`TODO-`）にならないもの | `S-` |
 | `profile` | 実現方式の profile の名前（このプラグインの `profiles/` にあるもの。`references/profiles.md`）か `未設定` | `未設定` |
+| `外部の profile` | 組み込みの profile の上に重ねる外部の profile。`<持ち主>/<リポジトリ> <名前> <タグ>` を空白で区切って書く（案件に 1 つまで。`references/profiles.md` の「外部の profile」） | 行を置かない（外部の profile を使わない）。基盤の profile が画面の profile を名指せばそれ（下の項） |
 
-- `profile` の初期値は、`init` のスキルが spec-loop の基盤要件（`shared/infra.csv`）のフロントエンドの行（`項目` が `frontend`・`フロントエンド`）から推し、利用者に確かめて決める。
+- **基盤の profile が画面の profile を名指せば、それが `profile` と `外部の profile` の初期値になる**——`init` の `--profile` と `--external` を両方省いたとき（#1460）。
+  基盤の profile は platform-spec の案件の設定（重ねた全体の `shared/platform/settings.csv`）が名指す外部の profile で、名指しはそのタグの時点の `profile.csv` の層 `画面` の `重ねる先`
+  （決まりと、初期値を決められないときに止めることは `references/profiles.md` の「基盤の profile から引く初期値」）。
+- 基盤の profile が無い・名指しが無いときの `profile` の初期値は、`init` のスキルが spec-loop の基盤要件（`shared/infra.csv`）のフロントエンドの行（`項目` が `frontend`・`フロントエンド`）から推す。
+  どちらの初期値も、`init` のスキルが利用者に確かめて決める（`hint` が材料を出す）。
   profile を選ぶと、表の見出し行に profile の列が入り、仕様書と共通仕様に profile の節が要る（`references/profiles.md`）。**profile は表を置く最初の版で決める**——見出し行は版の間で変えない。
-- 検査（`check-screens.py`）は設定のうち `profile` だけを読む（設定が無ければ `未設定`）——画面ID が接頭辞で始まるかは見ない（手で置いた画面ID を止めない）。
+- 検査（`check-screens.py`）は設定のうち `profile` と `外部の profile` を読む（設定が無ければ `未設定` で、外部の profile は使わない）——画面ID が接頭辞で始まるかは見ない（手で置いた画面ID を止めない）。
 
 ## `init` と `add`
 
 **`init`**（`write-screens.py init`）は、作業中の版（いちばん大きい `v<n>`）の `requirements/screens/` に、3 つの表（見出し行だけ）・`settings.csv`・`common.md`・`templates/spec.md` を置く。
 profile を選べば、表の見出し行に profile の列を入れ、`common.md` と `templates/spec.md` の末尾に profile の節の雛形（このプラグインの `profiles/<profile>/`）を足す。
+外部の profile（`--external <持ち主>/<リポジトリ> <名前> <タグ>`。`なし` なら書かない）を選べば、`settings.csv` に `外部の profile` の行を書き、外部の profile が足す列を見出し行の profile の列の後ろに入れる
+（読めない・`profile` に重ねられなければ書かない。`references/profiles.md` の「外部の profile」）。2 つを省いたときの初期値は上の「案件ごとの設定」。
 重ねた全体か作業中の版にどれか 1 つでも在れば、何も書かない。版が 1 つも無ければ何も書かない（版を作るのは spec-loop）。
 
 **`add`**（`write-screens.py add`）は、画面を 1 つ足す。足すものは次の 3 つで、**項目と遷移の行は足さない**（ボタンと遷移は画面の中身で、利用者と決めて表に足す）。
@@ -165,11 +172,12 @@ v1〜v<n>（省略すると作業中の版まで）を spec-loop の重ね方で
 | 未決定の印 | — | 表のセル・散文に spec-loop の未決定の印がある | `⚠️` だけで印の無いセル・行 |
 | 散文 | `references/prose.md` のとおり | — | — |
 | profile | 設定の `profile` がこのプラグインの profile でも `未設定` でもない・profile の列の値（`references/profiles.md`）・仕様書と共通仕様の profile の節（無い・2 つある・仕様書の末尾にない・小見出しが無い・空・理由の無い `N/A`） | — | — |
+| 外部の profile | 設定の `外部の profile` の行の形（3 つの値・1 行まで）・語彙の外の値・種別の既定と違う値で `根拠` に Q&A の番号が無い・外部の profile が足した列の無い見出し行（`references/profiles.md` の「外部の profile」） | — | — |
 
 - 未決定の印の判定は spec-loop の `check-spec-exit.py` の `find_markers` を、Q&A の番号の形は spec-loop の `check-qa-csv.py` を読み込む（写さない）。
   `N/A。実現方式が未定` は伏せてから印を探す（`references/profiles.md` の「方式が未定のとき」）。
 - 出力は 1 行 1 件で、行頭に `違反: `・`未決定: `・`必須の欄が空: `・`警告: `・`起票の候補: ` のどれかを置く。表のセルは `<表のパス> <鍵> <列>`、散文は `<パス>:<行>` で場所を示す。
-- 起票の候補: Q&A の番号を添えていない未決定の印（表のセル・散文の行）を、そのまま出す。番号を振って Q&A 表に起票するのは spec-loop の req-loop・spec-review である（番号は起票したループの印ごとに振るので、ループの外で振ると並行するループと番号がぶつかる）。
+- 起票の候補: Q&A の番号を添えていない未決定の印（表のセル・散文の行）を、そのまま出す。外部の profile の既定の答えも、決める人で分けた起票の候補（`<Q&A 表のパス>: <項目>（<決める人>が決める）——…`）として出す（`references/profiles.md` の「既定の答え」）。番号を振って Q&A 表に起票するのは spec-loop の req-loop・spec-review である（番号は起票したループの印ごとに振るので、ループの外で振ると並行するループと番号がぶつかる）。
 
 ### 終了コード
 
@@ -179,4 +187,4 @@ v1〜v<n>（省略すると作業中の版まで）を spec-loop の重ね方で
 | 1 | 違反がある（未決定も併せて出す）。重ね合わせが決まりに反する（spec-loop の重ね方の違反）ときも 1 |
 | 3 | 違反は無いが、未決定の印か必須の欄の空がある |
 | 2 | 判定していない——引数の誤り・`docs` が無い・読めない・想定外の例外 |
-| 4 | 検査の前に止めた——spec-loop が見つからない・spec-loop の版が対応の範囲の外（`references/spec-loop.md`） |
+| 4 | 検査の前に止めた——spec-loop が見つからない・spec-loop の版が対応の範囲の外（`references/spec-loop.md`）・設定が名指した外部の profile を読めないか決まりに合わない（`references/profiles.md` の「外部の profile」の「読めないとき」） |

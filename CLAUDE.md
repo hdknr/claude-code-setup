@@ -120,6 +120,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **画面の表があるのに screen-spec が見つからなければ 4 で止まる**。画面の表が無ければ何も出さずに 0（spec-loop は screen-spec に依存しない）。
       抜ける条件 1（`check-spec-exit.py --docs`）・scaffold の関門（`scaffold.py`）・`autopilot-check.py` が読み込み、req-loop・spec-review・サインオフの前の確かめが CLI で呼ぶ。
       screen-spec の見つけ方は screen-spec の spec-loop の見つけ方と同じ形の写し。守る／守らないは docstring を正とする。テストは `scripts/test-screen-gate.py`
+    - `scripts/profile-gate.py` - **外部の profile の関門**（#1457）——基盤要件の表の `profile の行` に値があれば、platform-spec の版の差分（`check-profile-diff.py`。**子のプロセスで呼び、読み込まない**）を入れ、
+      **起票の候補が残れば 1、値があるのに platform-spec が見つからなければ 4 で止まる**。値が無ければ platform-spec を探さず、何も出さずに 0（spec-loop は platform-spec に依存しない。
+      **spec-loop のスクリプトで platform-spec の名前を持つのはこれだけ**——`test-check-infra-csv.py` が見る）。`scaffold.py`（書く生成と `--dry-run`）・`build-proposal.py`（要求確定のタグの時点の `docs/`）が読み込み、feasibility が CLI で呼ぶ。
+      platform-spec の見つけ方は `screen-gate.py` と同じ形の写し。守る／守らないは docstring を正とする。テストは `scripts/test-profile-gate.py`
     - `scripts/check-feasibility-csv.py` - スケジュールと見積りの表の検査（`schedule-to-gantt.py` と
       `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは
       `scripts/test-check-feasibility-csv.py`）
@@ -155,7 +159,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-infra-csv.py` - 基盤要件の表（`shared/infra.csv`。言語・DBMS・ホスティング環境など）の検査とゲートの判定（#950。
       **形式の違反（1）・未決定（3。表が無いときも）・暫定（4）を分けて出し、表の状態と根拠の Q&A の行の状態の対応も照らす**。
       feasibility がゲートに当て（止めない）、`scaffold.py`（未決定・暫定・Python でない言語で止める）と `build-proposal.py`（未決定で 1・暫定で 3）が読み込んで当てる。
-      表が無ければ両方とも警告して進む。決まりの原本は `references/tree.md` の「基盤要件」、守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-csv.py`）
+      表が無ければ両方とも警告して進む。**末尾の任意の列 `profile の行`（外部の profile の行 ID。中身は見ない）を置いた表も、置かない 7 列の表も通す**（#1456）。
+      決まりの原本は `references/tree.md` の「基盤要件」、守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-csv.py`）
     - `scripts/check-findings-csv.py` - 仕様レビューの**指摘の表**（`spec-review/v<n>-findings.csv`。1 指摘 1 行）の形式の検査（#982。
       **振り分けの列は `references/spec-scope.md` の区分の名前だけ**・数える列の値・`回` が隣の実行の記録（`v<n>.csv`）の実行の行を指し日付が同じこと・**`確かめられない` の行の `結果` が `-`**（#986）を見る。
       spec-review の手順 6 が実行の行と一緒に足して当てる。決まりの原本は `references/spec-exit.md` の「指摘の表」、守る／守らないは docstring を正とする。テストは `scripts/test-check-findings-csv.py`）
@@ -283,10 +288,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **ワイヤーフレームの雛形の拡張子を `.drawio` にしない**——`check-diagram-freshness.py` が `diagrams/` の外の `.drawio` を止める
     - `scripts/write-screens.py` - `init`・`add` のスキルが呼ぶ書き込み（#1093。`hint`・`init`・`add`）。作業中の版の `requirements/screens/` に表と雛形を置き、
       **画面ID をどの版の生の表の鍵とも重ねずに採番する**。`check-screens.py` を読み込み、spec-loop の見つけ方・版の範囲・表の列を共有する（写さない）。
-      **書けないときは 1 つも書かない**。守る／守らないは docstring を正とする。テストは `scripts/test-write-screens.py`
+      **書けないときは 1 つも書かない**。**`init` の `--profile` と `--external` を両方省くと、基盤の profile（platform-spec の `shared/platform/settings.csv`）の画面の層の `重ねる先` が初期値になる——platform-spec は読み込まず、設定の置き場所と項目名は写し**（#1460。決められなければ 4 で止まる）。守る／守らないは docstring を正とする。テストは `scripts/test-write-screens.py`
     - `scripts/check-screens.py` - 画面の表と散文の仕様書を、**spec-loop の重ね方（`merge-versions.py` の `merge`）で重ねた全体**に当てる検査（#1092。
       表どうし・入口から辿れること・遷移の無いボタン・Q&A の根拠・成果物の表への参照・未決定の印・散文の節）。**spec-loop の決まりは写さずに読み込み**（Q&A の番号の形・未決定の印・成果物の表の置き場所も）、
       **検査の前に spec-loop の版が対応の範囲かを確かめて、外なら 4 で止まる**。**ファイルを書かず、Q&A の番号を振らない**（起票の候補を出すだけ）。
+      **`settings.csv` が外部の profile を名指したときだけ、spec-loop の `external-profile.py` を読み込んで画面の層を `web-spa` などの上に重ね、語彙・種別の既定・足す列を見る——読めない・`重ねる先` が食い違えば 4**（#1458。決まりの原本は `references/profiles.md` の「外部の profile」）。
+      **画面の層の種類 `答え` の行（既定の答え）は、`web-spa` の「誰が決めるか」で共有（推奨とリンクつき）・内部の起票の候補に分けて出す——番号を振らず、Q&A 表の `質問` に行の ID があれば出さない**（#1459）。
       守る／守らないは docstring を正とする。テストは `scripts/test-check-screens.py`）
     - `scripts/build-mock.py` - 画面の表から **UI モック（HTML 1 枚）を生成する**（#1095。`check-screens.py` を読み込み、同じ重ね方の表から `<docs の親>/build/mock/v<n>/index.html` を書く——commit しない）。
       **外を読まず**、表は許可した列だけを JSON で埋め込み、**どのセルからも内部の層の番号（`D-`）を外す**。描き方の差し替えは版の外の `screen-spec/renderers/<画面ID>.js` で、
@@ -299,6 +306,17 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       本体は画面の表の行を仕様書の「表で持つ」節に表として出し（共有の層だけ・未決定のセルに `⚠️` の飾り）、ビルドのときに版ごとのモックを `build-mock.py` の `build` で作って（**基準の時点（`--since`）は渡さない**——サイトのモックに前回の会からの印は付かない）
       `build/mkdocs/mock/v<n>/`（`build-mock.py` の出力の `build/mock/` と分ける）に書いてサイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
       決まりの原本は `references/mkdocs.md`、守る／守らないは docstring を正とする。テストは `scripts/test-screen-spec-pages.py`）
+  - `platform-spec/` - spec-loop の基盤要件（`shared/infra.csv`）を、組織の開発ガイドのような外部の設計パターン（profile）とつなぐプラグイン（#1312。**spec-loop は platform-spec に依存しない**——
+    置かなければ今の `infra.csv` と `check-infra-csv.py` のまま動く。いまは基盤の層の形と照合（#1456）と、版の差分の候補（#1457）まで。スキルはまだ持たない）
+    - `references/` - **決まりの原本**（基盤の層の表の形・形式の版の範囲・案件の設定（版の中の `shared/platform/settings.csv`）・`profile の行` の書き方・照合は `infra-profile.md`、
+      spec-loop との境目・対応する spec-loop の版・spec-loop の見つけ方は `spec-loop.md`）。profile の置き場所と読み方は spec-loop の `references/external-profile.md` を正とし、写さない
+    - `scripts/check-infra-profile.py` - 案件の `infra.csv` の末尾の任意の列 `profile の行` が、案件の設定のタグの時点の基盤の層に在るかを照らし、無い ID（別のタグにだけ在る ID も）を名指しする（#1456。
+      **spec-loop の重ね方（`merge-versions.py`）・列の名前（`check-infra-csv.py` の `PROFILE_COLUMN`）・外部の profile の読み方（`external-profile.py`）を読み込む——写さない**。読むだけ。
+      spec-loop の見つけ方は screen-spec と同じ順の写し（platform-spec は screen-spec に依存しない）。案件の設定の任意の項目 `確かめたタグ`（#1457）も受ける。守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-profile.py`）
+    - `scripts/check-profile-diff.py` - 案件の設定のタグと profile の新しい版（`--new` か、手元の clone のタグのうち profile を持つものの中で版の順が最も後ろのもの）を比べ、
+      `profile の行` が指す行のうち変わった・消えた・リンクの切れた行を、共有の Q&A 表に起票する候補（`起票の候補: `）として出す（#1457。**番号を振らない。読むだけ**。
+      新しい版が `タグ`・`確かめたタグ` と同じなら比べない。設定の読み方と spec-loop の見つけ方は `check-infra-profile.py`、差分は spec-loop の `external-profile.py` を読み込む——写さない。
+      spec-loop の `profile-gate.py` が子のプロセスで呼ぶ。決まりの原本は `references/infra-profile.md` の「版の差分と関門」、守る／守らないは docstring を正とする。テストは `scripts/test-check-profile-diff.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -489,11 +507,25 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     「性能のほかの種類」の表と一致することも見る**（`test-check-qa-csv.py` と同じ形）
   - `test-check-infra-csv.py` - spec-loop の基盤要件の表の検査（#950）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数が `references/tree.md` の「基盤要件」の表と一致すること・
-    根拠の Q&A の状態の名前が `check-qa-csv.py` の状態にあることも見る**（`test-check-design-csv.py` と同じ形）
+    根拠の Q&A の状態の名前が `check-qa-csv.py` の状態にあることも見る**（`test-check-design-csv.py` と同じ形）。
+    **末尾の任意の列 `profile の行` の試料と、spec-loop の `scripts/`・`templates/` が platform-spec の名前を探す・求める先に持たないこと（`profile-gate.py` だけを除く——#1457。名前を植える陽性対照つき）も見る**（#1456）
+  - `test-check-infra-profile.py` - platform-spec の `infra.csv` と外部の profile の基盤の層の照合（#1456）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/platform-spec/scripts/` にある**。**一時ディレクトリに本物の spec-loop と platform-spec の写しを並べ、profile は一時の git リポジトリにタグを付けて作る**（ネットワークに出ない）。
+    在る ID・無い ID・タグの外の ID・止まり方（1・4・2）・読むだけ（clone と正本が変わらない）と、**本体の定数が `plugins/platform-spec/references/` と一致すること**を見る。
+    **変異の数は docstring の「守ること」の行の数と同じ**（壊さない写しの陰性対照つき）
+  - `test-check-profile-diff.py` - platform-spec の profile の版の差分の候補（#1457）の回帰テスト（変異テストを含む）。**本体は `plugins/platform-spec/scripts/` にある**。
+    一時ディレクトリに本物の spec-loop と platform-spec の写しを並べ、profile は一時の git リポジトリにタグ（`v9`・`v10`・profile を持たないタグなど）を付けて作る。
+    候補の種類と名指し・指していない行を出さない・番号を振らない・新しい版の決め方・止まり方・読むだけと、**候補の性質のプロパティテスト（標準ライブラリの `random`。性質を破る変異で落ちる陽性対照つき）**・
+    本体の定数が `references/infra-profile.md` と一致することを見る。**変異の数は docstring の「守ること」の行の数と同じ**
+  - `test-profile-gate.py` - spec-loop の外部の profile の関門（#1457）と、それを当てる `scaffold.py`・`build-proposal.py` の口の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。一時ディレクトリに本物の spec-loop の写しを置き、隣に本物の platform-spec の写しか、終了コードと受けた引数を記録する偽物を置く・置かない・名指す。
+    **陽性対照: 同じ置き方で `profile の行` に値があれば呼ぶ**（値が無ければ呼ばない）。scaffold・提案書の正本の試料は `test-scaffold-screens.py`・`test-build-proposal.py` を読み込む。
+    プラグインのキャッシュの形は一時の `CLAUDE_CONFIG_DIR` に作る——利用者の `~/.claude` は読まない。**変異の数は docstring の「守ること」の行の数と同じ**。口も壊して見る
   - `test-check-screens.py` - screen-spec の画面・項目・遷移の表の検査（#1092）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べて走らせ**（spec-loop の重ね方を読み込むので）、
     #1092 の受入基準の陽性対照・陰性対照・実行の前後で正本が変わらないこと（Q&A の番号を振らない）と、**本体の定数が `plugins/screen-spec/references/` の原本と一致すること**を見る。
-    spec-loop の版の範囲は写しの `plugin.json` を書き換えて、プラグインのキャッシュの形は一時の設定のディレクトリ（`CLAUDE_CONFIG_DIR`）に作って当てる——利用者の `~/.claude` は読まない
+    spec-loop の版の範囲は写しの `plugin.json` を書き換えて、プラグインのキャッシュの形は一時の設定のディレクトリ（`CLAUDE_CONFIG_DIR`）に作って当てる——利用者の `~/.claude` は読まない。
+    **外部の profile（#1458）は試料ごとに一時の本物の git リポジトリ（タグつき）で作り、案件の `CLAUDE.md` の行か `SPEC_PROFILE_CLONE` で指す**（利用者の値は外す）。**既定の答えの候補（#1459）は、リンク先の本文の目印が出力に出ないことを、目印を要約に置くと出る陽性対照と並べて見る**
   - `test-screen-gate.py` - spec-loop の画面の表の関門（#1097）と、それを条件 1 に入れる `check-spec-exit.py` の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の spec-loop の写しを置き、隣に本物の screen-spec の写しを置く・置かない・偽物を名指す**で当て、
     正本の試料は `test-check-screens.py` の `base()` を読み込む。**陽性対照: 同じ「未定」の正本で、画面の関門を当てない条件 1 は 0**。プラグインのキャッシュの形は一時の `CLAUDE_CONFIG_DIR` に作る——利用者の `~/.claude` は読まない
@@ -504,7 +536,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-write-screens.py` - screen-spec の `init`・`add` の書き込みと雛形（#1093）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` と `plugins/screen-spec/templates/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べ、スキルの手順をスクリプトで再現する**
     （`hint` → `init` → `add` → `check-screens.py`）。#1093 の受入基準（空の案件で 0・Q&A 表を書き換えない・表で持つ節は印だけ）・採番・書けないときに書かないことと、
-    **雛形が `references/prose.md` の「雛形」に、本体の定数が `references/tables.md` に合うこと**を見る
+    **雛形が `references/prose.md` の「雛形」に、本体の定数が `references/tables.md` に合うこと**を見る。**基盤の profile から引く初期値（#1460）は一時の git リポジトリの profile で当て、プラグインの隣に読み込まれたら印を書く偽の platform-spec を置いて読み込まないことと、写した設定の項目名が platform-spec の定数と一致することを見る**
   - `test-build-mock.py` - screen-spec の UI モックの生成器（#1095）の回帰テスト（変異テストを含む）。**本体は `plugins/screen-spec/scripts/` にある**。
     **引数なし（CI）は文字列と印で決まる部分**——一時の git リポジトリの正本で生成し、埋め込んだ表を表と突き合わせ、外を読まない・印・版の中の描き方で止まる・`D-` と許可の外の列が出ない・書くのは出力の 1 ファイルだけ、と
     **本体の定数が `references/mock.md` と一致すること**を見る。**`--browser` は手元で回す部分**——ヘッドレスの Chrome を `node` の組み込みの WebSocket で動かし（依存は足さない）、

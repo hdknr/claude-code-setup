@@ -10,9 +10,10 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 
 - **spec-loop の決まりを写さない**——版の重ね方は spec-loop の `merge-versions.py` の `merge`、Q&A の番号の形は `check-qa-csv.py`、
   未決定の印は `check-spec-exit.py` の `find_markers`、成果物の表の置き場所と番号の形は `check-design-csv.py` を読み込む。
+  外部の profile は、`settings.csv` が名指したときだけ `external-profile.py` を読み込む（#1458）。
 - **検査の前に spec-loop を見つけ、版が対応の範囲（`SPEC_LOOP_MIN` 以上 `SPEC_LOOP_BELOW` 未満）に入るかを確かめる**——外なら何も検査せずに 4。
   見つけ方は `references/spec-loop.md` の「spec-loop の見つけ方」（`find_spec_loop`）。
-- **ファイルを 1 つも書かない。Q&A の番号を振らない**——Q&A の番号を添えていない未決定の印は「起票の候補」として出すだけ。
+- **ファイルを 1 つも書かない。Q&A の番号を振らない**——Q&A の番号を添えていない未決定の印と、外部の profile の既定の答え（#1459）は「起票の候補」として出すだけ。
 - 標準ライブラリだけを使う。
 
 終了コード:
@@ -21,7 +22,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - 1: 違反がある（未決定も併せて出す）。重ね合わせが spec-loop の決まりに反するときも 1
 - 3: 違反は無いが、未決定の印か必須の欄の空がある
 - 2: 判定していない——引数の誤り・`docs` が無い・読めない・想定外の例外
-- 4: 検査の前に止めた——spec-loop が見つからない・spec-loop の版が読めない・対応の範囲の外
+- 4: 検査の前に止めた——spec-loop が見つからない・spec-loop の版が読めない・対応の範囲の外。
+  `settings.csv` が名指した外部の profile を読めない・決まりに合わない（`references/profiles.md` の「外部の profile」）
 
 **守ること**:
 
@@ -42,6 +44,22 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - 見出し行・決まった値・種別や種類に合わない列の値を違反にし、必須の欄の空を 3 にする
 - spec-loop が見つからない・版が範囲の外なら、検査の前に 4 で止める（名指しした spec-loop が spec-loop でなければ、ほかを探さずに止める）
 - ファイルを書かない（Q&A の番号を振らない。spec-loop を読み込むときの `__pycache__` も書かない）
+- 外部の profile（#1458）: `settings.csv` に `外部の profile` の行が無ければ、spec-loop の `external-profile.py` を読み込まず、今までと同じに検査する（spec-loop にそのファイルが無くても）
+- `外部の profile` の行が 2 つある（値のある行があれば値の空の行も数える。空の行だけなら外部の profile を使わない）・値が `<持ち主>/<リポジトリ> <名前> <タグ>` の形でなければ違反
+- 外部の profile は spec-loop の `external-profile.py` で読む（探し方・タグの時点の読み出し・形式の版の範囲を写さない）。案件の根（`CLAUDE.md` を探す場所）は `docs` の親
+- 外部の profile を読めない（spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・画面の層が無い・形式の版が範囲の外）なら、検査の前に 4 で止める——外部の profile を外して検査を続けない
+- 画面の層の `重ねる先` が `settings.csv` の `profile`（`未設定` を含む）と違えば、検査の前に 4 で止める
+- 画面の層の行が決まりに合わない（後ろの列・`種類`・表・空の列・既に在る列を足す・語彙と既定の空の値・`screens.csv` でない既定・決まった種別でない既定・同じ列と種別の既定が 2 行・どこにも無い列の語彙と既定）なら 4
+- 外部の profile が足す列を、core と profile の列の後ろに宣言の順で見出し行に求める
+- 語彙のある列で、語彙の外の値を違反にする（印のあるセル・空のセル・`N/A。実現方式が未定` のセルは当てない）
+- 種別の既定と違う値で、その画面の行の `根拠` に Q&A の番号が無いものを違反にする（番号があれば通す）
+- 既定の答え（#1459）: 画面の層の種類 `答え` の行を、組み込みの profile の「誰が決めるか」の起票する表で分けて起票の候補に出す——`shared/qa.csv` の部分は推奨（行の ID・要約・リンク）を付けた共有の候補、
+  `spec/qa-dev.csv` の部分は既定を採った内部の候補。決める人が 2 人の項目は `値` が空なら両方、`利用者`・`開発者` ならその部分だけ
+- 既定の答えの候補を、その候補の Q&A 表（共有か内部）の行の `質問` に行の ID があれば出さない（もう一方の表の行は見ない）
+- 既定の答えの候補に Q&A の番号を付けず、終了コードを変えない。出すのは表・項目・決める人・行の ID・要約・リンクだけで、リンク先を読まない
+- 種類 `答え` の行の `表` と `列` が組み込みの profile の誰が決めるかの項目でない・`要約` か `リンク` が空・`値` が空でも決める人でもない・同じ項目と部分の答えが 2 行・
+  ID・`要約`・`リンク`・`表`・`列`・`値` に改行か制御文字（カテゴリ C と U+2028・U+2029）か Q&A の番号の形がある（出力の行を割る・振っていない番号を出す）なら 4。
+  その止めた理由に ID を出さない（ID が割れる・番号の形のとき）
 
 **守らないもの**:
 
@@ -56,6 +74,10 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 | **`common.md` の profile の節以外の節** | 案件で節を足し、書いていない節は空のままでよい（`references/prose.md` の「共通仕様」）。Q&A の番号と未決定の印だけを見る。**profile を選んだ案件の共通仕様の profile の節（`## 実現方式: <profile>`）は見る**——小見出しを全部・どれも空でなく理由の無い `N/A` でないことを求める（上の「profile があれば」） |
 | **ワイヤーフレーム（drawio）と画面遷移図** | 図の鮮度は spec-loop の `render-diagrams.py --check` |
 | **本物のプラグインのキャッシュの形が変わったとき**（`installed_plugins.json` の形） | 1 つの実測（`plugins` の下に `<名前>@<マーケットプレイス>` → 入れた先の一覧）に合わせて読む。読めなければ見つからないとして 4 |
+| **外部の profile のリンクが切れているか・本文の中身** | spec-loop の `external-profile.py check` が見る。ここは ID・値だけを使い、本文を読まない（`references/profiles.md` の「外部の profile」） |
+| **語彙のセルを `、` で区切ること・既定の値が語彙の中にあるか** | セルの値をそのまま比べる。既定と語彙の食い違いは外部の profile の側の判断 |
+| **既定の答えをいつ起票したか・起票した Q&A の行の回答と状態** | 候補を消すのは、その表の `質問` に行の ID の文字列があるかだけで決める（ID が別の意味で書かれていても消える。`references/profiles.md` の「既定の答え」） |
+| **外部の profile のタグを付け直したとき・後の版で外部の profile を変えたとき** | 足す列が変われば見出し行の違反（1）になる。どのタグで表を置いたかは覚えない（`references/profiles.md` の「外部の profile」） |
 """
 
 from __future__ import annotations
@@ -155,8 +177,24 @@ PROFILES = {
         "columns": {SCREENS: ["パス"], TRANSITIONS: ["種類"]},
         "screen": ["ディープリンク・別タブ", "戻る・進む・再読み込み", "ダイアログの実体", "一覧の送り方", "ファイル出力・印刷", "認証と権限の外れ"],
         "common": ["アプリの外枠", "対象デバイスと画面幅"],
+        # 「誰が決めるか」の表: 項目 → 起票する表（表の 3 列目の順）。外部の profile の既定の答えの候補の行き先（#1459）
+        "deciders": {
+            "パス": ("spec/qa-dev.csv",),
+            "種類": ("shared/qa.csv",),
+            "ディープリンク・別タブ": ("shared/qa.csv",),
+            "戻る・進む・再読み込み": ("shared/qa.csv",),
+            "ダイアログの実体": ("shared/qa.csv", "spec/qa-dev.csv"),
+            "一覧の送り方": ("shared/qa.csv",),
+            "ファイル出力・印刷": ("shared/qa.csv", "spec/qa-dev.csv"),
+            "認証と権限の外れ": ("shared/qa.csv",),
+            "アプリの外枠": ("shared/qa.csv",),
+            "対象デバイスと画面幅": ("shared/qa.csv",),
+        },
     },
 }
+SHARED_QA = "shared/qa.csv"  # 利用者が決めるものを起票する表
+INTERNAL_QA = "spec/qa-dev.csv"  # 開発者が決めるものを起票する表
+DECIDED_BY = {SHARED_QA: "利用者", INTERNAL_QA: "開発者"}
 PROFILE_SECTION = "実現方式: "  # 続けて profile の名前
 PATH_COLUMN = "パス"  # web-spa: `/` で始まる。種別が `tab`・`dialog`（CHILD_KINDS）のときだけ空でよい
 TAB_COLUMN = "種類"  # web-spa（遷移）: 空は同じタブ
@@ -164,6 +202,21 @@ TAB_KINDS = ("同じタブ", "別タブ")
 PROFILE_UNDECIDED_TEXT = "N/A。実現方式が未定"
 # NFKC にしてから当てる。強調・コードの印（`**N/A**。…`）が字の間に入っても同じ言い回しと読む——伏せる側と節・セルを読む側で揃える
 PROFILE_UNDECIDED = re.compile(r"[*_`~]*".join(map(re.escape, PROFILE_UNDECIDED_TEXT)), re.IGNORECASE)
+
+# ---- `references/profiles.md` の「外部の profile」の写し（#1458）
+EXTERNAL_KEY = "外部の profile"  # settings.csv の行。値は `<持ち主>/<リポジトリ> <名前> <タグ>`
+EXTERNAL_REPO = re.compile(r"[^/\s]+/[^/\s]+")
+EXTERNAL_LAYER = "画面"
+EXTERNAL_RANGE = ("1", "2")  # 形式の版。下限を含み、上限を含まない
+EXTERNAL_COLUMNS = ("種類", "表", "列", "種別", "値")  # 先頭の `ID,要約,リンク` の後ろ
+EXTERNAL_ADD = "列"
+EXTERNAL_VOCAB = "語彙"
+EXTERNAL_DEFAULT = "既定"
+EXTERNAL_ANSWER = "答え"  # 既定の答え（#1459）。`表` は表のファイルか下の 2 つ、`列` は誰が決めるかの項目、`値` は空か決める人
+EXTERNAL_KINDS = (EXTERNAL_ADD, EXTERNAL_VOCAB, EXTERNAL_DEFAULT, EXTERNAL_ANSWER)
+ANSWER_PLACES = {"仕様書": "screen", "共通仕様": "common"}  # 小見出しの項目の `表`
+LINE_BREAKING = ("Zl", "Zp")  # カテゴリ C のほかに出力の行を割る文字のカテゴリ（U+2028・U+2029）
+EXTERNAL_SCRIPT = "external-profile.py"  # spec-loop の scripts/ に在る共通の部分（読み込む——写さない）
 
 
 def mask_undecided(text: str) -> str:
@@ -293,9 +346,28 @@ class Report:
         return 3 if self.undecided or self.empty else 0
 
 
+class External:
+    """外部の profile の画面の層を、screen-spec の言葉に読み替えたもの（`references/profiles.md` の「外部の profile」）。"""
+
+    def __init__(self, repo: str, name: str, tag: str, source: str) -> None:
+        self.repo = repo
+        self.name = name
+        self.tag = tag
+        self.source = source
+        self.columns: dict[str, list[str]] = {path: [] for path in TABLES}  # 足す列（宣言の順）
+        self.vocab: dict[str, dict[str, list[str]]] = {}  # 表 → 列 → 語彙（宣言の順）
+        self.defaults: dict[tuple[str, str], tuple[str, str]] = {}  # (列, 種別) → (既定の値, 行の ID)
+        self.answers: dict[tuple[str, str], tuple[str, str, str]] = {}  # (項目, 起票する表) → (行の ID, 要約, リンク)（宣言の順）
+
+    @property
+    def label(self) -> str:
+        return f"外部の profile {self.repo} の {self.name}（タグ {self.tag}）"
+
+
 class Checker:
     def __init__(self, spec_loop: Path, docs: Path, upto: int | None) -> None:
         scripts = spec_loop / "scripts"
+        self.scripts = scripts
         try:
             self.versions = _load("merge_versions", scripts / "merge-versions.py")
             self.design = _load("check_design_csv", scripts / "check-design-csv.py")
@@ -434,13 +506,18 @@ class Checker:
             print("画面の表が無い（requirements/screens/data/ に 3 つの表のどれも無い）——検査するものが無い")
             return 0
         self.profile = self.read_profile(whole)
+        external = self.read_external(whole)
+        if external is False:
+            return self.finish()
         extra = PROFILES[self.profile]["columns"] if self.profile in PROFILES else {}
-        self.columns = {path: COLUMNS[path] + extra.get(path, []) for path in TABLES}
+        added = external.columns if external else {}
+        self.columns = {path: COLUMNS[path] + extra.get(path, []) + added.get(path, []) for path in TABLES}
         for path in TABLES:
             if path not in whole.headers:
                 self.report.violations.append(f"{path}: 表が無い（3 つの表は揃えて置く。行が無くても見出し行は置く）")
             elif whole.headers[path] != self.columns[path]:
-                shown = f"決まり（profile {self.profile} の列を足した）" if extra.get(path) else "決まり"
+                parts = ([f"profile {self.profile} の列"] if extra.get(path) else []) + ([f"{external.label} の列"] if added.get(path) else [])
+                shown = f"決まり（{'・'.join(parts)}を足した）" if parts else "決まり"
                 self.report.violations.append(f"{path}:1: 見出し行が{shown}（{','.join(self.columns[path])}）と違う: {','.join(whole.headers[path])}")
         if self.report.violations:
             return self.finish()
@@ -465,8 +542,186 @@ class Checker:
         self.check_transitions(screens, items, transitions)
         self.check_reach(screens, transitions)
         self.check_profile_cells(screens, transitions)
+        if external:
+            self.check_external(external, whole, {SCREENS: screens, ITEMS: items, TRANSITIONS: transitions})
         self.check_prose(whole, screens)
         return self.finish()
+
+    # ---- 外部の profile（`references/profiles.md` の「外部の profile」。#1458）
+
+    def external_setting(self, whole) -> tuple[str, str, str] | None | bool:
+        """`settings.csv` の `外部の profile` の行。無い・値が空なら None、形が違えば違反を出して False。"""
+        text = self.text(whole, SETTINGS)
+        if text is None:
+            return None
+        rows = list(csv.reader(io.StringIO(text, newline="")))  # 読めないことは read_profile が先に見ている
+        if not rows or [cell.strip() for cell in rows[0]] != SETTINGS_COLUMNS:
+            return None  # 見出し行の違反は read_profile が出している
+        values = [row[1].strip() if len(row) > 1 else "" for row in rows[1:] if row and row[0].strip() == EXTERNAL_KEY]
+        if not values:
+            return None
+        if len(values) >= 2 and any(values):  # 値のある行があれば、空の行も数える。空の行だけなら使わない（周の前と同じ）
+            self.report.violations.append(f"{SETTINGS} {EXTERNAL_KEY}: 行が {len(values)} つある（案件に 1 つまで）")
+            return False
+        if not values[0]:
+            return None
+        parts = values[0].split()
+        if len(parts) != 3 or not EXTERNAL_REPO.fullmatch(parts[0]):
+            self.report.violations.append(f"{SETTINGS} {EXTERNAL_KEY}: {values[0]!r} は `<持ち主>/<リポジトリ> <名前> <タグ>` の形でない")
+            return False
+        return parts[0], parts[1], parts[2]
+
+    def read_external(self, whole) -> External | None | bool:
+        """外部の profile の画面の層を読む。無ければ None、設定の形が違えば False（違反は出した）、読めない・決まりに合わなければ Stop。"""
+        setting = self.external_setting(whole)
+        if setting is None or setting is False:
+            return setting
+        if self.profile is None:
+            return False  # profile の行の違反は read_profile が出している
+        external = self.load_external(*setting)
+        print(f"{external.label}（{external.source}）を profile {self.profile} に重ねて検査する")
+        return external
+
+    def load_external(self, repo: str, name: str, tag: str) -> External:
+        """名指した外部の profile の画面の層を読み、`self.profile` に重ねられるかと行の決まりを見る。読めない・決まりに合わなければ Stop。
+
+        `settings.csv` の行に依らない——`write-screens.py` の `init` が、書く前に足す列を知るためにも読み込む（#1460）。
+        """
+        path = self.scripts / EXTERNAL_SCRIPT
+        if not path.is_file():
+            raise Stop(f"{SETTINGS} が外部の profile を名指しているが、spec-loop に {EXTERNAL_SCRIPT} が無い（spec-loop の版が古い）")
+        try:
+            ext = _load("spec_loop_external_profile", path)
+        except (OSError, SyntaxError, ImportError) as e:
+            raise Stop(f"{path}: 読み込めない（{e}）") from None
+        label = f"外部の profile {repo} の {name}（タグ {tag}）"
+        try:
+            clone, source = ext.find_clone(repo, project=self.docs.resolve().parent)
+            commit = ext.resolve_tag(clone, tag)
+            layer = ext.read_layer(clone, commit, name, EXTERNAL_LAYER, *EXTERNAL_RANGE)
+        except (ext.Undetermined, ext.LayerMissing) as e:
+            raise Stop(f"{label} を読めない: {e}") from None
+        except Exception as e:  # noqa: BLE001 — git が無い・パスが読めないなど。外部の profile を外して検査を続けない
+            raise Stop(f"{label} を読めない: {type(e).__name__}: {e}") from None
+        if self.profile not in PROFILES:
+            raise Stop(f"{label}: {SETTINGS} の {PROFILE_KEY} が {self.profile!r} で、重ねる組み込みの profile が無い（{UNSET} には重ねられない）")
+        if layer.base != self.profile:
+            raise Stop(f"{label} の層 {EXTERNAL_LAYER} の 重ねる先 {layer.base!r} が {SETTINGS} の {PROFILE_KEY} {self.profile!r} と食い違う")
+        external = External(repo, name, tag, source)
+        tables = {path.rsplit("/", 1)[1]: path for path in TABLES}
+        builtin = PROFILES[self.profile]["columns"] if self.profile in PROFILES else {}
+        uses: list[tuple[str, str, str]] = []  # (表, 列, 行の ID)——足した列を全部読んでから在るかを見る
+        for rid, row in layer.rows.items():
+            where = f"{label} の行 {rid}"
+            if tuple(row)[len(ext.LAYER_HEAD):] != EXTERNAL_COLUMNS:
+                raise Stop(f"{where}: 先頭の 3 列の後ろが `{','.join(EXTERNAL_COLUMNS)}` でない: {','.join(tuple(row)[len(ext.LAYER_HEAD):])}")
+            kind, table, column, screen_kind, value = (row[c].strip() for c in EXTERNAL_COLUMNS)
+            if kind == EXTERNAL_ANSWER:
+                self.read_answer(external, rid, row, where)
+                continue
+            if table not in tables:
+                raise Stop(f"{where}: 表 {table!r} は {'・'.join(tables)} のどれでもない")
+            target = tables[table]
+            if not column:
+                raise Stop(f"{where}: 列が空")
+            if kind == EXTERNAL_ADD:
+                if column in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:
+                    raise Stop(f"{where}: 列 {column} は {table} に既に在る（足す列は重ねない）")
+                external.columns[target].append(column)
+            elif kind == EXTERNAL_VOCAB:
+                if not value:
+                    raise Stop(f"{where}: 語彙の値が空")
+                external.vocab.setdefault(target, {}).setdefault(column, []).append(value)
+                uses.append((target, column, rid))
+            elif kind == EXTERNAL_DEFAULT:
+                if target != SCREENS:
+                    raise Stop(f"{where}: 既定は {SCREENS.rsplit('/', 1)[1]} の列にだけ書く（種別は画面の列）")
+                if screen_kind not in SCREEN_KINDS:
+                    raise Stop(f"{where}: 種別 {screen_kind!r} は決まった種別（{'・'.join(SCREEN_KINDS)}）でない")
+                if not value:
+                    raise Stop(f"{where}: 既定の値が空")
+                if (column, screen_kind) in external.defaults:
+                    raise Stop(f"{where}: 種別 {screen_kind} の列 {column} の既定が 2 行ある（{external.defaults[(column, screen_kind)][1]} と）")
+                external.defaults[(column, screen_kind)] = (value, rid)
+                uses.append((target, column, rid))
+            else:
+                raise Stop(f"{where}: 種類 {kind!r} は {'・'.join(EXTERNAL_KINDS)} のどれでもない")
+        for target, column, rid in uses:
+            if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:
+                raise Stop(f"{label} の行 {rid}: 列 {column} は {target.rsplit('/', 1)[1]} に無い（core・profile {self.profile}・足した列のどれでもない）")
+        return external
+
+    def read_answer(self, external: External, rid: str, row: dict[str, str], where: str) -> None:
+        """種類 `答え` の行（`references/profiles.md` の「既定の答え」。#1459）。誰が決めるかの項目と決める人の部分を確かめて持つ。決まりに合わなければ Stop。"""
+        table, item, value = row["表"].strip(), row["列"].strip(), row["値"].strip()
+        summary, link = row["要約"].strip(), row["リンク"].strip()
+        # 候補の行・止めた理由にそのまま出る欄——改行・制御文字・行の区切り（U+2028・U+2029。`splitlines()` が割る）は出力の行を割り（別の行を作る）、
+        # Q&A の番号の形は振っていない番号を出す。ID を先に見る（ほかの欄の止めた理由は ID を含む `where` で出す）
+        for name, text in (("ID", rid), ("要約", summary), ("リンク", link), ("表", table), ("列", item), ("値", value)):
+            at = f"{external.label} の答えの行" if name == "ID" else where  # ID は出さない（割れる・番号の形をそのまま出すことになる）
+            if any(unicodedata.category(ch).startswith("C") or unicodedata.category(ch) in LINE_BREAKING for ch in text):
+                raise Stop(f"{at}: {name} に改行か制御文字がある（起票の候補の行に出せない）")
+            if self.qa_number.search(text):
+                raise Stop(f"{at}: {name} に Q&A の番号の形がある（番号は振らない——候補に番号を出さない）")
+        builtin = PROFILES[self.profile]
+        places = {path.rsplit("/", 1)[1]: builtin["columns"].get(path, []) for path in TABLES}
+        places.update({place: builtin[part] for place, part in ANSWER_PLACES.items()})
+        if table not in places:
+            raise Stop(f"{where}: 答えの表 {table!r} は {'・'.join(places)} のどれでもない")
+        if not item:
+            raise Stop(f"{where}: 列が空")
+        if item not in places[table]:
+            raise Stop(f"{where}: {table} の {item!r} は profile {self.profile} の誰が決めるかの項目でない（{'・'.join(places[table]) or 'なし'}）")
+        if not summary:
+            raise Stop(f"{where}: 要約が空（既定の答えの推奨にする 1 行）")
+        if not link:
+            raise Stop(f"{where}: リンクが空（既定の答えは外部の文書の節をリンクで指す）")
+        targets = builtin["deciders"][item]
+        if value:
+            if value not in DECIDED_BY.values():
+                raise Stop(f"{where}: 答えの値 {value!r} は空か {'・'.join(DECIDED_BY.values())} のどれかでない")
+            targets = tuple(t for t in targets if DECIDED_BY[t] == value)
+            if not targets:
+                raise Stop(f"{where}: {item} を決めるのは {'・'.join(DECIDED_BY[t] for t in builtin['deciders'][item])} で、{value} ではない")
+        for target in targets:
+            if (item, target) in external.answers:
+                raise Stop(f"{where}: {item} の{DECIDED_BY[target]}が決める部分の答えが 2 行ある（{external.answers[(item, target)][0]} と）")
+            external.answers[(item, target)] = (rid, summary, link)
+
+    def answer_candidates(self, external: External, whole) -> None:
+        """既定の答えを起票の候補に出す。番号は振らない。その候補の Q&A 表の行の `質問` に行の ID があれば出さない（起票した跡）。"""
+        for (item, target), (rid, summary, link) in external.answers.items():
+            rows = whole.qa if target == SHARED_QA else whole.internal
+            mention = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(rid)}(?![A-Za-z0-9_-])")
+            if any(mention.search(r.get("質問") or "") for r in rows.values()):
+                continue
+            if target == SHARED_QA:
+                text = f"推奨: {summary}（{external.label} の行 {rid}・{link}）"
+            else:
+                text = f"{external.label} の既定を採る: {summary}（行 {rid}・{link}）"
+            self.report.candidates.append(f"{target}: {item}（{DECIDED_BY[target]}が決める）——{text}。起票するなら質問に {rid} を書く")
+
+    def check_external(self, external: External, whole, decided: dict[str, dict[str, dict[str, str]]]) -> None:
+        """語彙の外の値と、根拠の無い既定と違う値。印のあるセル・空のセル・`N/A。実現方式が未定` は当てない。"""
+        for path, columns in external.vocab.items():
+            for column, values in columns.items():
+                for key, row in decided[path].items():
+                    value = row.get(column)
+                    if not value or undecided_profile(value):
+                        continue
+                    if value not in values:
+                        self.report.violations.append(f"{path} {key} {column}: {value!r} は {external.label} の語彙（{'・'.join(values)}）に無い")
+        for (column, kind), (default, rid) in external.defaults.items():
+            for key, row in decided[SCREENS].items():
+                if row.get("種別") != kind:
+                    continue
+                value = row.get(column)
+                if not value or undecided_profile(value) or value == default:
+                    continue
+                if not self.qa_number.search(whole.tables[SCREENS][key].get("根拠", "")):
+                    self.report.violations.append(f"{SCREENS} {key} {column}: 種別 {kind} の既定 {default!r}（{external.label} の行 {rid}）と違う "
+                                                  f"{value!r} の根拠に Q&A の番号が無い")
+        self.answer_candidates(external, whole)
 
     def read_profile(self, whole) -> str | None:
         """`settings.csv` の `profile`。設定が無い・行が無ければ `未設定`。決まりに反すれば違反を出して None。"""
@@ -857,6 +1112,9 @@ def main(argv: list[str]) -> int:
     print(f"spec-loop {shown}（{spec_loop}）の決まりで検査する")
     try:
         return checker.check()
+    except Stop as e:
+        print(f"止めた: {e}", file=sys.stderr)
+        return 4
     except Unreadable as e:
         print(f"{e}——判定していない", file=sys.stderr)
         return 2

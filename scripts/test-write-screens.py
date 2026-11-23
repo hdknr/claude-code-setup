@@ -19,8 +19,13 @@ spec-loop のスクリプトを読み込むので、一時ディレクトリに 
 6. **リポジトリの外で単体で動く**——どの実行も `python3 -I`。spec-loop を隣に置かない形（`--spec-loop`）も当てる。
 7. **profile（#1094）**——`init --profile web-spa` → `add --path` の直後に検査が 0（表の見出し行に profile の列・共通仕様と仕様書に profile の節）。
    `--path` の要る・要らない・形、`未設定` の案件で `--path` を受けないこと、profile の節の雛形（`profiles/web-spa/`）が決まりに合うこと（崩すと落ちることも見る）。
+8. **基盤の profile から引く初期値（#1460）**——基盤の profile（`shared/platform/settings.csv`）の画面の層の `重ねる先` があれば、引数を省いた `init` が
+   `profile` と外部の profile をそれにして足す列を見出し行に入れ、直後の検査が 0（A1）。名指しが無い・基盤の profile が無いなら今と同じ（A2）。
+   明示の引数が勝つ（A3）。初期値を決められなければ 4 で何も書かない（A4）。profile のリポジトリは試料ごとに一時の git リポジトリで作る。
+9. **platform-spec を読み込まない（#1460 の A5）**——試料の置き方に platform-spec は無く、プラグインの隣に**読み込まれたら印を書く偽の platform-spec**を置いて、
+   どの試料の後にも印が無いことを見る。写した設定の置き場所・見出し・項目名が platform-spec の `check-infra-profile.py` の定数と一致すること（崩すと落ちることも）。
 
-**このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書き、`HOME` を一時ディレクトリにし、`CLAUDE_CONFIG_DIR`・`SCREEN_SPEC_SPEC_LOOP` を外す。
+**このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書き、`HOME` を一時ディレクトリにし、`CLAUDE_CONFIG_DIR`・`SCREEN_SPEC_SPEC_LOOP`・`SPEC_PROFILE_CLONE`・`GIT_*` を外す。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる。
@@ -41,6 +46,7 @@ from pathlib import Path
 REAL_REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REAL_REPO / "plugins" / "screen-spec"
 SPEC_LOOP = REAL_REPO / "plugins" / "spec-loop"
+PLATFORM_SPEC = REAL_REPO / "plugins" / "platform-spec"
 TARGET = "write-screens.py"
 CHECK = "check-screens.py"
 REFS = PLUGIN / "references"
@@ -98,8 +104,33 @@ INFRA = "項目,決定,理由,費用への影響,水準,根拠,状態\nフロン
 QA = QA_HEAD + "Q-R-001,要求確定,質問,A: はい / B: いいえ,A,理由,未回答,—,確認中,\nQ-F-001,実現性・コスト,質問,A: はい / B: いいえ,A,理由,A,shared/infra.csv,反映済み,A は安い\n"
 QA_DEV = QA_HEAD + "D-S-001,仕様レビュー,質問,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"
 
+# ---- 基盤の profile（#1460）。profile のリポジトリ（org/guide）は試料ごとに一時の git リポジトリで作る（試料の 7 番目の要素 {"guide": {タグ: ファイル}, …}）
+PLATFORM = "v1/shared/platform/settings.csv"
+PLATFORM_SETTINGS = "項目,値\nリポジトリ,org/guide\nprofile,org\nタグ,v1\n"
+GUIDE_DIR = "spec-profile/org"
+GUIDE_PROFILE = "層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n画面,1,screens/*.csv,web-spa\n"
+GUIDE_INFRA = "ID,要約,リンク,項目\nHOST-1,AWS（東京）,docs/guide.md#基盤,ホスティング環境\n"
+GUIDE_LAYOUT = ("ID,要約,リンク,種類,表,列,種別,値\n"
+                "L-COL,レイアウトの列,docs/guide.md#画面,列,screens.csv,レイアウト,,\n"
+                "L-STD,標準のレイアウト,docs/guide.md#画面,語彙,screens.csv,レイアウト,,standard\n"
+                "L-LIST,一覧は標準,docs/guide.md#画面,既定,screens.csv,レイアウト,list,standard\n"
+                "N-COL,備考の列,docs/guide.md#画面,列,transitions.csv,備考,,\n")
+GUIDE_MD = "# ガイド\n\n## 基盤\n\n## 画面\n"
+
+
+def guide(profile: str = GUIDE_PROFILE) -> dict[str, dict[str, str]]:
+    """{"guide": {タグ: profile のリポジトリのファイル}}——試料の 7 番目の要素。"""
+    return {"guide": {"v1": {f"{GUIDE_DIR}/profile.csv": profile, f"{GUIDE_DIR}/infra.csv": GUIDE_INFRA,
+                             f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT, "docs/guide.md": GUIDE_MD}}}
+
+
+EXT_SETTINGS = "項目,値\n画面IDの接頭辞,S-\nprofile,web-spa\n外部の profile,org/guide org v1\n"
+EXT_S_HEAD = S_HEAD.replace(",根拠\n", ",根拠,パス,レイアウト\n")
+EXT_T_HEAD = T_HEAD.replace(",根拠\n", ",根拠,種類,備考\n")
+BASE_INITIAL = "init の初期値（--profile と --external を省いたとき）: profile web-spa、外部の profile org/guide org v1"
+
 # (名前, 正本のファイル, 手順 [(write-screens の引数, 終了コード, 出力に在る文字列)], 検査（check-screens の終了コード, 出力に在る文字列）か None,
-#  書いてよいファイル（全手順の後に変わったファイルの全部。None なら見ない）, 中身 {パス: 在る文字列})
+#  書いてよいファイル（全手順の後に変わったファイルの全部。None なら見ない）, 中身 {パス: 在る文字列}[, 基盤の profile のリポジトリ（guide()）])
 # 手順の引数の "<alone>" は spec-loop を隣に置かずに `--spec-loop` で渡す、"<old>" は範囲の外の版の spec-loop を渡す
 CASES: list[tuple] = [
     # ---- U1・U2・U3: 空の案件に init → add
@@ -201,6 +232,67 @@ CASES: list[tuple] = [
     ("spec-loop-out-of-range", {"v1": DIR}, [(["init", "<old>"], 4, "対応の範囲")], None, [], {}),
     ("alone-with-spec-loop-arg", {"v1": DIR}, [(["init", "<alone>"], 0, ""), (add() + ["<alone>"], 0, "S-001")], None, INIT_FILES + added("S-001")[1:], {}),
     ("usage", {"v1": DIR}, [(["nothing"], 2, "usage: python3 write-screens.py hint")], None, [], {}),
+    # ---- 基盤の profile から引く初期値（#1460）
+    ("base-names-screen", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, BASE_INITIAL),
+        (["init"], 0, "profile: web-spa、外部の profile: org/guide org v1"),
+    ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件"), INIT_FILES,
+     {SD + "settings.csv": EXT_SETTINGS, SD + "data/screens.csv": EXT_S_HEAD, SD + "data/transitions.csv": EXT_T_HEAD,
+      SD + "data/screen-items.csv": I_HEAD.replace(",根拠\n", ",根拠\n"), SD + "common.md": "\n## 実現方式: web-spa\n",
+      SD + "templates/spec.md": "\n## 実現方式: web-spa\n"}, guide()),
+    ("base-names-screen-then-add", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["init"], 0, "外部の profile: org/guide org v1"),
+        (add(path="/orders"), 3, "見出し行が決まり"),
+    ], (0, "違反 0 件"), INIT_FILES, {}, guide()),
+    ("base-no-screen-layer", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "に層 画面 が無い（画面の profile を名指していない）"),
+        (["init"], 0, "画面IDの接頭辞: S-、profile: 未設定）"),
+    ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES, {SD + "settings.csv": SETTINGS, SD + "data/screens.csv": S_HEAD},
+     guide("層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n")),
+    ("base-empty-overlay", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "の層 画面 の 重ねる先 が空（画面の profile を名指していない）"),
+        (["init"], 0, "画面IDの接頭辞: S-、profile: 未設定）"),
+    ], (0, "違反 0 件"), INIT_FILES, {SD + "settings.csv": SETTINGS}, guide(GUIDE_PROFILE.replace(",web-spa\n", ",\n"))),
+    ("no-base-hint", {"v1": DIR}, [(["hint"], 0, "shared/platform/settings.csv が無い（基盤の profile から画面の profile を引かない）")], None, [], {}),
+    ("explicit-unset-wins", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "--profile", "未設定"], 0, "profile: 未設定）")],
+     (0, "違反 0 件"), INIT_FILES, {SD + "settings.csv": SETTINGS}, guide()),
+    ("explicit-web-spa-no-external", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "--profile", "web-spa", "--external", "なし"], 0, "profile: web-spa）")],
+     (0, "違反 0 件"), INIT_FILES, {SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"), SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n")}, guide()),
+    ("explicit-profile-skips-unreadable-base", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "--profile", "web-spa"], 0, "profile: web-spa）")],
+     (0, "違反 0 件"), INIT_FILES, {SD + "settings.csv": SETTINGS.replace("未設定", "web-spa")}),
+    ("explicit-external", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org/guide org v1"], 0, "外部の profile: org/guide org v1")],
+     (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES, {SD + "settings.csv": EXT_SETTINGS, SD + "data/screens.csv": EXT_S_HEAD}, guide()),
+    ("explicit-external-bad-form", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org"], 2, "--external 'org' は")], None, [], {}),
+    ("explicit-external-on-unset", {"v1": DIR}, [(["init", "--external", "org/guide org v1"], 4, "重ねる組み込みの profile が無い")], None, [], {}, guide()),
+    ("base-no-clone", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "基盤の profile: 読めない（"),
+        (["init"], 4, "基盤の profile org/guide の org（タグ v1） を読めない"),
+    ], None, [], {}),
+    ("base-tag-missing", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("タグ,v1", "タグ,v9")}, [(["init"], 4, "タグ v9 が無い")], None, [], {}, guide()),
+    ("base-settings-missing-tag", {"v1": DIR, PLATFORM: "項目,値\nリポジトリ,org/guide\nprofile,org\n"}, [(["init"], 4, "項目 タグ の行が無い")], None, [], {}, guide()),
+    ("base-settings-bad-header", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("項目,値", "名前,値")}, [(["init"], 4, "見出しの行が `項目,値` でない")], None, [], {}, guide()),
+    ("base-overlay-unknown", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init"], 4, "重ねる先 'desktop' はこのプラグインの profile でない")], None, [], {},
+     guide(GUIDE_PROFILE.replace(",web-spa\n", ",desktop\n"))),
+    ("base-old-spec-loop", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "<noext>"], 4, "spec-loop に external-profile.py が無い")], None, [], {}, guide()),
+    # /code-review 1 パス目 CR1-1・CR1-2: 行に写せない設定の値・init が拒む画面の層は初期値にしない（clone は環境変数で指す——設定のリポジトリの名前に依らず見つかる）
+    ("base-repo-without-slash", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("リポジトリ,org/guide", "リポジトリ,guide")}, [
+        (["hint"], 0, "基盤の profile: 読めない（"),
+        (["init"], 4, "画面の profile を名指しているが、`外部の profile` の行"),
+    ], None, [], {}, {**guide(), "env": True}),
+    ("base-name-with-space", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("profile,org", "profile,my org")}, [
+        (["init"], 4, "に写せない形"),
+    ], None, [], {}, {"guide": {"v1": {k.replace(GUIDE_DIR, "spec-profile/my org"): v for k, v in guide()["guide"]["v1"].items()}}, "env": True}),
+    # /code-review 2 パス目 CR2-1: 名指しが無ければ、行に写せない値でも今の初期値（周の base と同じ）
+    ("base-no-screen-name-with-space", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("profile,org", "profile,my org")}, [
+        (["init"], 0, "画面IDの接頭辞: S-、profile: 未設定）"),
+    ], (0, "違反 0 件"), INIT_FILES, {SD + "settings.csv": SETTINGS},
+     {"guide": {"v1": {"spec-profile/my org/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n", "spec-profile/my org/infra.csv": GUIDE_INFRA}}, "env": True}),
+    ("base-screen-layer-version-out-of-range", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "基盤の profile: 読めない（"),
+        (["init"], 4, "形式の版 2"),
+    ], None, [], {}, guide(GUIDE_PROFILE.replace("画面,1,", "画面,2,"))),
+    ("base-alone", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "<alone>"], 0, "外部の profile: org/guide org v1")], None, INIT_FILES,
+     {SD + "settings.csv": EXT_SETTINGS}, guide()),
 ]
 
 
@@ -234,6 +326,99 @@ def copy_plugin(dest: Path, source: Path = PLUGIN) -> Path:
     return dest
 
 
+def build_profile_repo(root: Path, tags: dict[str, dict[str, str]], env: dict[str, str]) -> None:
+    """外部の profile のリポジトリ（本物の git）。タグの順にファイルを全部置き直してコミットし、タグを付ける（test-check-screens.py と同じ形）。"""
+    assert_in_tmp(root)
+    git_env = {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+                        "-c", "tag.gpgsign=false", *args], check=True, capture_output=True, env=git_env)
+
+    root.mkdir(parents=True)
+    git("init", "-q", "-b", "main")
+    for tag, files in tags.items():
+        for path in [p for p in root.rglob("*") if p.is_file() and ".git" not in p.relative_to(root).parts]:
+            path.unlink()
+        for rel, body in files.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "--allow-empty", "-m", tag)
+        git("tag", tag)
+
+
+def git_state(root: Path, env: dict[str, str]) -> tuple[str, ...]:
+    """clone の HEAD・参照・作業ツリーの状態（変えていないことを見る）。"""
+    git_env = {**env, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    out = []
+    for args in (["rev-parse", "HEAD"], ["symbolic-ref", "HEAD"], ["for-each-ref"], ["status", "--porcelain", "--ignored"]):
+        out.append(subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=git_env).stdout)
+    return tuple(out)
+
+
+def install_trap(plugins: Path, marker: Path) -> None:
+    """プラグインの隣に、読み込まれたら印を書く偽の platform-spec を置く（A5——screen-spec が platform-spec を読み込まない）。"""
+    assert_in_tmp(plugins)
+    trap = plugins / "platform-spec"
+    (trap / ".claude-plugin").mkdir(parents=True)
+    (trap / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "platform-spec", "version": "0.1.0"}), encoding="utf-8")
+    (trap / "scripts").mkdir()
+    body = f"from pathlib import Path\nPath({str(marker)!r}).write_text('読み込まれた', encoding='utf-8')\n"
+    for name in ("check-infra-profile.py", "__init__.py"):
+        (trap / "scripts" / name).write_text(body, encoding="utf-8")
+
+
+def platform_mismatches(module, platform) -> list[str]:
+    """写した基盤の profile の設定（`PLATFORM_*`）と platform-spec の `check-infra-profile.py` の定数の食い違い。"""
+    problems = []
+    if module.PLATFORM_SETTINGS != platform.SETTINGS:
+        problems.append(f"設定の置き場所 {module.PLATFORM_SETTINGS!r} が platform-spec の {platform.SETTINGS!r} と違う")
+    if list(module.PLATFORM_SETTINGS_COLUMNS) != list(platform.SETTINGS_COLUMNS):
+        problems.append(f"設定の見出し {module.PLATFORM_SETTINGS_COLUMNS} が platform-spec の {platform.SETTINGS_COLUMNS} と違う")
+    if tuple(module.PLATFORM_KEYS) != tuple(platform.SETTING_KEYS):
+        problems.append(f"設定の項目 {module.PLATFORM_KEYS} が platform-spec の {platform.SETTING_KEYS} と違う")
+    return problems
+
+
+def base_reference_mismatches(module, profiles_md: str, tables: str) -> list[str]:
+    """基盤の profile から引く初期値（#1460）の原本（`profiles.md` の小節・`tables.md` の `init`）と本体の定数の食い違い。"""
+    try:
+        base = section_of(profiles_md, "### 基盤の profile から引く初期値")
+        rules = section_of(tables, "## `init` と `add`")
+    except ValueError as e:
+        return [f"references の節が無い: {e}"]
+    problems = []
+    if f"（重ねた全体の `{module.PLATFORM_SETTINGS}`。" not in base:
+        problems.append(f"基盤の profile の設定の置き場所 {module.PLATFORM_SETTINGS} が profiles.md に無い")
+    if f"見出し行 `{','.join(module.PLATFORM_SETTINGS_COLUMNS)}`" not in base:
+        problems.append("基盤の profile の設定の見出し行が profiles.md と違う")
+    if f"項目 `{'`・`'.join(module.PLATFORM_KEYS)}`" not in base:
+        problems.append("基盤の profile の設定の項目が profiles.md と違う")
+    if f"`profile.csv` の層 `{module.checks.EXTERNAL_LAYER}` の `重ねる先`（" not in base:
+        problems.append("名指しの層が profiles.md と違う")
+    if f"`{module.EXTERNAL_NONE}` なら書かない" not in rules:
+        problems.append(f"`--external {module.EXTERNAL_NONE}` が tables.md の init に無い")
+    return problems
+
+
+BASE_REFERENCE_MUTATIONS = [  # (名前, ファイル, 壊す前, 壊した後)
+    ("設定の置き場所", "profiles", "（重ねた全体の `shared/platform/settings.csv`。", "（重ねた全体の `shared/settings.csv`。"),
+    ("設定の見出し行", "profiles", "見出し行 `項目,値`、", "見出し行 `名前,値`、"),
+    ("設定の項目", "profiles", "項目 `リポジトリ`・`profile`・`タグ`", "項目 `リポジトリ`・`profile`・`版`"),
+    ("名指しの層", "profiles", "`profile.csv` の層 `画面` の `重ねる先`（spec-loop", "`profile.csv` の層 `基盤` の `重ねる先`（spec-loop"),
+    ("--external なし", "tables", "`なし` なら書かない", "`無し` なら書かない"),
+]
+
+
+PLATFORM_MUTATIONS = [  # (名前, 本体の壊す前, 壊した後)
+    ("設定の置き場所", 'PLATFORM_SETTINGS = "shared/platform/settings.csv"', 'PLATFORM_SETTINGS = "shared/settings.csv"'),
+    ("設定の見出し", 'PLATFORM_SETTINGS_COLUMNS = ["項目", "値"]', 'PLATFORM_SETTINGS_COLUMNS = ["項目", "設定"]'),
+    ("設定の項目", 'PLATFORM_KEYS = ("リポジトリ", "profile", "タグ")', 'PLATFORM_KEYS = ("リポジトリ", "profile", "版")'),
+]
+
+
 def snapshot(root: Path) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
 
@@ -250,7 +435,8 @@ def drawio_title(text: str) -> str:
 
 def run_case(plugin: Path, case_dir: Path, case) -> tuple[bool, str]:
     """(期待どおりか, 説明)。"""
-    name, files, steps, final, allowed, contents = case
+    name, files, steps, final, allowed, contents, *rest = case
+    options = rest[0] if rest else {}
     assert_in_tmp(case_dir)
     docs = case_dir / "docs"
     docs.mkdir(parents=True)
@@ -263,8 +449,16 @@ def run_case(plugin: Path, case_dir: Path, case) -> tuple[bool, str]:
         path.write_text(body, encoding="utf-8")
     home = case_dir / "home"
     home.mkdir()
-    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "SCREEN_SPEC_SPEC_LOOP")}
+    env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "SCREEN_SPEC_SPEC_LOOP", "SPEC_PROFILE_CLONE")
+           and not k.startswith("GIT_")}
     env["HOME"] = str(home)
+    guide_before = None
+    if "guide" in options:  # 基盤の profile のリポジトリ（#1460）。案件の根（docs の親）の CLAUDE.md の行で探させる
+        build_profile_repo(case_dir / "guide", options["guide"], env)
+        (case_dir / "CLAUDE.md").write_text("# 案件\n\n外部の profile の clone: org/guide guide\n", encoding="utf-8")
+        if options.get("env"):
+            env["SPEC_PROFILE_CLONE"] = str(case_dir / "guide")
+        guide_before = git_state(case_dir / "guide", env)
     alone = None
     start = snapshot(docs)
     watched = plugin.parent  # 読み込んだプラグインに `__pycache__` を書かない
@@ -277,7 +471,7 @@ def run_case(plugin: Path, case_dir: Path, case) -> tuple[bool, str]:
             continue
         script = plugin / "scripts" / TARGET
         extra: list[str] = []
-        args = [a for a in argv if a not in ("<alone>", "<old>")]
+        args = [a for a in argv if a not in ("<alone>", "<old>", "<noext>")]
         if "<alone>" in argv:
             if alone is None:
                 alone = copy_plugin(case_dir / "alone" / "screen-spec", plugin)
@@ -286,6 +480,10 @@ def run_case(plugin: Path, case_dir: Path, case) -> tuple[bool, str]:
             extra = ["--spec-loop", str(case_dir / "elsewhere" / "spec-loop")]
         if "<old>" in argv:
             extra = ["--spec-loop", str(copy_spec_loop(case_dir / "old" / "spec-loop", version="0.92.0"))]
+        if "<noext>" in argv:  # 外部の profile を読む部分（external-profile.py）の無い spec-loop
+            noext = copy_spec_loop(case_dir / "noext" / "spec-loop")
+            (noext / "scripts" / "external-profile.py").unlink()
+            extra = ["--spec-loop", str(noext)]
         command = args[:1] + ([str(docs)] if args[0] in ("hint", "init", "add") else []) + args[1:] + extra
         before = snapshot(docs)
         proc = subprocess.run([sys.executable, "-I", str(script), *command], capture_output=True, text=True, cwd=case_dir, env=env)
@@ -300,6 +498,8 @@ def run_case(plugin: Path, case_dir: Path, case) -> tuple[bool, str]:
             return False, f"{argv[:2]}: 0 以外なのに正本を書いた: {changed(before, snapshot(docs))}"
     if snapshot(watched) != plugins_before:
         return False, f"読み込んだプラグインにファイルを書いた: {changed(plugins_before, snapshot(watched))}"
+    if guide_before is not None and git_state(case_dir / "guide", env) != guide_before:
+        return False, "profile の clone（作業ツリー・HEAD・参照）を変えた"
     after = snapshot(docs)
     if allowed is not None and changed(start, after) != sorted(allowed):
         return False, f"書いたファイルが決めたものと違う: {changed(start, after)}"
@@ -518,8 +718,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("成果物の表の番号と重ねてよい", "    if prefix in taken:", "    if False:", "prefix-collides-feature"),
     ("profile を確かめない", "    if profile != UNSET and (profile not in profiles() or profile not in checks.PROFILES):", "    if False:", "unknown-profile"),
     # ---- profile（#1094）
-    ("profile の列を見出し行に入れない", "files = {path: table(columns(path, profile), []) for path in checks.TABLES}",
-     "files = {path: table(checks.COLUMNS[path], []) for path in checks.TABLES}", "web-spa-init-add"),
+    ("profile の列を見出し行に入れない", "files = {path: table(columns(path, profile) + added.get(path, []), []) for path in checks.TABLES}",
+     "files = {path: table(checks.COLUMNS[path] + added.get(path, []), []) for path in checks.TABLES}", "web-spa-init-add"),
     ("共通仕様に profile の節を足さない", "files[COMMON] = with_profile((TEMPLATES / \"common.md\").read_text(encoding=\"utf-8\"), profile, \"common.md\")",
      "files[COMMON] = (TEMPLATES / \"common.md\").read_text(encoding=\"utf-8\")", "web-spa-init-add"),
     ("案件の雛形に profile の節を足さない", "files[SPEC_TEMPLATE] = with_profile((TEMPLATES / \"spec.md\").read_text(encoding=\"utf-8\"), profile, \"spec.md\")",
@@ -542,6 +742,44 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("重ね合わせの違反でも書く", "        if problems:\n            raise Broken(\"\\n\".join(f\"版の重ね合わせ", "        if False:\n            raise Broken(\"\\n\".join(f\"版の重ね合わせ", "broken-merge"),
     ("設定の接頭辞を使わない", "prefix = check_prefix(settings.get(PREFIX_KEY, \"\"), docs)", "prefix = check_prefix(\"S-\", docs)",
      "with-qa-features-infra"),
+    # ---- 基盤の profile から引く初期値（#1460）
+    ("引数を省いても基盤の profile を読まない", "    if not explicit:  # 初期値", "    if False:  # 初期値", "base-names-screen"),
+    ("基盤の profile の重ねる先を profile にしない", "    return row.base, (repo, name, tag), f\"画面は",
+     "    return UNSET, (repo, name, tag), f\"画面は", "base-names-screen"),
+    ("外部の profile を settings.csv に書かない", "+ ([[EXTERNAL_KEY, \" \".join(external)]] if external else [])", "", "base-names-screen"),
+    ("外部の profile の足す列を見出し行に入れない", "        added = checker.load_external(*external).columns", "        added = {}", "base-names-screen"),
+    ("足す列を transitions.csv に入れない", "files = {path: table(columns(path, profile) + added.get(path, []), []) for path in checks.TABLES}",
+     "files = {path: table(columns(path, profile) + (added.get(path, []) if path == checks.SCREENS else []), []) for path in checks.TABLES}", "base-names-screen"),
+    ("hint が初期値を出さない", "        print(f\"init の初期値（--profile と --external を省いたとき）", "        print(f\"init の初期値（--profile を省いたとき）", "base-names-screen"),
+    ("画面の層が無くても名指しとする", "    if row is None:\n        return UNSET", "    if False:\n        return UNSET", "base-no-screen-layer"),
+    ("空の重ねる先も名指しとする", "    if not row.base:\n", "    if False:\n", "base-empty-overlay"),
+    ("明示の profile があっても基盤の profile を読む", "    explicit = profile_arg is not None or external_arg is not None",
+     "    explicit = False", "explicit-unset-wins"),
+    ("--profile だけ渡すと基盤の profile を読む", "    explicit = profile_arg is not None or external_arg is not None",
+     "    explicit = external_arg is not None", "explicit-profile-skips-unreadable-base"),
+    ("--external なしを受けない", "    if value.strip() == EXTERNAL_NONE:\n        return None", "    if False:\n        return None", "explicit-web-spa-no-external"),
+    ("--external の形を見ない", "    if len(parts) != 3 or not checks.EXTERNAL_REPO.fullmatch(parts[0]):", "    if False:", "explicit-external-bad-form"),
+    ("明示の外部の profile を書かない", "    external = None if external_arg is None else parse_external(external_arg)", "    external = None", "explicit-external"),
+    ("読めない基盤の profile で今の初期値に落とす", "    except ext.Undetermined as e:\n        raise checks.Stop(f\"{label} を読めない: {e}\") from None",
+     "    except ext.Undetermined as e:\n        return UNSET, None, str(e)", "base-no-clone"),
+    ("知らない重ねる先で止めない", "    if row.base not in profiles() or row.base not in checks.PROFILES:", "    if False:", "base-overlay-unknown"),
+    ("設定の項目の欠けで止めない", "        if len(values) != 1 or not values[0]:", "        if False:", "base-settings-missing-tag"),
+    ("設定の見出しを見ない", "    if not rows or [cell.strip() for cell in rows[0]] != PLATFORM_SETTINGS_COLUMNS:", "    if not rows:", "base-settings-bad-header"),
+    ("external-profile.py の無い spec-loop で止めない", "    if not path.is_file():\n        raise checks.Stop(f\"{label}: spec-loop に",
+     "    if False:\n        raise checks.Stop(f\"{label}: spec-loop に", "base-old-spec-loop"),
+    ("init の Stop を 4 にしない", "    except checks.Stop as e:\n        print(f\"止めた: {e}——書いていない\", file=sys.stderr)\n        return 4",
+     "    except checks.Stop as e:\n        raise", "base-no-clone"),
+    ("行に写せない設定の値を初期値にする", "    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):",
+     "    if False:", "base-repo-without-slash"),
+    ("行に写せる形を名指しの有無より先に確かめる", "    row = layers.get(checks.EXTERNAL_LAYER)\n",
+     "    row = layers.get(checks.EXTERNAL_LAYER)\n    if any(len(value.split()) != 1 for value in (name, tag)):\n        raise checks.Stop('写せない')\n",
+     "base-no-screen-name-with-space"),
+    ("profile の空白を見ない", "    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):",
+     "    if not checks.EXTERNAL_REPO.fullmatch(repo):", "base-name-with-space"),
+    ("名指した画面の層を確かめずに初期値にする", "    checker.load_external(repo, name, tag)\n    return row.base", "    return row.base", "base-screen-layer-version-out-of-range"),
+    ("platform-spec を読み込む", "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n",
+     "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n    _load(\"trap\", PLUGIN_ROOT.parent / \"platform-spec\" / \"scripts\" / \"check-infra-profile.py\")\n",
+     "base-names-screen"),
 ]
 
 
@@ -554,10 +792,13 @@ def main() -> int:
         tmp_path = Path(tmp)
         plugin = copy_plugin(tmp_path / "plugins" / "screen-spec")
         copy_spec_loop(tmp_path / "plugins" / "spec-loop")
+        marker = tmp_path / "platform-spec-loaded"
+        install_trap(tmp_path / "plugins", marker)
         results = run_cases(plugin, tmp_path / "work")
         for case in CASES:
             ok, detail = results[case[0]]
             check(f"試料が期待どおりでない: {case[0]}", ok, detail)
+        check("platform-spec を読み込んだ（偽の platform-spec が印を書いた）", not marker.exists())
 
         templates = {"spec": (PLUGIN / "templates" / "spec.md").read_text(encoding="utf-8"),
                      "common": (PLUGIN / "templates" / "common.md").read_text(encoding="utf-8")}
@@ -594,7 +835,31 @@ def main() -> int:
                 continue
             check(f"崩すと不一致になる: {name}", bool(reference_mismatches(module, tables.replace(before, after))))
 
+        profiles_md = (REFS / "profiles.md").read_text(encoding="utf-8")
+        problems = base_reference_mismatches(module, profiles_md, tables)
+        check("本体の定数が references の基盤の profile から引く初期値と一致しない", not problems, "; ".join(problems))
+        for name, which, before, after in BASE_REFERENCE_MUTATIONS:
+            texts = {"profiles": profiles_md, "tables": tables}
+            if texts[which].count(before) != 1:
+                check(f"崩すと不一致になる: 初期値の {name}", False, f"崩す箇所が {texts[which].count(before)} 回現れる")
+                continue
+            texts[which] = texts[which].replace(before, after)
+            check(f"崩すと不一致になる: 初期値の {name}", bool(base_reference_mismatches(module, texts["profiles"], texts["tables"])))
+        platform = load("check_infra_profile_for_test", PLATFORM_SPEC / "scripts" / "check-infra-profile.py")
+        problems = platform_mismatches(module, platform)
+        check("写した基盤の profile の設定が platform-spec と一致しない", not problems, "; ".join(problems))
         source = (PLUGIN / "scripts" / TARGET).read_text(encoding="utf-8")
+        for name, before, after in PLATFORM_MUTATIONS:
+            if source.count(before) != 1:
+                check(f"崩すと不一致になる: 基盤の profile の {name}", False, f"崩す箇所が {source.count(before)} 回現れる")
+                continue
+            namespace: dict = {}
+            mutated_module = type("M", (), {})()
+            exec(compile("\n".join(line for line in source.replace(before, after).splitlines() if line.startswith("PLATFORM_")), "m", "exec"), namespace)
+            for key, value in namespace.items():
+                setattr(mutated_module, key, value)
+            check(f"崩すと不一致になる: 基盤の profile の {name}", bool(platform_mismatches(mutated_module, platform)))
+
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
@@ -603,9 +868,11 @@ def main() -> int:
             root = tmp_path / f"mut{index}" / "plugins"
             mutated = copy_plugin(root / "screen-spec")
             copy_spec_loop(root / "spec-loop")
+            mutated_marker = tmp_path / f"mut{index}-platform-spec-loaded"
+            install_trap(root, mutated_marker)
             (mutated / "scripts" / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             ok, detail = run_cases(mutated, tmp_path / f"mutwork{index}", only=killer)[killer]
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok or mutated_marker.exists(), detail)
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
@@ -613,7 +880,7 @@ def main() -> int:
             print(f"  - {message}")
         return 1
     print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・雛形の崩し {len(TEMPLATE_MUTATIONS) + len(PROFILE_TEMPLATE_MUTATIONS)} 件・"
-          f"references の崩し {len(REFERENCE_MUTATIONS)} 件")
+          f"references の崩し {len(REFERENCE_MUTATIONS) + len(BASE_REFERENCE_MUTATIONS)} 件・platform-spec の写しの崩し {len(PLATFORM_MUTATIONS)} 件")
     return 0
 
 

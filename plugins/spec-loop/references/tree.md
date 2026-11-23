@@ -501,6 +501,10 @@ Red テスト（`scaffold/tests/`）と性能テスト（`scaffold/perf/`）は�
 | `水準` | 満たす非機能要求の `shared/nfr.csv` の `No`（`N-001`。複数は `・` で区切る）。水準を指さない選択なら空 |
 | `根拠` | 決めた（決める）Q&A の、共有の表（`shared/qa.csv`）の `No`（`Q-F-001`）。内部の表（`D-`）は指さない——基盤要件は発注者が決める |
 | `状態` | 下の「状態」の表のどれか |
+| `profile の行` | 任意の列（#1456）。外部の profile（`external-profile.md`）の基盤の層の行 ID を指す |
+
+**`profile の行` は任意の列である**——置くなら `状態` の後ろの末尾に置く。置かない 7 列の表もそのまま通る（今ある案件は移さなくてよい）。
+中身（ID の書き方・その ID が profile に在るか）はこのプラグインでは見ず、外部の profile を使う側のプラグイン（platform-spec）の決まりと照合に従う。このプラグインのスクリプトが platform-spec を探すのは、`profile の行` に値があるときの関門（下の「外部の profile の関門」）だけである。
 
 **必ず置く項目は `言語`・`DBMS`・`ホスティング環境` の 3 つ**——行が無ければ未決定に数える。ほかの項目は要求に合わせて足す（綴りは自由）。
 
@@ -548,6 +552,22 @@ Red テスト（`scaffold/tests/`）と性能テスト（`scaffold/perf/`）は�
 - **scaffold は言語が Python で始まらない決定なら止める**——生成物（`types.py`・`unittest` の Red テスト・性能テスト）は Python だけで、別の言語が決まっているのに黙って Python で作らない。
   決まった基盤要件は scaffold の出力に名指しされる——開発のリポジトリの `CLAUDE.md`（開発の前提）に写すのは利用者である。
 - `--upto` で前の版の時点を確かめる scaffold には当てない（上の「システム設計書の成果物」の関門と同じ）。
+
+### 外部の profile の関門（#1457）
+
+**`profile の行` が外部の profile の行を指している案件では、proposal と scaffold の前に、profile の新しい版との差分が残っていないかを見る**——
+同梱の `scripts/profile-gate.py` が platform-spec の版の差分（platform-spec の `scripts/check-profile-diff.py`）を子のプロセスで呼ぶ（`screen-gate.py` と同じ形。spec-loop は platform-spec に依存しない）。
+
+- **値が無ければ何もしない**——platform-spec を探さず、何も出さずに 0。
+- **値があるのに platform-spec が見つからなければ止める**（4）——差分を見ないまま通さない。
+- **起票の候補（`platform-spec: 起票の候補: ` で始まる行）が残れば止める**（1）——feasibility が候補を共有の Q&A 表に起票し、発注者の回答で設定のタグを上げるか、採らないと決めて設定に `確かめたタグ` を書く（設定の決まりは platform-spec の `references/infra-profile.md`）。
+- **scaffold は書く生成と `--dry-run`（作業中の版）、proposal は要求確定のタグの時点の `docs/` に当てる**——`--check`・`--red-check`・`--upto` には当てない（新しい版が出たかは profile の手元の clone のタグで決まる）。
+
+判定・profile を使っているとは何か・platform-spec の見つけ方・終了コードは `scripts/profile-gate.py` の docstring を正とする。
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/profile-gate.py docs
+```
 
 ### 検査
 
