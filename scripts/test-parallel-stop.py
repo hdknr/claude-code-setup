@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """cruise の親が止まっている枠の持ち主を止める手順（`parallel.md` の照合と止め方）の回帰テスト（#899 の D5）。
 
-    python3 scripts/test-parallel-stop.py             # 本体のままの 1 パスと変異 12 本のパスを並列に（既定と上限: 4）
-    python3 scripts/test-parallel-stop.py --jobs 1    # 13 パスを 1 つずつ（check-all.py --jobs 1 が渡す）
+    python3 scripts/test-parallel-stop.py             # 本体のままの 1 パスと変異 13 本のパスを並列に（既定と上限: 4）
+    python3 scripts/test-parallel-stop.py --jobs 1    # 14 パスを 1 つずつ（check-all.py --jobs 1 が渡す）
 
 **本体は `plugins/dev-loop/skills/cruise/references/parallel.md` の中にある**——「止まっている枠の持ち主」の節の、
 `P=<pid>` で始まる `bash` ブロックである。**写しを作らない**——毎回そこから抜き出し、リストの字下げ（3 桁）を外し、
@@ -32,6 +32,8 @@
 14. **記録が親より東の時間帯で書かれ、その数秒後に起きたプロセス**（使い回し）なら止めない（#917 の E2 のもう一方の向き——
     直す前の照合は記録を実際より遅いと読み、使い回したプロセスを止めた。1 パス目の `/code-review`）。
 15. **`--timeout` を 2 回渡した持ち主**（run-serial は最後の値を使う）も止める（1 パス目の `/code-review`）。
+16. **`--repo <パス>` で外の cwd から起こした持ち主**も止める（#1505。照合が `--repo` を知らないと、本物を「run-serial の起動でない」と拒む）。
+17. **`--repo=<パス>` と `--timeout` を混ぜた持ち主**も止める（#1505）。
 
 **止めたかの判定**（#1050 で、時間の窓に頼らない形にした）:
 
@@ -43,14 +45,14 @@
   偽のプロセスは 600 秒眠る——パスが負荷で延びても、ひとりでに終わって「止めた」と読まれない。
   （#1050 の前は、止めないケースごとに 1 秒の窓を待ち切っていた——1 パスで 9 秒。）
 
-**速さ**（#1050）: `main()` は本体のままの 1 パスと変異 12 本の 12 パス、計 13 パスを**別々のプロセスで同時に**回す（`--jobs` で絞る。上限 4）。
+**速さ**（#1050）: `main()` は本体のままの 1 パスと変異 13 本の 13 パス、計 14 パスを**別々のプロセスで同時に**回す（`--jobs` で絞る。上限 4）。
 各パスは自分の一時ディレクトリ・リポジトリ・枠・偽のスクリプトを持つので、パスどうしは同じものを触らない。
-**1 パスの中では、15 ケースの持ち主を先に全部起こして記録を書き、15 のブロックをスレッドで同時に流す**——ブロックの `sleep 2`（止める 6 ケース）が
+**1 パスの中では、17 ケースの持ち主を先に全部起こして記録を書き、17 のブロックをスレッドで同時に流す**——ブロックの `sleep 2`（止める 6 ケース）が
 ケースの数だけでなく 1 回分に重なる。**`parallel.md` のブロック（利用者に渡る手順）の `sleep` は変えない。**
 ブロックどうしは別の pid を扱い、自分の pid と、その pid から先にたどった子孫にしか SIGTERM を送らないので、同時に流しても互いの持ち主を止めない。
 
 **変異テスト**: ブロックの照合を 1 箇所ずつ緩め（部分一致に戻す・コマンドを比べない・cwd を比べない・時刻を比べない・記録を見ない・
-`--timeout` の選択肢を外す・`=` の形を外す・`--timeout` を 1 回だけ許す・時間帯を見ない・遅いほうの読みを採る・
+`--timeout` の選択肢を外す・`=` の形を外す・`--timeout` を 1 回だけ許す・`--repo` の選択肢を外す・時間帯を見ない・遅いほうの読みを採る・
 コマンドを部分一致で比べる・時刻の許容を広げる）、
 **緩めたのに全ケースが期待どおりなら失格**。壊す文字列がブロックにちょうど 1 回現れることを先に確かめる。
 **パスの中で例外が起きた（「失格」を含む）ら、殺せたと数えず失格にする。**
@@ -98,7 +100,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DOC = ROOT / "plugins/dev-loop/skills/cruise/references/parallel.md"
 RUN_SERIAL = ROOT / "plugins/dev-loop/skills/cruise/scripts/run-serial.py"
 HEADING = "### 止まっている枠の持ち主"
-CASES = 15
+CASES = 17
 FAKE_SLEEP = 600  # 偽の持ち主が眠る秒——パスが負荷で延びても、ひとりでに終わって「止めた」と読まれない長さ
 
 # **パスを別々のプロセスで同時に回す**（#1050）——直列では 13 パス × 約 30 秒で 390〜402 秒かかり、
@@ -111,16 +113,17 @@ pool_sizes: list[int] = []
 
 MUTATIONS = [
     ("部分一致に戻す",
-     'm = re.fullmatch(r"(?:\\S*/)?[Pp]ython[0-9.]* (?:\\S*/)?run-serial\\.py(?: --timeout[ =][0-9]+)* -- (.*)", ps("command"))',
+     'm = re.fullmatch(r"(?:\\S*/)?[Pp]ython[0-9.]* (?:\\S*/)?run-serial\\.py(?: --timeout[ =][0-9]+| --repo[ =]\\S+)* -- (.*)", ps("command"))',
      'm = re.search(r"run-serial.py.*?(?: -- (.*))?$", ps("command"))'),
     ("コマンドを比べない", 'elif m.group(1) != rec.get("command"):', 'elif False:'),
     ("cwd を比べない", 'elif cwd() != rec.get("cwd"):', 'elif False:'),
     ("時刻を比べない", "if begun > taken + 2:", "if False:"),
     ("記録を見ない", 'if rec is None:\n    why = "枠の記録にこの pid が無い"',
      'if rec is None:\n    rec = {"command": (m.group(1) if m else None), "cwd": cwd(), "started": "2999-01-01T00:00:00+0000"}'),
-    ("`--timeout` の選択肢を外す（E3）", "(?: --timeout[ =][0-9]+)*", ""),
-    ("`=` の形を外す（E1）", "(?: --timeout[ =][0-9]+)*", "(?: --timeout [0-9]+)*"),
-    ("`--timeout` を 1 回だけ許す", "(?: --timeout[ =][0-9]+)*", "(?: --timeout[ =][0-9]+)?"),
+    ("`--timeout` の選択肢を外す（E3）", " --timeout[ =][0-9]+|", ""),
+    ("`=` の形を外す（E1）", " --timeout[ =][0-9]+|", " --timeout [0-9]+|"),
+    ("`--timeout` を 1 回だけ許す", "(?: --timeout[ =][0-9]+| --repo[ =]\\S+)*", "(?: --timeout[ =][0-9]+| --repo[ =]\\S+)?"),
+    ("`--repo` の選択肢を外す（#1505）", "| --repo[ =]\\S+", ""),
     ("時間帯を見ない（E2）", 'datetime.strptime(rec["started"], "%Y-%m-%dT%H:%M:%S%z").timestamp()',
      'time.mktime(time.strptime(rec["started"][:19], "%Y-%m-%dT%H:%M:%S"))'),
     ("遅いほうの読みを採る（E2。1 パス目の `/code-review` が素通りを示した変異）",
@@ -302,6 +305,11 @@ def cases(code: str, mark: str) -> tuple[list[tuple[str, bool, bool]], list[str]
                  timedelta(hours=5)),
                 ("15 `--timeout` を 2 回渡した形", True, "run-serial.py", ["--timeout", "600", "--timeout=300", "--", "copy", "db"],
                  fx.repo, None, fx.repo, later, True, timedelta(0)),
+                # `--repo` で外の cwd から起こした持ち主（#1505）——記録の場所は呼んだ cwd
+                ("16 `--repo <パス>` の形", True, "run-serial.py", ["--repo", str(fx.repo), "--", "copy", "db"],
+                 fx.other, None, fx.other, later, True, timedelta(0)),
+                ("17 `--repo=<パス>` と `--timeout` を混ぜた形", True, "run-serial.py",
+                 ["--timeout", "600", f"--repo={fx.repo}", "--", "copy", "db"], fx.other, None, fx.other, later, True, timedelta(0)),
             ]
             fakes: list[tuple[str, bool, subprocess.Popen]] = []
             for name, expect, script, argv_tail, cwd, rec_command, rec_cwd, started, record, shift in table:

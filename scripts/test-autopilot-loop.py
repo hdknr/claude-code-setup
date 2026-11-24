@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """`autopilot-loop.py`（spec-loop の autopilot の外側のループ。#850）の回帰テスト。
 
-    python3 scripts/test-autopilot-loop.py
+    python3 scripts/test-autopilot-loop.py                 # 全件（check-all.py と手元）
+    python3 scripts/test-autopilot-loop.py --shard 2/4     # 変異の観測を 4 つに分けた 2 番目だけ（CI。#1475）
+
+**シャード（#1475）**: `--shard K/N` は変異（`MUTATIONS` の並び）のうち、並びの番号を N で割った余りが K-1 のものだけを観測する。
+**試料の組・変異以外の検査・陽性対照・当てる先の検査・「守る」の行数と変異の数の照合は、どのシャードでも全部回す**
+（照合は割った後の数でなく全件の数で見る）。シャードのときだけ、割り当てが N=1..変異の数+1 で全件をちょうど 1 度ずつ覆うこと（陽性対照: ずらした割り当て・重なる割り当てで落ちる）と、
+不正な引数が 2 で止まることも見る——**引数なしの出力は分ける前と同じに保つ**ので、これらは引数なしでは出さない。
+**CI の行が K=1..N を全部回しているかは、ここでは見ない**——`test-check-all.py` の収録漏れの検査（`full_runs`）が見る。
 
 **本体はプラグインの中にある**（`plugins/spec-loop/scripts/`）。`test-autopilot-ledger.py` と同じ形。
 
@@ -189,8 +196,37 @@ MUTATIONS = {
 }
 
 
+SHARD_FORM = re.compile(r"([1-9][0-9]*)/([1-9][0-9]*)")
+
+
+def parse_shard(argv: list[str]) -> tuple[int, int] | None:
+    """引数から `(K, N)` を読む。引数なしは `(1, 1)`（全件）。`--shard K/N`（1 ≤ K ≤ N）だけを受け、ほかは `None`（2 で止める）。"""
+    if not argv:
+        return (1, 1)
+    if len(argv) == 2 and argv[0] == "--shard":
+        m = SHARD_FORM.fullmatch(argv[1])
+        if m and 1 <= int(m.group(1)) <= int(m.group(2)):
+            return (int(m.group(1)), int(m.group(2)))
+    return None
+
+
+def select_shard(names: list[str], k: int, n: int) -> list[str]:
+    """変異の名前（`MUTATIONS` の並び）のうち、N 個に分けた K 番目——並びの番号を N で割った余りが K-1 のもの。"""
+    return [x for i, x in enumerate(names) if i % n == k - 1]
+
+
+def partition_holes(select, names: list[str], n_max: int) -> list[int]:
+    """`select` で N=1..n_max に分けたとき、K=1..N の和が `names` をちょうど 1 度ずつ覆わない N の一覧（漏れ・重なり）。"""
+    bad = []
+    for n in range(1, n_max + 1):
+        got = [x for k in range(1, n + 1) for x in select(names, k, n)]
+        if sorted(got) != sorted(names):
+            bad.append(n)
+    return bad
+
+
 def load(script: Path = SCRIPT):
-    spec = importlib.util.spec_from_file_location(f"autoloop_{id(script)}_{script.stat().st_mtime_ns}", script)
+    spec =importlib.util.spec_from_file_location(f"autoloop_{id(script)}_{script.stat().st_mtime_ns}", script)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.LEDGER = LEDGER  # 変異の写しはテンポラリにあるので、台帳は本物の autopilot-ledger.py で読む
@@ -678,8 +714,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     return o
 
 
-def main() -> int:
-    tmp = Path(tempfile.mkdtemp(prefix="test-autopilot-loop-")).resolve()  # macOS の /var は /private/var——git と cwd が返す形にそろえる
+def main(shard: tuple[int, int] = (1, 1)) -> int:
+    shard_k, shard_n = shard
+    tmp =Path(tempfile.mkdtemp(prefix="test-autopilot-loop-")).resolve()  # macOS の /var は /private/var——git と cwd が返す形にそろえる
     saved_env = dict(os.environ)
     try:
         isolate_env(tmp / "home")
@@ -817,12 +854,16 @@ def main() -> int:
 
         print("\n変異テスト（壊したのに緑なら失格）")
         # 1 つの試料の組に 40 秒ほど掛かるので、変異ごとに別のプロセス（`--observe`）で並列に観測する。各プロセスは自分のテンポラリと環境を持つ
+        # **シャード（#1475）**: 当てる先の検査は全件に掛け、観測するのは K 番目に割り当てた変異だけ。引数なしは (1, 1) で全件——出力は分ける前と同じ
+        selected = set(select_shard(list(MUTATIONS), shard_k, shard_n))
         jobs = {}
         for name, pairs in MUTATIONS.items():
             mutated = source
-            missing = [n for n, _ in pairs if n not in mutated]
+            missing = [nd for nd, _ in pairs if nd not in mutated]
             if missing:
                 check(f"変異を当てる先がある: {name}: {missing}", False)
+                continue
+            if name not in selected:
                 continue
             for needle, replacement in pairs:
                 mutated = mutated.replace(needle, replacement, 1)
@@ -846,6 +887,25 @@ def main() -> int:
                 check(f"変異を観測できる（当てられなかった）: {name}", False)
             else:
                 check(f"変異を殺せる: {name}", got != expected)
+
+        if shard_n > 1:
+            # **シャードのときだけ**出す（引数なしの出力は分ける前と同じに保つ——差分テストの相手。#1475）。CI はどのシャードでもここを回す
+            print(f"\nシャード {shard_k}/{shard_n}（#1475）: 観測した変異 {len(jobs) - 1} 件（全 {len(MUTATIONS)} 件のうち）")
+            names = list(MUTATIONS)
+            check(f"割り当てが N=1..{len(names) + 1} のどれでも変異の全件をちょうど 1 度ずつ覆う",
+                  partition_holes(select_shard, names, len(names) + 1) == [])
+            check("陽性対照: 余りの番号を 1 つずらした割り当て（K-1 でなく K）は漏れで落ちる",
+                  partition_holes(lambda ns, k, n: [x for i, x in enumerate(ns) if i % n == k], names, len(names) + 1) != [])
+            check("陽性対照: K 以下の余りを全部取る割り当ては重なりで落ちる",
+                  partition_holes(lambda ns, k, n: [x for i, x in enumerate(ns) if i % n <= k - 1], names, len(names) + 1) != [])
+            check("このシャードが観測したのは、割り当てた変異（と陽性対照）だけ",
+                  set(jobs) - {CONTROL} == set(select_shard(names, shard_k, shard_n)))
+            bad_args = (["--shard", "0/4"], ["--shard", "5/4"], ["--shard", "1/0"], ["--shard", "1-4"], ["--shard", "01/4"],
+                        ["--shard"], ["--shard", "1/4", "x"], ["--bogus"])
+            got = {" ".join(b): subprocess.run([sys.executable, str(Path(__file__).resolve()), *b], env=saved_env,
+                                               capture_output=True, text=True, timeout=60) for b in bad_args}
+            check(f"不正な --shard（{len(bad_args)} 形）は 2 で止まり、試料を回さない",
+                  all(r.returncode == 2 and "正しい本体" not in r.stdout for r in got.values()))
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
         body = source.split("守る:")[1].split("守らない:")[0]
@@ -925,4 +985,8 @@ def observe(script: Path, out: Path) -> int:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--observe"]:
         sys.exit(observe(Path(sys.argv[2]), Path(sys.argv[3])))
-    sys.exit(main())
+    shard = parse_shard(sys.argv[1:])
+    if shard is None:
+        print("使い方: test-autopilot-loop.py [--shard K/N]（1 ≤ K ≤ N。引数なしは全件）", file=sys.stderr)
+        sys.exit(2)
+    sys.exit(main(shard))
