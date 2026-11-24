@@ -24,12 +24,15 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
    - HEAD でその引きが当たる項（頭の行と、その下の字下げした行。字下げの無い行で切る）に、飾り（`*`・`_`・`` ` ``）と空白を除いた形で**元の項の頭が残らず**、
      base の別の項の頭が入っている——付け替え先の項を同じ PR で言い換えても当たる（#1423 の S1・S2）。
    元の項の頭が残る言い換え（頭の飾りを外す・本文の文を頭に上げる・頭を縮める）は通る。後者の照らしでは、**その ID の `統合元` に挙がった行の項の頭**（統合で取り込んだ文面）と、
-   **元の項が base の時点から本文（字下げした行）で引いていた別の項の頭**は照らさない（前者は統合の言い換え、後者は同じ項の頭の言い換えを付け替えと見ないため）。
-   **ただし後者でも、HEAD に項の頭のまま残らない頭は照らす**——元の項を消し、本文で引いていた項の頭を言い換えて（飾りを外す・前置きを足す・後ろを延ばす・
-   字下げした行へ折り返す・新しい頭を置いて元の頭を本文に下ろす）ID を付け替える形を止める（#1430）。引いた先の項の頭が HEAD に残るなら、
-   元の項の頭の言い換え（引いた文を頭の行に上げる形を含む）として照らさない。**同じ PR で、引いた先の項も言い換えるか外したうえで、元の項の頭を言い換え、
-   本文に引いた先の古い頭を残す形は 1 になる**（止まる向き）。
-   **項を本文ごと別の新しい文面に差し替えて ID を付け替える形・付け替え先の頭も言い換えたうえで元の項の頭の文面をその字下げした行か字下げの無い続きの行に写して付け替える形は見ない**（守られているのは項の頭だけ）。
+   **元の項が base の時点から本文（字下げした行）で引いていた別の項の頭のうち、新しい引きの項がその引用を受け継ぐもの**は照らさない
+   （前者は統合の言い換え、後者は同じ項の頭の言い換えを付け替えと見ないため）。**引用を受け継ぐ**とは、元の項の行（行頭の `-`・`1.` などの印を除き、飾りと空白を除いた形）の
+   その頭の引用の前か後ろの文面が、頭と続いたまま新しい引きの項に残ること——本文をそのまま残す・引いた文を頭の行に上げる・引用の片側を言い換える言い換えは照らさない。
+   引いた先の項が HEAD に頭のまま残るかは見ないので、**同じ PR で引いた先の項の頭も言い換え、本文に引いた先の古い頭を残す言い換えも 0**（#1453）。
+   **引用を受け継がずに頭の文面だけが残る形は照らす**——元の項を消し、本文で引いていた項の頭を言い換えて（飾りを外す・前置きを足す・後ろを延ばす・
+   字下げした行へ折り返す・新しい頭を置いて元の頭を本文に下ろす）ID を付け替える形（#1430）と、元の項をその頭を写した新しい項（`要点: <頭>` など）に差し替えて
+   ID を付け替える形（#1452。付け替え先の項が HEAD に残っていても）を止める。元の項の行が引いた頭だけ（前にも後ろにも文面が無い）なら、受け継いだと見ない（止まる向き）。
+   **項を本文ごと別の新しい文面に差し替えて ID を付け替える形のうち、引いた先の頭を持たないもの・付け替え先の頭も言い換えたうえで元の項の頭の文面をその字下げした行か字下げの無い続きの行に写して付け替える形・
+   元の項の引用の行の前後の文面を新しい項に写して付け替える形は見ない**（守られているのは項の頭だけ）。
 
 ## 守らないもの
 
@@ -94,6 +97,23 @@ def own_lines(body: str) -> str:
             break
         out.append(line)
     return "\n".join(out)
+
+
+LIST_MARK = re.compile(r"^\s*(?:[-*+]|[0-9]+[.)])\s+")
+
+
+def kept_quote(head: str, prev_lines: list[str], cur: str) -> bool:
+    """元の項の行（印を除いて `flat` した形）のどれかが頭 `head`（`flat` した形）を引き、その行の引用の前か後ろの文面が、
+    頭と続いたまま新しい引きの項 `cur` に残るか——元の項の本文の引用を受け継いだ言い換えか（#1452・#1453）。
+    頭だけの行（前にも後ろにも文面が無い）は受け継いだと見ない（止まる向き）。"""
+    for line in prev_lines:
+        i = line.find(head)
+        while i >= 0:
+            before, after = line[:i], line[i + len(head):]
+            if (after and head + after in cur) or (before and before + head in cur):
+                return True
+            i = line.find(head, i + 1)
+    return False
 
 
 def renames(root: Path, base: str) -> dict[str, str]:
@@ -197,7 +217,7 @@ def main(argv: list[str]) -> int:
         # 残らずに base の別の項の頭を持てば付け替え。HEAD に残った項だけを照らすので、同じ PR で外した項の頭は当たらない
         base_items = effects.items_of(old_text.stdout)
         prev = next((f for _, f, _ in base_items if f.startswith(b["引き"])), None)
-        prev_own = next((flat(own_lines(body)) for _, f, body in base_items if f == prev), "")
+        prev_lines = next(([flat(LIST_MARK.sub("", x)) for x in own_lines(body).split("\n")] for _, f, body in base_items if f == prev), [])
         new_file = root / SKILL_REL / h["ファイル"]
         new_items = effects.items_of(new_file.read_text(encoding="utf-8")) if new_file.is_file() else []
         new_heads = {f for _, f, _ in new_items}
@@ -210,12 +230,13 @@ def main(argv: list[str]) -> int:
         clash = [f for f in others if f.startswith(h["引き"]) and f in new_heads]
         # 元の項の頭が新しい引きの項に残らず、base の別の項の頭が入っている（付け替え先を言い換えた付け替え）
         if not (prev is not None and flat(prev) in cur):
-            # 統合元の項の頭（取り込んだ文面）と、元の項が base の時点から本文で引いていた別の項の頭は照らさない。
-            # ただし HEAD に項の頭として残らない頭は、本文で引いていても照らす——引いた先の項が言い換えられて消え、その文面が
-            # 新しい引きの項に残るのは、その項の言い換えへの付け替えである（#1430）
+            # 統合元の項の頭（取り込んだ文面）と、元の項が base の時点から本文で引いていた別の項の頭のうち、新しい引きの項が
+            # その引用を受け継ぐ（引用の行の前か後ろの文面が、頭と続いて残る）ものは照らさない。引用を受け継がずに頭の文面だけが
+            # 残るのは、元の項を消すか頭を写した新しい項に差し替えた付け替えである（#1430・#1452）。引いた先の項が HEAD に
+            # 頭のまま残るかは見ない——引いた先の頭を同じ PR で言い換えても、引用を受け継ぐ言い換えは止めない（#1453）
             clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash
                       and not any(f.startswith(m) for m in merged)
-                      and (flat(f) not in prev_own or f not in new_heads)]
+                      and not kept_quote(flat(f), prev_lines, cur)]
         if clash:
             problems.append(f"{b['ID']}: 引きを base に既にある別の項の頭「{clash[0][:30]}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")
             print(f"NG: {problems[-1]}")
