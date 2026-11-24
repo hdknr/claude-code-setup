@@ -614,10 +614,10 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
              reword_as_hiki("1. 要点 1. BBB ふたつめの行です\n", "要点 1. BBB"), pre_base=pre_body("   1. BBB ふたつめの行です"))
     def s_both_ids_on_cur(root, skill):
         (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("1. **AAA ひとつめの行です**\n   - 入れ子は数えない\n", "").replace(
-            "2. **BBB ふたつめの行です**", "2. 要点: BBB ふたつめの行です\n   - 入れ子は数えない（下の「BBB ふたつめの行です」と同じ）"))
+            "2. **BBB ふたつめの行です**", "2. 要点: まったく別の頭です\n   - 入れ子は数えない（下の「BBB ふたつめの行です」と同じ）"))
         (skill / "references" / "line-registry.csv").write_text(registry_text(
-            [["V-01", "prompts/verifier.md", "要点: BBB ふ"] + ROWS[0][3:], ["V-02", "prompts/verifier.md", "要点: BBB ふたつめ"] + ROWS[1][3:], ROWS[2]]))
-    scenario("G69 G64 で、付け替え先の ID も同じ新しい引きの項を引くよう言い換えても 1（引いた先が別の項として残らない）", 1, "付け替えた",
+            [["V-01", "prompts/verifier.md", "要点: まったく別"] + ROWS[0][3:], ["V-02", "prompts/verifier.md", "要点: まったく別の頭"] + ROWS[1][3:], ROWS[2]]))
+    scenario("G69 G64 で、付け替え先の ID も同じ新しい引きの項を引くよう言い換えても 1（引いた先が別の項として残らない。引いた頭は新しい引きの項の本文だけにある）", 1, "付け替えた",
              s_both_ids_on_cur, pre_base=pre_quote_bbb)
     # #1452 の狭いパスの O1: 元の項の頭を付け替え先の頭の写しに差し替え、本文の引用を残し、付け替え先の頭も言い換える
     def s_copy_head_reword_target(root, skill):
