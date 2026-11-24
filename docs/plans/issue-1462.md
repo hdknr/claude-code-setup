@@ -34,7 +34,7 @@ Issue 本文（外部入力）から読んだ要件: cruise は親 Issue の一�
 - `plugins/dev-loop/skills/dev-loop/scripts/ledger.py`（`status` の判定は変えない。閉じるのは親の手順で、スクリプトは閉じない）
 - `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py`（起動時の権限の点検の一覧に `gh issue close` を足さない——下の「既知の限界」）
 - `plugins/dev-loop/skills/cruise/scripts/parent-issue.py`（チェックボックスは書き換えないまま）
-- cruise の frontmatter の description・`marketplace.json`・`plugin.json` の description（終え方の要約を持っていない）
+- cruise の frontmatter の description・`marketplace.json`・`plugin.json` の description（frontmatter は「終えるときに渡す」の要約を持つが、起動の判断に要る要約で、閉じる段の有無で起動の仕方は変わらないので揃えない——2 パス目の CR2-7。JSON の 2 箇所は終え方を書いていない）
 - 閉じた親 Issue（#1424・#1425・#1448 は利用者が既に閉じた。この周は GitHub の Issue を閉じない）
 
 依存の追加・更新: なし
@@ -75,7 +75,7 @@ Issue 本文（外部入力）から読んだ要件: cruise は親 Issue の一�
 | `status` が 4（判定できなかった） | 閉じない |
 | main の歯止めを流せなかった・取り直せなかった | 閉じない |
 | `gh issue close` の失敗・権限の拒否（不在の cruise） | 閉じたと書かず、開いたままと理由 |
-| 外側のループ（`outer-loop.py`）の最後の起動が終えるとき | 同じ §6 の手順を踏む（スクリプトは閉じない） |
+| 外側のループ（`outer-loop.py`）の最後の起動が終えるとき | 同じ §6 の手順を踏む（スクリプトは閉じない）。**最後の起動が §6 まで行かずに終わる形は保証しない**（2 パス目の CR2-6。変更の前からの形——残課題） |
 | 確認の Issue（`cruise-decision`）・フォローアップの Issue | 閉じる対象は親 Issue だけ（不変条件 5） |
 | 利用者が読む公開ページ | 1 項目で同じ内容（不変条件 3） |
 | 閉じの印の形を持つ箇所（「GitHub に書くものの印」・§6 の確認の Issue の閉じ方の判定の jq） | 形を変えない（不変条件 2） |
@@ -100,6 +100,15 @@ Issue 本文（外部入力）から読んだ要件: cruise は親 Issue の一�
 - 関門: 1 パス目の起点（指摘対応の起点）`7fcb86f3`。
   - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）を `7fcb86f3` に起こした。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1462-verifier-1-20261124T040402Z.md`
   - `/code-review` 1 パス目を `7fcb86f3` に起こした。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1462-code-review-1-20261124T040402Z.md`
+  - Verifier 1 パス目: 通した（`7fcb86f3`）。反証 2 件（報告は hand-back で届き、報告のファイルも終わりの印つき）。`dev-loop:dev-loop-verifier` が起動した
+  - `/code-review` 1 パス目: 通した（`7fcb86f3`）。指摘 9 件（報告のファイルは終わりの印つき。分岐した背景の実行）。採否は下の「1 パス目の採否の表」
+  - 1 パス目の指摘対応: `325c4816`（計画ファイルのほかに 2 ファイル——0 行ではないので 2 パス目を回す）
+  - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+  - Verifier 2 パス目を `325c4816` に起こした。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1462-verifier-2-20261124T041024Z.md`
+  - `/code-review` 2 パス目を `325c4816` に起こした。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1462-code-review-2-20261124T041024Z.md`
+  - Verifier 2 パス目: 通した（`325c4816`）。反証 0 件（軽微な所見 2 件は反証としない）。報告は hand-back と報告のファイル（終わりの印つき）
+  - `/code-review` 2 パス目: 通した（`325c4816`）。指摘 7 件（報告のファイルは終わりの印つき）。採否は下の「2 パス目の採否の表」
+  - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `325c4816`
 - 交絡を潰した手順: 実験なし
 
 ## 既知の限界・決着済みの論点
@@ -126,6 +135,18 @@ Issue 本文（外部入力）から読んだ要件: cruise は親 Issue の一�
 | C7 | 「確認の Issue・フォローアップ・直しの Issue は閉じない（上の『GitHub に書くものの印』）」の出典が誤り（その節は確認の Issue だけ。フォローアップは直す周が `Fixes` で閉じてよい） | 示せる（「GitHub に書くものの印」の節と `absent-lines.md` の文面） | 5 | 直す（この段が閉じるのは親だけ、と出典を分ける） |
 | C8 | 計画の決着「`gh issue close` を点検に足さない」の理由が事実と合わない | 示せる（`DEFAULT_COMMANDS` に `gh issue create` が在る） | 無し（計画の記録） | 残課題（決着の理由を上で直した） |
 | C9 | 計画の決着「開き直しに cruise は関わらない」の理由が成り立たない | 示せる（再開で `status` 5 なら再び閉じる——§6 の文面） | 無し（計画の記録） | 残課題（決着の理由を上で直した） |
+
+### 2 パス目の採否の表（Verifier 2 パス目 反証 0 件・`/code-review` 2 パス目 指摘 7 件）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| CR2-1 | 子が報告した不安定なテストは親の文脈にしか無く、外側のループ・タイマー・`/clear` の後の起動の親は知らずに閉じる | 示せる（台帳に欄が無い——`ledger.py` の `KEYS`。`flaky-tests.md` 37 行は PR コメントの見出しに書くと決める） | 5 | 直す（閉じる前に、状態が `merged` の行の PR のコメントから見出し「不安定なテスト」を集め直し、読めなければ閉じない） |
+| CR2-2 | 確認の Issue・フォローアップの検索が失敗・空でも、一覧が空と読んで閉じる | 示せる（§6 の確認の Issue の検索に失敗の扱いが無い——文面） | 5 | 直す（どちらかの検索が失敗したら判定できないとして閉じない）。検索のインデックスの遅れは残課題 |
+| CR2-3 | 閉じ方の雛形が本文を二重引用符に入れ、取り下げた行のメモのバッククォート・`$` がシェルで展開される | 示せる（レビューが scratchpad で `echo INJECTED` の置換を再現） | 1・2 | 直す（本文をファイルに書いて `--comment "$(cat <ファイル>)"` で渡す） |
+| CR2-4 | 親 Issue の行が全部 `[x]` だと `show` が 3 を返し、閉じる条件を満たしても閉じない（理由も「読めなかった」と言い違える） | 示せる（レビューが `parent-issue.py show --body-file` で rc=3「未チェックの Issue が 0 件」を再現。`parent-issue.py` 330 行） | 1 | 直す（その 3 は台帳に無い Issue が 0 件と読み、`apply` は走らせない。ほかの 3・4 は閉じない） |
+| CR2-5 | 公開ページに `status` 4・親 Issue を読み直せなかった・main を取り直せなかったときに閉じないことが無い | 示せる（公開ページの文面） | 3 | 直す |
+| CR2-6 | 外側のループは `status` 5 で次を起こさないので、最後の起動が §6 まで行かずに終わると誰も閉じない | 示せる（`outer-loop.py` 370 行） | 無し（変更の前からの形。§6 の歯止めも同じ） | 残課題（経路の表の守り方を「保証しない」に直した） |
+| CR2-7 | 計画の「frontmatter は終え方の要約を持たない」が事実と違う | 示せる（frontmatter の「終えるときに渡す」） | 無し（計画の記録） | 残課題（触らない理由を直した） |
 
 ## 手順 8（経験の還元。マージの前に書く分）
 
