@@ -24,9 +24,14 @@
 #
 # - **先に見る。** 同じ番号の worktree / ブランチが在れば**作らずに止まる**
 #   （**再開の周を新規として踏み潰さない**）。
-#   **当たり方は部分一致で、広い**——`issue-9` は `issue/99-foo` にも当たる。
-#   **失敗する側は安全**（新しい周を再開の道へ送るだけで、踏み潰さない）だが、
-#   **広いことは隠さない**（`find-cycle.py` と同じ扱い）。
+#   **何に当たるかは、下の「番号の境界で当てる」の項が決める。**
+# - **番号の境界で当てる**（#1504）。ブランチは `issue/<番号>-…`（と `issue/<番号>` そのもの。
+#   リモート追跡参照は `<リモート>/issue/<番号>-…`）、worktree はディレクトリの名前が `issue-<番号>` か
+#   `issue-<番号>-…` のものだけに当たる。**リモートの名前は設定にあるもの（`/` を含む `my/fork` も）で外す。**
+#   **番号を部分一致で探すと、`issue/831-foo`・`spec/83…` のような
+#   別の周・別の枝に当たって 3 で止まる**——以前はそうなっており、org-x/project-a の cruise で
+#   子が手で `git worktree add` して回避していた（#1401 の 4）。**再開の周を見つけるのは `find-cycle.py` の仕事で、
+#   あちらは部分一致のまま広い**（このスクリプトは「当たるものが無かったときだけ使う」）。
 # - **root を解決できなかったら作らない**（終了コード 5）。
 #   **「無い」と「見られなかった」は別である。**
 # - **既存の一覧を見られなかったら作らない**（終了コード 6）。
@@ -120,6 +125,12 @@
 #   書いたが、それは誤りだった**——**3 巡目の Verifier が、この守りを壊してもテストが
 #   全項目 ok のままであることを実験で示した。** **いまは偽の `git` を使って
 #   直接当てている**（`scripts/test-worktree-scripts.py`）。
+# - **規約から外れた名前で作られた同じ番号の周**——`issue/<番号>` で始まらないブランチ（`worktree-…`・`spec/…`）と、
+#   名前が `issue-<番号>` で始まらない worktree（`EnterWorktree` のランダム名など）には当たらない。
+#   **それを見つけるのは `find-cycle.py` である**（`SKILL.md` の「途中から再開する周」が、作る前に走らせる）。
+#   **改行を含むパスの worktree**も、`git worktree list --porcelain` の行で読むので当て損ねうる。
+# - **設定に無いリモート追跡参照で、番号の境界を守ること**——リモートの名前の段数が分からないので、`/` の切れ目ごとの後ろの
+#   どれかが `issue/<番号>[-…]` なら当てる。`gone/spec/issue/<番号>-x` のような別の枝にも当たって 3 で止まりうる（当てすぎる側）。
 # - **`git worktree add` そのものが失敗したとき（文書化した番号の外の終了コード）に、標準出力から
 #   「作ろうとしているもの」を消すこと**——**消さない。** 断る照合を全部通って作りに行った後なので、
 #   行の言うこと（作ろうとした）は偽ではない。失敗の中身は標準エラーに出る。
@@ -150,7 +161,14 @@ BRANCH="issue/${NUMBER}-${SLUG}"
 PATH_ABS="${MAIN}/.claude/worktrees/issue-${NUMBER}"
 
 # **先に見る。** 当たったら作らない。
-if ! WT_ALL="$(git worktree list 2>/dev/null)" || ! BR_ALL="$(git branch --all --list "*${NUMBER}*" 2>/dev/null)"; then
+# **全件を取ってから、番号の境界で絞る**（#1504）。`git branch --list "*<番号>*"` と `grep -F "issue-<番号>"` は
+# 部分一致で、`issue/831-foo`・`spec/83…`・`…/issue-831` にも当たっていた。
+# **worktree はパスを `--porcelain` で読む**——素の一覧は `<パス> <SHA> [<ブランチ>]` で、パスに空白があると切り出せない。
+# **ブランチは完全な参照名で読む**——短い名前では、ローカルの `spec/issue/83-x` とリモートの `spec/issue/83-x` を分けられない。
+# **リモートの名前も同じ守りの中で取る**——取れないまま空と読むと、名前に `/` を含むリモートの参照を当て損ね、
+# 既にある周の隣に作る（#1504 の `/code-review` 2 パス目）。
+if ! WT_ALL="$(git worktree list --porcelain 2>/dev/null)" || ! BR_ALL="$(git branch --all --format='%(refname) %(refname:short)' 2>/dev/null)" \
+   || ! REMOTES="$(git remote 2>/dev/null)"; then
   echo "git で既存の worktree / ブランチを見られなかった。作らない。" >&2
   echo "**「当たらなかった」とは答えない**——見られていない。" >&2
   # **root の解決とは別の終了コードにする。** 同じにすると**2 つの守りが
@@ -158,9 +176,62 @@ if ! WT_ALL="$(git worktree list 2>/dev/null)" || ! BR_ALL="$(git branch --all -
   # （実際にそうなっていた）。
   exit 6
 fi
-EXISTING_WT="$(printf '%s\n' "$WT_ALL" | grep -F "issue-${NUMBER}" || true)"
-EXISTING_BR="$BR_ALL"
-# **一覧のどの行にも同じ字下げを付ける。** 一致は複数ありうる（当たり方は部分一致で広い）。
+# **番号の境界で当てる**（#1504）。`NUMBER` は上で数字だけと確かめてあるので、`case` の型にそのまま入れてよい。
+# worktree: ディレクトリの名前が `issue-<番号>` か `issue-<番号>-…`。
+wt_matches() {
+  case "${1##*/}" in
+    "issue-${NUMBER}"|"issue-${NUMBER}-"*) return 0 ;;
+  esac
+  return 1
+}
+# ブランチ: ローカルは `refs/heads/issue/<番号>-…`、リモート追跡参照は `refs/remotes/<リモート>/issue/<番号>-…`
+# （`issue/<番号>` そのものも当てる——規約の `-` が無い名前でも、同じ番号の周であることは変わらない）。
+# **リモートの名前は `/` を含みうる**（`my/fork`）——1 段だけ外すと `refs/remotes/my/fork/issue/83-x` に当たらず、
+# 既にある周の隣に新しい周を作る（#1504 の `/code-review` 1 パス目）。**設定にあるリモートの名前で、いちばん長く当たるものを外す。**
+# **設定に無いリモート追跡参照**（リモートを消した後に残った参照・`git fetch <url> <refspec>` で作った参照）は、リモートの名前の段数が
+# 分からないので、**`/` の切れ目ごとの後ろのどれかが当たれば当てる**——当てすぎる側（`gone/spec/issue/83-x` にも当たる）に倒す。
+# 当て損ねると既にある周の隣に作り、当てすぎても新しい周を再開の道へ送るだけである（#1504 の Verifier 2 パス目）。
+# **コマンド置換でサブシェルを起こさない**——参照の数だけ fork すると、参照の多いリポジトリで入場が遅くなる（同 `/code-review` 2 パス目）。
+is_issue_rest() {
+  case "$1" in
+    "issue/${NUMBER}"|"issue/${NUMBER}-"*) return 0 ;;
+  esac
+  return 1
+}
+remote_matches() {
+  local ref="${1#refs/remotes/}" r best=""
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    case "$ref" in
+      "$r"/*) if [ "${#r}" -gt "${#best}" ]; then best="$r"; fi ;;
+    esac
+  done <<EOF_REMOTES
+$REMOTES
+EOF_REMOTES
+  if [ -n "$best" ]; then
+    is_issue_rest "${ref#"$best"/}"
+    return
+  fi
+  while [ "${ref#*/}" != "$ref" ]; do
+    ref="${ref#*/}"
+    if is_issue_rest "$ref"; then return 0; fi
+  done
+  return 1
+}
+br_matches() {
+  case "$1" in
+    refs/heads/*)   is_issue_rest "${1#refs/heads/}" ;;
+    refs/remotes/*) remote_matches "$1" ;;
+    *) return 1 ;;
+  esac
+}
+EXISTING_WT="$(printf '%s\n' "$WT_ALL" | sed -n 's/^worktree //p' | while IFS= read -r p; do
+  if wt_matches "$p"; then printf '%s\n' "$p"; fi
+done)"
+EXISTING_BR="$(printf '%s\n' "$BR_ALL" | while IFS=' ' read -r ref short; do
+  if [ -n "$ref" ] && br_matches "$ref"; then printf '%s\n' "$short"; fi
+done)"
+# **一覧のどの行にも同じ字下げを付ける。** 一致は複数ありうる（同じ番号の worktree・ブランチが複数ある）。
 # `printf '    %s\n' "$一覧"` は引数が 1 つなので**字下げが 1 行目にしか付かない**（#558。#544 の `/code-review` 1 パス目）。
 indent_list() { sed 's/^/    /'; }
 if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then
