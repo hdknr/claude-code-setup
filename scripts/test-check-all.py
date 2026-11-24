@@ -2198,11 +2198,12 @@ HOOK = SCRIPTS / "check_all_trace" / "usercustomize.py"
 CACHE_HOOK_REL = "scripts/check_all_trace/usercustomize.py"
 CACHE_TESTS = ["t-file.py", "t-list.py", "t-absent.py", "t-child.py", "t-iso.py", "t-sh.py",
                "t-git.py", "t-layout.py", "t-flaky.py", "t-edit.py", "t-import.py", "t-nested.py", "t-fresh.py",
-               "t-gittmp.py", "t-strip.py", "t-nous.py", "t-relcwd.py", "t-shell.py", "t-wopt.py", "t-del.py", "t-slow.py", "t-hooked.py", "t-exe.py", "t-rmdir.py", "t-mkd.py"]
+               "t-gittmp.py", "t-strip.py", "t-nous.py", "t-relcwd.py", "t-shell.py", "t-wopt.py", "t-del.py", "t-slow.py", "t-hooked.py", "t-exe.py", "t-rmdir.py", "t-mkd.py", "t-two.py"]
 CACHE_OVERRIDE = (
     'GUARDS = [("g.py", [], False)]\n'
     f"TESTS = {CACHE_TESTS!r}\n"
     'NESTED = ("t-nested.py",)\n'
+    'CACHE_KEEP = 3\n'  # 上限で古い記録が消えることを、少ない状態で見るため（#1517）
 )
 # 偽の回帰テスト。名前 → 中身。**どれも作業ツリーの中の何かを、違う経路で読む。**
 CACHE_FAKES = {
@@ -2227,10 +2228,23 @@ CACHE_FAKES = {
     "t-layout.py": "import subprocess\n"
                    "subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--show-toplevel'], check=True, capture_output=True)\n",
     # 環境変数で落ちる（入力が同じでも落ちる回を作る）
-    "t-flaky.py": "import os, sys\nsys.exit(1 if os.environ.get('CACHE_T_FAIL') else 0)\n",
+    # 落とせる。入力のファイルも読む——落ちた回が、別の入力の状態の記録まで消さないことを見るため（#1517）
+    "t-flaky.py": "import os, sys\nopen('data/f.txt').read()\nsys.exit(1 if os.environ.get('CACHE_T_FAIL') else 0)\n",
     # 回している間に自分の入力を書き換える
-    "t-edit.py": "import os\nopen('data/e.txt').read()\n"
-                 "if os.environ.get('CACHE_T_EDIT'):\n    open('data/e.txt', 'a').write('x')\n",
+    # 書き換えたうえで落ちることもできる（`CACHE_T_EDITFAIL`。落ちた回の途中で入力が変わる形——#1517）
+    "t-edit.py": "import os, sys\nopen('data/e.txt').read()\n"
+                 "if os.environ.get('CACHE_T_EDIT'):\n    open('data/e.txt', 'a').write('x')\n"
+                 # 中身を変えずに書き直す（mtime だけ動く——#1517 の R2-1）
+                 "if os.environ.get('CACHE_T_TOUCH'):\n    b = open('data/e.txt').read()\n    open('data/e.txt', 'w').write(b)\n"
+                 "sys.exit(1 if os.environ.get('CACHE_T_EDITFAIL') else 0)\n",
+    # 2 つのファイルを読む。`CACHE_T_TWOFAIL` なら、1 つ目を読んだところで 2 つ目が外から書き換えられ、落ちる——落ちた回が依存の一部しか読まない形
+    # （#1517 の R2-2）。**書き換えはテストの外の利用者の代わり**なので、hook に見えない形（パスを引数に出さない `sh`）で書く——
+    # `open(…, 'w')` で書くと、hook がそれを読んだと数えて依存に入り、筋書きが変わる。
+    "t-two.py": "import os, subprocess, sys\nopen('data/t1.txt').read()\n"
+                "if os.environ.get('CACHE_T_TWOFAIL'):\n"
+                "    subprocess.run(['sh', '-c', 'printf \"b1\\\\n\" > \"$T2\"'], env={**os.environ, 'T2': 'data/t2.txt'}, check=True)\n"
+                "    sys.exit(1)\n"
+                "open('data/t2.txt').read()\n",
     # 隣のモジュールを import する（import の仕組みの列挙を入力にしない）
     "t-import.py": "import sys; sys.path.insert(0, 'scripts'); import helpmod\n",
     # `--jobs` を受ける（`--jobs` はキーに入れない）
@@ -2282,7 +2296,7 @@ CACHE_FAKES = {
     "helpmod.py": "X = 1\n",
 }
 CACHE_DATA = {
-    "data/a.txt": "a\n", "data/a2.txt": "a2\n", "data/c.txt": "c\n", "data/e.txt": "e\n",
+    "data/a.txt": "a\n", "data/a2.txt": "a2\n", "data/c.txt": "c\n", "data/e.txt": "e\n", "data/f.txt": "f\n", "data/t1.txt": "a\n", "data/t2.txt": "b0\n",
     "data/d/one.txt": "1\n", "data/g.txt": "g\n",
     "plugins/p/s.py": "open('plugins/p/side.txt').read()\n", "plugins/p/side.txt": "side\n",
     "plugins/q/run.sh": "cat plugins/q/other.txt\n", "plugins/q/other.txt": "other\n",
@@ -2320,11 +2334,13 @@ def build_cache_repo(root: Path, src: str, hook_src: str) -> Path:
     return root
 
 
-def cache_env(fail: bool = False, edit: bool = False, delete: bool = False, nousersite: bool = False) -> dict[str, str]:
+def cache_env(fail: bool = False, edit: bool = False, delete: bool = False, nousersite: bool = False,
+              editfail: bool = False, touch: bool = False, twofail: bool = False) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("CHECK_ALL_TRACE")}
     env.pop("PYTHONPATH", None)
     env.pop("PYTHONNOUSERSITE", None)
-    for flag, key in ((fail, "CACHE_T_FAIL"), (edit, "CACHE_T_EDIT"), (delete, "CACHE_T_DEL"), (nousersite, "PYTHONNOUSERSITE")):
+    for flag, key in ((fail, "CACHE_T_FAIL"), (edit, "CACHE_T_EDIT"), (delete, "CACHE_T_DEL"), (nousersite, "PYTHONNOUSERSITE"),
+                      (editfail, "CACHE_T_EDITFAIL"), (touch, "CACHE_T_TOUCH"), (twofail, "CACHE_T_TWOFAIL")):
         if flag:
             env[key] = "1"
     return env
@@ -2441,9 +2457,15 @@ def cache_contract(root: Path):
     touch("data/maybe.txt", "now\n")
     rc, out = cache_run(root)
     yield "無かったファイルが現れると回る（A2）", rc == 0 and only(out, dirty("t-absent.py"))
+    # **記録は入力の状態ごとに残る**（#1517）——消すと、段 1 で緑にした「無かった」状態に戻り、その記録に当たる（正しい当たり。
+    # git の状態も同じく戻るので `t-git.py` も当たる）。消えたことを見分けるには、`t-absent.py` の記録を除いて「在る」状態だけを記録し直してから消す。
+    for rec in (root / ".git" / "check-all-cache" / "t-absent.py").glob("*.json"):
+        rec.unlink()
+    rc0, out0 = cache_run(root)
     (root / "data" / "maybe.txt").unlink()
     rc, out = cache_run(root)
-    yield "在ったファイルが消えると回る（A2）", rc == 0 and only(out, dirty("t-absent.py"))
+    yield "在ったファイルが消えると回る（A2）", (
+        rc0 == 0 and only(out0, {"t-absent.py"}) and rc == 0 and only(out, {"t-absent.py"}))
     touch("data/c.txt", "c changed\n")
     rc, out = cache_run(root)
     yield "hook の入る子の Python が読んだファイルを変えると回る（A2）", rc == 0 and only(out, dirty("t-child.py"))
@@ -2535,10 +2557,14 @@ def cache_contract(root: Path):
     yield "回している間に入力が変わったら記録せず、次も回る（A6）", (
         rc == 0 and "記録しなかった: t-edit.py" in out and rc2 == 0 and only(out2, dirty("t-edit.py")))
     # 7) 壊れた記録は「無い」と扱う。
+    # **記録は 1 本につき入力の状態ごとに複数ある**（#1517）——全部を壊す。壊すものが 1 つも無ければ、この段は何も判別しない。
     store = root / ".git" / "check-all-cache"
-    (store / "t-file.py.json").write_text("{壊れた")
+    broken = sorted((store / "t-file.py").glob("*.json"))
+    for rec in broken:
+        rec.write_text("{壊れた")
     rc, out = cache_run(root)
-    yield "壊れた記録は無いと扱って回す（A12）", rc == 0 and "t-file.py" in ran_tests(out) and "Traceback" not in out
+    yield "壊れた記録は無いと扱って回す（A12）", (
+        bool(broken) and rc == 0 and "t-file.py" in ran_tests(out) and "Traceback" not in out)
     # 8) 集め方・比べ方を直したら全部回る（キー）。**直す前に記録が揃っていることを確かめる**——
     # 記録が無ければ、キーを見なくても全部回る（それでは A11 を判別しない）。
     hook = root / "scripts" / "check_all_trace" / "usercustomize.py"
@@ -2562,6 +2588,82 @@ def cache_contract(root: Path):
     me.write_text(me.read_text() + "\n# 直した\n")
     rc, out = cache_run(root)
     yield "check-all.py を直すと全部回る（A11）", rc == 0 and ran_tests(out) == every
+    # 9) 入力の状態を行き来しても、前に緑で記録した状態に戻れば当たる（#1517 の C1）——前は 1 本につき 1 つで、
+    #    別の状態で回すと上書きされ、戻ると回り直していた（並行する worktree が互いの記録を消す形）。
+    a = root / "data" / "a.txt"
+    orig = a.read_text()
+    touch("data/a.txt", "a other\n")
+    rc, out = cache_run(root)
+    touch("data/a.txt", orig)
+    rc2, out2 = cache_run(root)
+    yield "別の状態で回した後に元の状態へ戻すと、何も回らない（#1517 の C1）", (
+        rc == 0 and only(out, dirty("t-file.py")) and rc2 == 0 and only(out2, set()))
+    # 10) 落ちた回は、今の入力で当たる記録だけを消す——ほかの状態の記録は残す（#1517 の C4）。
+    touch("data/f.txt", "f other\n")
+    rc, out = cache_run(root)
+    rc2, out2 = cache_run(root, "--no-cache", fail=True)
+    touch("data/f.txt", "f\n")
+    rc3, out3 = cache_run(root)
+    touch("data/f.txt", "f other\n")
+    rc4, out4 = cache_run(root)
+    yield "落ちた回は別の状態の記録を消さず、落ちた状態だけが次に回る（#1517 の C4）", (
+        rc == 0 and only(out, dirty("t-flaky.py")) and rc2 == 1 and rc3 == 0 and only(out3, set())
+        and rc4 == 0 and only(out4, {"t-flaky.py"}))
+    # 11) 1 本の記録は `CACHE_KEEP`（偽のリポジトリでは 3）個まで。超えたら古いものから消え、消えた状態に戻ると回る（#1517 の C2）。
+    for body in ("a v1\n", "a v2\n", "a v3\n"):
+        touch("data/a.txt", body)
+        cache_run(root)
+    kept = len(list((store / "t-file.py").glob("*.json")))
+    touch("data/a.txt", orig)
+    rc, out = cache_run(root)
+    yield "記録は上限まで残り、上限を超えて古い状態に戻ると回る（#1517 の C2）", (
+        kept == 3 and rc == 0 and only(out, dirty("t-file.py")))
+    # 12) hook が入らずに記録しない回は、今の入力で当たる記録を消す（#1517 の C3）——`--no-cache` でなければ当たる記録のある
+    #     テストは回らないので、消すかどうかは `--no-cache` の回でだけ差が出る。
+    rc, out = cache_run(root, "--no-cache", nousersite=True)
+    rc2, out2 = cache_run(root)
+    yield "hook が入らなかった回は、今の入力で当たる記録を消し、次は全部回る（#1517 の C3）", (
+        rc == 0 and ran_tests(out) == every and rc2 == 0 and ran_tests(out2) == every)
+    # 13) 回している間に入力が変わって記録しない回は、終わった時点の入力で当たる記録を消す（#1517 の C3）——
+    #     終わった時点の状態を前に緑で記録しておき、`--no-cache` で回している間にその状態へ変わる形にする。
+    touch("data/e.txt", "m\nx")
+    rc, out = cache_run(root)
+    touch("data/e.txt", "m\n")
+    rc2, out2 = cache_run(root, "--no-cache", edit=True)
+    rc3, out3 = cache_run(root)
+    yield "回している間に入力が変わった回は、終わった時点の入力で当たる記録を消す（#1517 の C3）", (
+        rc == 0 and rc2 == 0 and "記録しなかった: t-edit.py" in out2 and (root / "data" / "e.txt").read_text() == "m\nx"
+        and rc3 == 0 and "t-edit.py" in ran_tests(out3))
+    #     **`t-edit.py` が回るかだけを見る**——`--no-cache` の回の途中で `t-edit.py` が書き換えると、同じ時に走っていたほかのテスト
+    #     （`t-git.py`・`t-mkd.py` など）も「回している間に入力が変わった」に当たることがあり、どれが当たるかは走る順で変わる。
+    # 14) 落ちた回の途中で入力が変わったら、どの状態で落ちたかが決まらない——そのテストの記録を全部消す（#1517 の C3。
+    #     走り始めた状態の緑の記録を残すと、その状態に戻したときに、落ちたテストが CACHED になる）。
+    touch("data/e.txt", "n\n")
+    rc, out = cache_run(root)
+    rc2, out2 = cache_run(root, "--no-cache", edit=True, editfail=True)
+    touch("data/e.txt", "n\n")
+    rc3, out3 = cache_run(root)
+    yield "落ちた回の途中で入力が変わったら、走り始めた状態の記録も消し、戻すと回る（#1517 の C3）", (
+        rc == 0 and rc2 == 1 and rc3 == 0 and "t-edit.py" in ran_tests(out3))
+    #     **`t-edit.py` が回るかだけを見る**（段 13 と同じ理由）。直す前の本体では、ここで何も回らなかった（再現は計画ファイル）。
+    # 15) 落ちた回の途中で mtime だけが動いても（中身は同じ）、別の状態の記録は消さない（#1517 の R2-1・C4）——
+    #     状態 B の緑の記録を置き、状態 A で「中身を変えずに書き直して落ちる」回を回し、B に戻すと当たる。
+    touch("data/e.txt", "B\n")
+    rc, out = cache_run(root)
+    touch("data/e.txt", "A\n")
+    rc2, out2 = cache_run(root)
+    rc3, out3 = cache_run(root, "--no-cache", touch=True, editfail=True)
+    touch("data/e.txt", "B\n")
+    rc4, out4 = cache_run(root)
+    yield "落ちた回の途中で mtime だけ動いても、別の状態の記録を消さない（#1517 の R2-1・C4）", (
+        rc == 0 and rc2 == 0 and rc3 == 1 and rc4 == 0 and "t-edit.py" not in ran_tests(out4))
+    # 16) 落ちた回が依存の一部しか読まずに止まり、読まなかった依存が変わっても、走り始めた状態の記録を消す（#1517 の R2-2・C3）——
+    #     (t1=a, t2=b0) の緑の記録を置き、t1 を読んだところで t2 を b1 に変えて落ちる回を回し、t2 を b0 に戻すと回る。
+    rc, out = cache_run(root, "--no-cache", twofail=True)
+    touch("data/t2.txt", "b0\n")
+    rc2, out2 = cache_run(root)
+    yield "落ちた回が依存の一部しか読まなくても、走り始めた状態の記録を消し、戻すと回る（#1517 の R2-2・C3）", (
+        rc == 1 and rc2 == 0 and "t-two.py" in ran_tests(out2))
 
 
 def cache_contract_list(root: Path, src: str, hook_src: str, stop_first: bool) -> list[tuple[str, bool]]:
@@ -2595,9 +2697,25 @@ CACHE_MUTANTS = {
     "`-I` の子にも hook が入ると見なす": ("check-all", '        if any(ch in a[1:] for ch in "IEsS"):\n', "        if False:\n"),
     "git を入力に数えない": ("check-all", "                git = git or _git_reads_repo(repo, argv, cwd)\n", "                git = False\n"),
     "配置だけの rev-parse も git の状態にする": ("check-all", '    if sub == "rev-parse" and rest and all(r in GIT_LAYOUT_ARGS for r in rest):\n', "    if False:\n"),
-    "落ちた回の記録を消さない": ("check-all", "    if not ok:\n        drop_record(ctx[\"root\"], name)\n", "    if not ok:\n        pass\n"),
+    "落ちた回の記録を消さない": ("check-all", "        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]), also=before)\n",
+                                 "        pass\n"),
+    "落ちた回に、走り始めた時点で当たっていた記録を残す（#1517）": ("check-all", "also=before)\n", "also=frozenset())\n"),
+    "記録を 1 本につき 1 つしか残さない（#1517）": ("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
+                                                    "    for _, _, path in sorted(stamped, reverse=True)[1:]:\n"),
+    "別の状態の記録を同じファイルに書く（#1517）": ("check-all", '        os.replace(tmp, d / f"{record_id(rec)}.json")\n',
+                                                    '        os.replace(tmp, d / "r.json")\n'),
+    "上限で古い記録を消さない（#1517）": ("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
+                                          "    for _, _, path in sorted(stamped, reverse=True)[len(stamped):]:\n"),
+    "上限で新しいほうを消す（#1517）": ("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
+                                        "    for _, _, path in sorted(stamped)[CACHE_KEEP:]:\n"),
+    "hook が入らない回の記録を消さない（#1517）": ("check-all", "        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]))\n        ctx[\"unrecorded\"].append((name, \"読んだものを集められなかった（hook が入っていない）\"))\n",
+                                                   "        ctx[\"unrecorded\"].append((name, \"読んだものを集められなかった（hook が入っていない）\"))\n"),
+    "回している間に入力が変わった回の記録を消さない（#1517）": ("check-all", "        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]))\n        ctx[\"unrecorded\"].append((name, \"回している間に入力が変わった: \"",
+                                                               "        ctx[\"unrecorded\"].append((name, \"回している間に入力が変わった: \""),
+    "落ちた回に別の状態の記録まで消す（#1517）": ("check-all", "        if path in also or matches(rec, name, args, hasher):\n            with contextlib.suppress(OSError):\n                path.unlink()\n",
+                                                  "        if True:\n            with contextlib.suppress(OSError):\n                path.unlink()\n"),
     "回している間の変化を見ない": ("check-all", "            if os.stat(p).st_mtime_ns >= since_ns:\n", "            if False:\n"),
-    "壊れた記録で落ちる": ("check-all", "    except (OSError, ValueError):\n        return None\n    if not isinstance(rec, dict)", "    except OSError:\n        return None\n    if not isinstance(rec, dict)"),
+    "壊れた記録で落ちる": ("check-all", "        except (OSError, ValueError):\n            continue\n", "        except OSError:\n            continue\n"),
     "キーに check-all.py を入れない": ("check-all", '    for f in (SCRIPTS / "check-all.py", SCRIPTS / TRACE_DIRNAME / "usercustomize.py"):\n',
                                          '    for f in (SCRIPTS / TRACE_DIRNAME / "usercustomize.py",):\n'),
     "キーに hook を入れない": ("check-all", '    for f in (SCRIPTS / "check-all.py", SCRIPTS / TRACE_DIRNAME / "usercustomize.py"):\n',
