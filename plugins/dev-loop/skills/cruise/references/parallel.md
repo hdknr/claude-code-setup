@@ -22,7 +22,7 @@
 **cruise の周の中で、次のコマンドは `scripts/run-serial.py` 越しに走らせる**（このスキルと同じ場所にある）:
 
 ```bash
-python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]
+python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--timeout <秒>] [--repo <パス>] -- <コマンド> [引数 …]
 ```
 
 - **通すもの**: 対象リポジトリの「歯止めを全部回す 1 本のコマンド」（dev-loop の `SKILL.md`「はじめに」）・テストの実行・ビルド・
@@ -38,6 +38,8 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--ti
     長い処理の前と途中で接続の生死を確かめ（一定の間隔で軽い問い合わせを打つ、など）、切れたらその場で失敗で終わる。
     ssh のトンネルなら `ServerAliveInterval`・`ServerAliveCountMax` が応答の無い接続を落とす設定である（例として挙げる——この決まりを足した周では走らせて確かめていない）。
 - **パスは、このスキルの base ディレクトリを絶対パスにして渡す**——周の体の cwd は worktree なので、`scripts/run-serial.py` のままでは解決しない。
+- **枠は cwd のリポジトリで数える。cwd がリポジトリの外なら `--repo <対象のリポジトリ>` で指す**（コマンドは呼んだ cwd のまま走る。#1505）——
+  指さずに外から呼ぶと、cwd を名指しして 125（走らせていない）で終わる。
 - **周の中で検査を走らせる体すべてに渡す**——実装役・Verifier（1・2 パス目と狭いパス）・`/code-review`（委譲文に足す）。
   **関門の体は周の実装役とは別に検査を起こすので、渡さないと周の数を絞っても重なる。**
 - **同じリポジトリで同時に走るのは、`.claude/dev-loop.md` の `並行の検査: N` の本数まで**（宣言が無ければ 1）。
@@ -185,7 +187,7 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
    止める前に、**その pid がいまも、記録を書いたラッパーであること**を確かめる（D5）——記録だけ残った pid が別のプロセスに使い回されていることがあり
    （run-serial の docstring の「守らない」）、`run-serial.py` の部分一致では `test-run-serial.py`・別の周のラッパー・`holders` の呼び出しにも当たる。照合するのは次の 4 つで、**全部が合うときだけ止める**:
    - **枠の記録にその pid がある**——枠のディレクトリ（`<git の共通ディレクトリ>/dev-loop-serial/slot-<k>.lock`）の記録の `pid`
-   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] -- <コマンド>` で起こした形（`--timeout=<秒>` の形も、2 回以上渡した形も——run-serial は最後の値を使う。#917）
+   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] [--repo <パス>] -- <コマンド>` で起こした形（`--timeout=<秒>`・`--repo=<パス>` の形も、2 回以上渡した形も——run-serial は最後の値を使う。#917。`--repo` は #1505。空白を含むパスの `--repo` は照合に合わず、止めない）
    - **`--` の後ろが、記録の `command` とちょうど同じ**、**プロセスの cwd が記録の `cwd` と同じ**（macOS は `lsof`、Linux は `/proc/<pid>/cwd`）
    - **プロセスを起こした時刻が、記録の `started`（枠を取った時刻）より後でない**——後なら、記録の後に pid を使い回したプロセスである。`started` は時間帯（`%z`）つきで読み、起こした時刻は経過（`ps` の `etime`）から出す——記録を書いた子と親で `TZ` が違っても、夏時間の切り替わりでも、同じ瞬間どうしで比べる（秒までなので 2 秒の幅を見る。#917）
 
@@ -221,7 +223,7 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
        except OSError:
            out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
            return next((line[1:] for line in out.splitlines() if line.startswith("n")), None)
-   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout[ =][0-9]+)* -- (.*)", ps("command"))
+   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout[ =][0-9]+| --repo[ =]\S+)* -- (.*)", ps("command"))
    why = None
    if rec is None:
        why = "枠の記録にこの pid が無い"
