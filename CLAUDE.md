@@ -381,7 +381,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     テストは回す**——`test-export-diagrams.py` と同じ形）
   - `test-check-site-links.py` - リンク検査の回帰テスト（変異テストを含む）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
-  - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた）と
+  - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた。**無条件のジョブの `--shard K/N` の行が 1..N を覆う形は全部を回したに数える**——#1475。`full_runs` の docstring を正とする）と
     集約の検査。**CI のステップをコメントアウトしても素通しだったのを直した**（#155。
     **「そもそも無い」と「コメントアウト」を分けて報告するが、
     分けられる条件があり、外れると前者に出る**——**条件は docstring を正とする**）。
@@ -611,7 +611,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-formal-baseline.py` - spec-loop の形式検査のモデルの書く場所と形の確かめ（#1031）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の git リポジトリとタグを作って**当て、**本体の記録の項目が `references/tree.md` の表と一致すること**と、
     `check-findings-csv.py` が `モデルの保存` の行を実行の行と読まないことも見る
-  - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する）。
+  - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する。
+    **CI では `--shard K/N` で変異の観測を複数のジョブに分ける**——#1475。分け方と各シャードで回すものは docstring を正とする）。
     **偽の `claude`・`osascript`・`security`・`uname` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**。台帳は本物の `autopilot-ledger.py` で作り、
     長期トークンは本物の起動口（`launch-with-long-token.sh`）を偽の `security` で回す。上限の待ちは眠らずに秒数を記録する
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
