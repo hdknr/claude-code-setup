@@ -204,6 +204,47 @@ SERIAL = "serial"
 KILLED_WAIT = 0.2
 # 契約 11 の「遅く通る回帰テスト」が眠る秒数（#1040）。所要時間がこれ以上と出ることを見る——0 にする変異を捕まえる。
 SLOW_OK = 0.3
+# **契約 11 の遅い 4 本は、速い 4 本が終わってから眠る**（#1474）——眠りの差（0.15〜0.3 秒）だけで「遅い」を作ると、
+# 負荷で速い子の起動が遅れたときに順位が入れ替わる（`check-all.py --no-cache` 2 本の並走で 200 回に 34 回。速い子が 0.5〜1.1 秒になった）。
+# - `TIMED`——契約 11 が置く印。中身は、全部を同時に走らせるのに要る作業者の数と、待つ相手（速い 4 本）の名前。
+#   **印が無い契約（slow-bad を使う契約 10 など）では待たない。**
+# - `WORKERS`——`record_pools` のプールが置く、作業者の数の印。**作業者が全部を同時に走らせる数に足りなければ待たない**
+#   ——足りないと遅い 4 本が作業者をふさぎ、速い子が走れずに上限まで待ち切る（`--jobs を無視する` の変異を cpu 4 の機械で回すと、
+#   1 回に約 30 秒延びた。#1474 の 1 パス目の Verifier と /code-review）。作業者が 1 つの回（`SERIAL`）もここに入る。
+# - `DONE`——速い子が終わりに置く印の頭（`done-<名前>`）。どの契約でも置く（出力は変えない）。
+# - `SAW`——遅い子が、待つ相手の印を全部見てから置く印の頭（`saw-<名前>`）。契約 11 はこれで「待った」ことを見る。
+# - `TIMED_WAIT`——待ちの上限（秒）。速い子が走らない変異で止まらないため。**`BARRIER_WAIT` と同じ長さに取る**——
+#   同時に起きるはずの相手が来ないのは起動の遅れである。5 秒だった版は、重い負荷の下で `--part contract` 30 回に 2 回、
+#   `saw-` が置かれずに落ちた（#1474 の周。待ち切ったと推したが、確かめた回では再現しなかった）。
+#   相手が来れば即座に抜けるので、通る回の所要時間には効かない。
+TIMED = "timed"
+WORKERS = "workers"
+DONE = "done-"
+SAW = "saw-"
+TIMED_WAIT = BARRIER_WAIT
+
+
+def done_mark(name: str) -> str:
+    """速い子の終わりに足す行。終わった印 `done-<名前>` を置く（#1474）。"""
+    return (f"import pathlib; _d = pathlib.Path('{FLAGS}'); _d.mkdir(exist_ok=True); "
+            f"(_d / '{DONE}{name}').touch()\n")
+
+
+def wait_fast(me: str) -> str:
+    """遅い子の頭に置く行（#1474）。印 `timed` があり、作業者（印 `workers`）が `timed` の数以上なら、
+    名前の全部の `done-` を待ち、見たら `saw-<me>` を置く。"""
+    return (
+        "import pathlib, time\n"
+        f"_d = pathlib.Path('{FLAGS}')\n"
+        f"_t, _w = _d / '{TIMED}', _d / '{WORKERS}'\n"
+        "_need, *_names = _t.read_text().split() if _t.exists() else ['0']\n"
+        "if _t.exists() and _w.exists() and _w.read_text().isdigit() and int(_w.read_text()) >= int(_need):\n"
+        f"    _done = lambda: all((_d / ('{DONE}' + n)).exists() for n in _names)\n"
+        f"    _end = time.time() + {TIMED_WAIT}\n"
+        "    while not _done() and time.time() < _end:\n"
+        "        time.sleep(0.005)\n"
+        "    if _done():\n"
+        f"        (_d / '{SAW}{me}').touch()\n")
 BARRIER = """\
 import pathlib, sys, time
 d = pathlib.Path("{flags}")
@@ -271,15 +312,17 @@ def build_fake(root: Path) -> Path:
     scripts = root / "scripts"
     scripts.mkdir(parents=True)
     # **宣言の先頭を遅らせる。** 終わった順に出す本体だと、後ろの行が先に出る（契約 1 の順序）。
-    (scripts / "ok-a.py").write_text("import time; time.sleep(0.05); print('a ok')\n")
-    (scripts / "ok-b.py").write_text("print('b ok')\n")
+    # 速い 4 本は終わりに `done-<名前>` の印を置く（#1474。契約 11 の遅い子が待つ相手）。
+    (scripts / "ok-a.py").write_text("import time; time.sleep(0.05); print('a ok')\n" + done_mark("ok-a.py"))
+    (scripts / "ok-b.py").write_text("print('b ok')\n" + done_mark("ok-b.py"))
     # 回帰テストの側の先頭。**順序を見る契約 1 では、遅延ではなく `hold_head_test` が後に終わらせる**（#437）。
-    (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n")
-    (scripts / "ok-c.py").write_text("print('c ok')\n")
+    (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n" + done_mark("ok-t.py"))
+    (scripts / "ok-c.py").write_text("print('c ok')\n" + done_mark("ok-c.py"))
     # 契約 11 の遅く通る 1 本（#1040）。
     # 3 本——並列のとき、1 本ごとの合計が壁時計より丸めの誤差を越えて長くなるように（#1040 の 2 パス目）。
+    # **契約 11 では速い 4 本の終わりを待ってから眠る**（#1474。`wait_fast`）。
     for slow in ("slow-ok.py", "slow-ok2.py", "slow-ok3.py"):
-        (scripts / slow).write_text(f"import time; time.sleep({SLOW_OK}); print('slow ok')\n")
+        (scripts / slow).write_text(wait_fast(slow) + f"time.sleep({SLOW_OK}); print('slow ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
@@ -287,7 +330,9 @@ def build_fake(root: Path) -> Path:
     # **「遅れて」は時間ではなく印で作る**（#687）——歯止めは、打ち切られる子が起動した印を見てから落ちる。
     # 0.2 秒の眠りだった頃は、契約 10 を回すたびに（本体と変異の数だけ）0.2 秒ずつ足していた。
     # 同時に起動しない（作業者が 1 つの）変異では印が来ないので、`KILLED_WAIT` で待ちを切ってから落ちる。
+    # **契約 11（`killed` の印が無い）では、速い 4 本の終わりを待ってから `KILLED_WAIT` 待つ**（#1474。`wait_fast`。契約 10 では待たない）。
     (scripts / "slow-bad.py").write_text(
+        wait_fast("slow-bad.py") +
         "import pathlib, sys, time\n"
         f"end = time.time() + {KILLED_WAIT}\n"
         f"while not pathlib.Path('{FLAGS}', 'killed').exists() and time.time() < end:\n"
@@ -348,10 +393,11 @@ def record_pools(mod) -> list[RecordingPool]:
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             pools.append(self)
+            flags = Path(mod.SCRIPTS).parent / FLAGS
+            assert_not_real_repo(flags)
+            flags.mkdir(exist_ok=True)
+            (flags / WORKERS).write_text(str(self.workers))  # 契約 11 の遅い子が読む（#1474）
             if self.workers is not None and self.workers < 2:
-                flags = Path(mod.SCRIPTS).parent / FLAGS
-                assert_not_real_repo(flags)
-                flags.mkdir(exist_ok=True)
                 (flags / SERIAL).touch()
 
     mod.ThreadPoolExecutor = Pool
@@ -575,6 +621,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     ]
 
     # 11) 所要時間（#1040）。遅く通る回帰テスト（slow-ok）と遅れて落ちる歯止め（slow-bad。印が無いので KILLED_WAIT 待つ）を含む 8 本と SKIP 1 本。
+    #     **遅い 4 本は、速い 4 本（ok-*）が終わった印を見てから眠る**（#1474。`wait_fast`）——眠りの差だけでは、負荷で速い子の起動が遅れると順位が入れ替わった。
     #     **上位の本数（TOP）より多く回す**——本数を絞らない変異を捕まえるため。
     #     **遅く通る回帰テストは 3 本で、全部を同時に起こす（--jobs 8）**——合計と壁時計の差を、丸めの誤差より大きくする（下の合計の表明）。
     mod = load(target, f"{tag}_timed")
@@ -584,12 +631,26 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     mod.TESTS = ["slow-ok.py", "slow-ok2.py", "slow-ok3.py", "ok-t.py", "ok-b.py"]
     top_n = load(TARGET, f"{tag}_topn").TOP  # 本数は本体の宣言を正とする（変異の側の値ではなく）
     clear_flags(root)  # 契約 10 が置いた killed の印を消す——残っていると slow-bad が待たずに落ちる
+    # **遅い 4 本に、速い 4 本の終わりを待たせる**（#1474）——待つ相手は宣言から引く（手で写さない）。
+    # 作業者が 8 本を同時に走らせる数に足りない変異（直列に戻す・cpu の少ない機械での `--jobs を無視する`）は、
+    # `record_pools` が置く作業者の数の印で待たない。
+    record_pools(mod)
+    slow = [n for n, *_ in mod.GUARDS if n.startswith("slow-")] + [n for n in mod.TESTS if n.startswith("slow-")]
+    fast = [n for n, *_ in mod.GUARDS if n.startswith("ok-")] + [n for n in mod.TESTS if n.startswith("ok-")]
+    flags = root / FLAGS
+    flags.mkdir(exist_ok=True)
+    (flags / TIMED).write_text(" ".join([str(len(fast) + len(slow)), *fast]))
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "8"])
+    saw = sorted(n for n in slow if (flags / f"{SAW}{n}").exists())
+    (flags / TIMED).unlink()  # 後ろの契約（12）と次の回に持ち越さない
     status = [l for l in out.splitlines() if l.startswith(("  OK  ", "  FAIL"))]
     t = times(out)
     top = top_entries(out)
     wall = WALL_LINE.search(out)
     got += [
+        # **遅い 4 本が速い 4 本の終わりを見てから眠った**（#1474）——待ちを外すと、負荷が無くてもここで赤になる。
+        ("遅い 4 本は速い 4 本が終わってから眠る（#1474）",
+         len(slow) == 4 and len(fast) == 4 and saw == sorted(slow)),
         ("OK と FAIL の全部の行に所要時間が出る（#1040）",
          len(status) == 8 and len(t) == 8 and all(TIMED_LINE.match(l) for l in status)),
         ("FAIL の行にも所要時間が出る（#1040）", "slow-bad.py" in t),
@@ -606,7 +667,8 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         ("全体の壁時計が出て、1 本の最大以上（#1040）",
          wall is not None and bool(t) and float(wall.group(1)) >= max(t.values())),
         # **並列（--jobs 8）なので、壁時計は 1 本ごとの合計より短い**——合計を全体と称する変異を捕まえる（#1040 の 1 パス目）。
-        # 合計は遅い 4 本（SLOW_OK × 3 と KILLED_WAIT）と 8 本ぶんの起動を足したもの、壁時計はほぼ最も遅い 1 本と base の解決。
+        # 合計は遅い 4 本（速い 4 本の終わりまでの待ちに SLOW_OK × 3 と KILLED_WAIT を足したもの。#1474）と 8 本ぶんの起動を足したもの、
+        # 壁時計はほぼ最も遅い 1 本と base の解決。
         # **丸めの誤差ぶんの余裕を取る**（#1040 の 2 パス目）——行の値は 0.1 秒に丸めるので、行の合計は本当の合計より最大 0.05 × 本数だけ大きい。
         # 余裕なしの `<` では、負荷の下で軽い本が 0.1 に切り上がり、合計を全体と称する変異が 4 回に 1 回ほど素通りした（/code-review の実測）。
         ("全体は壁時計で、1 本ごとの合計ではない（並列。#1040）",
