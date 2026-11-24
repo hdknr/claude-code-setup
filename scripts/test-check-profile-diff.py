@@ -17,6 +17,7 @@
 4. **候補の性質（プロパティテスト）**——標準ライブラリの `random` で古い層・新しい層・切れたリンク・指した ID を生成し、本体の純粋な関数 `candidates` の (ID, 種類) の集合が
    テストの側で別に計算したものと同じこと（500 例。seed を出す）。**性質を破る変異（「消えた」を出さない）でこのテストが落ちる陽性対照つき。**
 5. **本体の定数が `plugins/platform-spec/references/infra-profile.md` の「版の差分と関門」と一致する**（崩すと不一致になる陽性対照つき）。
+   本体の「守ること」の、設定のタグが自分の名前の形に当たらないときの行も、同じ言い方で原本にあること（#1514）。
 6. **変異テスト**——本体を 1 箇所ずつ壊し、名指しした試料が期待どおりでなくなること（壊さない写しを同じ置き方で置くと期待どおりになる陰性対照つき）。
    **変異の数は docstring の「守ること」の行の数と同じ**（手で数えない）。変異ごとに、壊す箇所が本体にちょうど 1 回現れることを先に確かめる。
 
@@ -338,7 +339,21 @@ def reference_mismatches(module, infra_md: str) -> list[str]:
         problems.append("版の順（v:refname）が原本に無い")
     if f"`{module.base.SETTING_CHECKED}`" not in diff:
         problems.append(f"任意の項目 {module.base.SETTING_CHECKED} が原本の「版の差分と関門」に無い")
+    rule = self_shape_rule(module)
+    if rule is None:
+        problems.append(f"本体の「守ること」に「{SELF_SHAPE}」の行が 1 行でない")
+    elif rule not in diff:
+        problems.append(f"本体の「守ること」の「{rule}」が、原本の「版の差分と関門」に同じ言い方で無い（#1514）")
     return problems
+
+
+SELF_SHAPE = "自分の名前の形に当たらない"
+
+
+def self_shape_rule(module) -> str | None:
+    """本体の「守ること」のうち、設定のタグが自分の名前の形に当たらないときの行（先頭の `- ` を除く）。1 行でなければ None。"""
+    rules = [line[2:] for line in tip.guarded_lines(module.__doc__ or "") if SELF_SHAPE in line]
+    return rules[0] if len(rules) == 1 else None
 
 
 REFERENCE_MUTATIONS = [
@@ -401,6 +416,12 @@ def main() -> int:
         head, _, rest = infra_md.partition("## 版の差分と関門")
         check("崩しても不一致にならない: 版の差分と関門の `確かめたタグ`",
               bool(reference_mismatches(module, head + "## 版の差分と関門" + rest.replace("`確かめたタグ`", "確かめたタグ"))))
+        rule = self_shape_rule(module)
+        if rule is None or infra_md.count(rule) != 1:
+            check("崩す箇所が 1 回でない: 設定のタグが自分の名前の形に当たらないときの文", False, f"{infra_md.count(rule) if rule else 0} 回")
+        else:
+            check("崩しても不一致にならない: 設定のタグが自分の名前の形に当たらないときの文",
+                  bool(reference_mismatches(module, infra_md.replace(rule, rule.replace("（比べずに 0）", "")))))
 
         # 変異
         guarded = tip.guarded_lines(source)
