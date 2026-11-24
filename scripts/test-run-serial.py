@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`run-serial.py`（重い検査・アプリの起動の順番待ち。#493）の回帰テスト。
 
-    python3 scripts/test-run-serial.py                    # 全部（本体のままの観測 17 種と変異の全部）
+    python3 scripts/test-run-serial.py                    # 全部（本体のままの観測 18 種と変異の全部）
     python3 scripts/test-run-serial.py --jobs 1           # 観測と変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
     python3 scripts/test-run-serial.py --part holders     # 本体のままの観測を名指しした分だけ（繰り返せる。変異は当てない）
     python3 scripts/test-run-serial.py --mutant '経過を出さない'   # 名指しした変異だけ（繰り返せる。本体の観測は当てない）
@@ -237,7 +237,9 @@ def observe_codes(script: Path, tmp: Path, tag: str) -> dict:
     bad = {}
     for label, opts in (("--timeout 0", ("--timeout", "0")), ("--timeout abc", ("--timeout", "abc")),
                         ("--timeout=-5", ("--timeout=-5",)), ("--timeout の値なし", ("--timeout",)),
-                        ("知らない引数", ("--bogus",))):
+                        ("知らない引数", ("--bogus",)),
+                        # `--repo` に値が無ければ、cwd のリポジトリへ落とさずに 2（#1505）
+                        ("--repo の値なし", ("--repo",)), ("--repo= の空", ("--repo=",))):
         mark = tmp / f"{tag}-codes-bad{len(bad)}.ran"
         code, err = run_once(script, root, [py, "-c", f"open({str(mark)!r}, 'w').write('x')"], opts=opts)
         bad[label] = (code, mark.exists(), "run-serial:" in err)
@@ -266,7 +268,59 @@ def observe_cannot(script: Path, tmp: Path, tag: str) -> dict:
     mark = tmp / f"{tag}-outside.ran"
     env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(tmp), GIT_DIR=str(outside / "no-such-git-dir"))
     code, err = run_once(script, outside, [sys.executable, "-c", f"open({str(mark)!r}, 'w').write('x')"], env=env)
-    return {"125": code == 125, "走らせていない": not mark.exists(), "理由を言う": "走らせていない" in err}
+    # `--repo` がディレクトリでないときも走らせず、そのパスを名指しする（#1505）
+    missing = tmp / f"{tag}-no-such-repo"
+    mark2 = tmp / f"{tag}-outside-repo.ran"
+    code2, err2 = run_once(script, outside, [sys.executable, "-c", f"open({str(mark2)!r}, 'w').write('x')"],
+                           env=env, opts=("--repo", str(missing)))
+    return {"125": code == 125, "走らせていない": not mark.exists(), "理由を言う": "走らせていない" in err,
+            # 決めようとした場所（cwd）を名指しし、`--repo` で指すよう言う（#1505）
+            "cwd を名指しする": f"cwd {outside.resolve()}" in err or f"cwd {outside}" in err,
+            "--repo で指すよう言う": "`--repo <パス>` で指す" in err,
+            "--repo がディレクトリでない: 125 で走らせず、そのパスを名指しする":
+                code2 == 125 and not mark2.exists() and str(missing) in err2 and "ディレクトリでない" in err2}
+
+
+def observe_repo(script: Path, tmp: Path, tag: str) -> dict:
+    """`--repo <パス>`（#1505）: リポジトリの外の cwd から、worktree のサブディレクトリを相対パスで指して B を呼ぶ。
+    メインの作業ツリーの A が枠を持つあいだ B は待ち（同じ枠）、A の後に走り、B のコマンドは呼んだ cwd（外）で走る。"""
+    root = tmp / f"{tag}-repo"
+    wt = build_repo(root, None)
+    (wt / "sub").mkdir()
+    outside = tmp / f"{tag}-repo-outside"
+    outside.mkdir()
+    assert_not_real_repo(outside)
+    marks = tmp / f"{tag}-repo-marks"
+    marks.mkdir()
+    worker = tmp / f"{tag}-repo-worker.py"
+    worker.write_text(WORKER, encoding="utf-8")
+    err_a, err_b = marks / "a.err", marks / "b.err"
+    env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(tmp))  # 外の cwd がどのリポジトリにも属さないように
+    a = launch(script, root, [sys.executable, str(worker), str(marks), "a", "go", "10"], err_a)
+    started = wait_until(lambda: (marks / "a.start").exists(), [a])
+    cwd_file = marks / "b.cwd"
+    relative = os.path.relpath(wt / "sub", outside)
+    b = launch(script, outside,
+               [sys.executable, "-c",
+                "import os, pathlib, subprocess, sys; pathlib.Path(sys.argv[1]).write_text(os.getcwd());"
+                " sys.exit(subprocess.call(sys.argv[2:]))",
+                str(cwd_file), sys.executable, str(worker), str(marks), "b", "a.end", "10"],
+               err_b, env=env, opts=("--repo", relative))
+    said = wait_until(lambda: "待っている" in err_b.read_text(encoding="utf-8")
+                      or (marks / "b.start").exists(), [b], limit=10)
+    b_early = (marks / "b.start").exists() and not (marks / "a.end").exists()
+    (marks / "go").write_text("")
+    codes = finish(a, b)
+    text_b = err_b.read_text(encoding="utf-8")
+    ran_in = cwd_file.read_text(encoding="utf-8") if cwd_file.exists() else ""
+    return {
+        "A が走った": started,
+        "B は A が終わるまで始めなかった": not b_early and (marks / "b.start").exists(),
+        "B が待っていると言った": said and "待っている" in text_b,
+        "B が A を名指しした": f"pid {a.pid}" in text_b,
+        "B のコマンドは呼んだ cwd で走った": ran_in in (str(outside), str(outside.resolve())),
+        "終了コード": codes,
+    }
 
 
 DECLS = {
@@ -969,7 +1023,7 @@ MUTATIONS = {
         "    if False:"),
     # 守る 5: 枠を決められなければ、コマンドを走らせずに 125 を返す
     "決められなくても走らせる": (
-        "        say(\"枠を決められない（git の共通ディレクトリが決まらない）——走らせていない\")\n        return CANNOT",
+        "        say(f\"枠を決められない（git の共通ディレクトリが決まらない）——{why}。走らせていない\")\n        return CANNOT",
         "        return run(command, dict(os.environ), timeout)"),
     # 守る 6: 宣言が 1 以上の整数（6 桁まで）でない
     "読めない値で 1 と言いつつ 3 本にする": (
@@ -1201,6 +1255,18 @@ MUTATIONS = {
     "書式に合わない行を見ない": (
         "    if strange:",
         "    if False:"),
+    # 守る 63: `--repo <パス>` を渡したら、cwd に依らずそのパスのリポジトリの枠で数え
+    "--repo を見ない": (
+        "    common, why = locate(Path.cwd() if repo is None else repo.absolute(), repo is not None)",
+        "    common, why = locate(Path.cwd(), False)"),
+    # 守る 64: 枠を決められないときは、決めようとした場所（cwd か `--repo` のパス）を名指しし
+    "決められない場所を名指さない": (
+        "        return None, f\"{label} は git の作業ツリーの外か、git が判定できない（git: {said}）{hint}\"",
+        "        return None, \"git が判定できない\""),
+    # 守る 65: `--repo` に値が無い（空を含む）なら、走らせずに 2 を返す
+    "--repo の空の値を cwd と読む": (
+        "            if not value:",
+        "            if False:"),
 }
 
 OBSERVERS = {
@@ -1208,7 +1274,7 @@ OBSERVERS = {
     "cannot": observe_cannot, "decl": observe_decl, "sigterm": observe_sigterm, "parse": observe_parse,
     "sigint": observe_sigint, "timeout": observe_timeout, "timeout-kill": observe_timeout_kill, "orphan": observe_orphan,
     "deadline": observe_deadline, "timeout-late": observe_timeout_late, "holders": observe_holders,
-    "shared": observe_shared, "load": observe_load,
+    "shared": observe_shared, "load": observe_load, "repo": observe_repo,
 }
 
 # 変異ごとに当てる観測（全部を当てると、待ちの上限で止まる観測が重なって数分かかる）。
@@ -1276,6 +1342,9 @@ MUTATION_PROBE = {
     "読めない負荷を空いていると読む": ("load",),
     "足さない理由を出さない": ("load",),
     "書式に合わない行を見ない": ("load",),
+    "--repo を見ない": ("repo",),
+    "決められない場所を名指さない": ("cannot",),
+    "--repo の空の値を cwd と読む": ("codes",),
 }
 
 
@@ -1391,6 +1460,19 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
         ck("125 を返す", k["125"])
         ck("コマンドを走らせていない", k["走らせていない"])
         ck("走らせていないと言う", k["理由を言う"])
+        ck("決めようとした場所（cwd）を名指しする（#1505）", k["cwd を名指しする"])
+        ck("`--repo` で指すよう言う（#1505）", k["--repo で指すよう言う"])
+        ck("`--repo` がディレクトリでない: 125 で走らせず、そのパスを名指しする（#1505）",
+           k["--repo がディレクトリでない: 125 で走らせず、そのパスを名指しする"])
+    if "repo" in o:
+        r = o["repo"]
+        head("\n`--repo`（#1505）: リポジトリの外の cwd から worktree を指す")
+        ck("A が走った", r["A が走った"])
+        ck("B は A が終わるまで始めなかった（`--repo` の指す先と同じ枠）", r["B は A が終わるまで始めなかった"])
+        ck("B が待っていると言った", r["B が待っていると言った"])
+        ck("B が走っているもの（A の pid）を名指しした", r["B が A を名指しした"])
+        ck("B のコマンドは呼んだ cwd（リポジトリの外）で走った", r["B のコマンドは呼んだ cwd で走った"])
+        ck("両方 0 で終わった", r["終了コード"] == [0, 0])
     if "decl" in o:
         head("\n読めない宣言・コードブロックと HTML コメントの中の宣言では、実効の枠が 1")
         for label, (serial, said, codes) in o["decl"].items():

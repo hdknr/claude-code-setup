@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""重い検査・アプリの起動を、同じリポジトリでは決めた本数ずつ順番待ちにして走らせる（#493）。
 
-    python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]
+    python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--timeout <秒>] [--repo <パス>] -- <コマンド> [引数 …]
     python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holders     # 持ち主を出すだけ（#898）
 
 **いつ通すか（cruise の周が、どのコマンドをこれ越しに走らせるか）は `references/parallel.md` を正とする**
@@ -39,6 +39,17 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
   メインの作業ツリーが決まらない（`--separate-git-dir`・サブモジュール・bare）なら宣言は読まず 1。
 - 枠のファイルは共通ディレクトリの下の `dev-loop-serial/slot-<k>.lock`（`k` は 0 から `N-1`。足した枠は `N` から `M-1`）。**枠は `fcntl.flock` の排他で、
   持ったプロセスが終われば（異常終了でも）外れる。** 持っている間はファイルに pid・場所・コマンド・始めた時刻を書き、待つ側がそれを出す。
+
+## 対象のリポジトリ（#1505）
+
+**枠を数えるリポジトリは cwd から決める。`--repo <パス>` を渡せば、cwd に依らずそのパスから決める**——コマンドは呼んだ cwd のまま走らせる
+（`--repo` は枠を決めるだけで、コマンドの cwd を変えない）。
+
+- **#1401 の 4**: 子が cwd を対象のリポジトリへ移さずに呼び、枠を決められずに 125 で終わった。理由の行が「git の共通ディレクトリが決まらない」としか言わず、
+  どこから決めようとしたのかも、どうすれば走るのかも出ていなかった。
+- **枠を決められなければ、決めようとした場所（cwd か `--repo` のパス）を名指しする**——git の作業ツリーの外（か git が判定できない）なら、git の言う理由を 1 行添え、
+  cwd から決めようとしたときは `--repo <パス>` で指すか cwd を移すよう言う。`--repo` のパスがディレクトリでなければそう言う。どれも 125（走らせていない）。
+- `--repo` は worktree のパスでも、メインの作業ツリーのパスでも、その中のサブディレクトリでもよい——共通ディレクトリはどれも同じ。
 
 ## 空いていれば足す（#1057）
 
@@ -102,8 +113,8 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 | --- | --- |
 | コマンドの終了コード | 走らせた。シグナルで終わったら 128 + シグナルの番号、コマンドが見つからなければ 127 |
 | 124 | **期限切れ**——走らせたが、期限を過ぎたので止めた（上の「期限」） |
-| 125 | **走らせていない**——枠を決められなかった（git が使えない・リポジトリの外・枠のファイルを開けない）か、待っているあいだに呼び出し元が居なくなった |
-| 2 | 走らせていない——`--` の後ろにコマンドが無い・`--timeout` の値が 1 以上の整数（7 桁まで）でない・`--` の前に知らない引数がある・`holders` の後ろに引数がある |
+| 125 | **走らせていない**——枠を決められなかった（git が使えない・cwd か `--repo` のパスがリポジトリの外・`--repo` のパスがディレクトリでない・枠のファイルを開けない）か、待っているあいだに呼び出し元が居なくなった |
+| 2 | 走らせていない——`--` の後ろにコマンドが無い・`--timeout` の値が 1 以上の整数（7 桁まで）でない・`--repo` に値が無い・`--` の前に知らない引数がある・`holders` の後ろに引数がある |
 
 **124・125・2 は、コマンドがその値を返したときとは出力で見分ける**（`run-serial:` で始まる行が理由を言う）。
 
@@ -177,9 +188,14 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - 負荷を読めなければ（`getloadavg` が無い・失敗する）足さない（#1057）
 - 待っているあいだ、足さない理由を待ちの報告の行に出す（#1057）
 - `空いているときの検査` の行が書式に合わないなら、足さずに言う（#1057）
+- `--repo <パス>` を渡したら、cwd に依らずそのパスのリポジトリの枠で数え、コマンドは呼んだ cwd のまま走らせる（#1505）
+- 枠を決められないときは、決めようとした場所（cwd か `--repo` のパス）を名指しし、cwd から決めようとしたなら `--repo` で指すよう言う（#1505）
+- `--repo` に値が無い（空を含む）なら、走らせずに 2 を返す（#1505）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
+- `--repo` が指すのが周の対象のリポジトリかは見ない——指した先の枠で数える（別のリポジトリを指せば、そちらの枠を待つ）
+- `holders` は `--repo` を取らない——cwd のリポジトリの持ち主を出す（外なら 125 で、場所を名指しする）
 - 順番待ちを通さずに走ったもの（周の言語モデルの体そのもの・これを通さない検査）は数えない
 - 走っている側が固まったら、待つ側は走っている側の期限まで待つ（待つ側自身の待ち時間に上限は無い——前に並ぶ全部の期限の和まで待ちうる）
 - 期限は枠を取ってから数える——待っている時間は数えない
@@ -262,19 +278,25 @@ def say(message: str) -> None:
     print(f"run-serial: {message}", file=sys.stderr, flush=True)
 
 
-def common_dir(cwd: Path) -> Path | None:
-    """共通ディレクトリ（worktree をまたいで同じ）。決まらなければ None。"""
+def locate(where: Path, repo: bool = False) -> tuple[Path | None, str]:
+    """(共通ディレクトリ（worktree をまたいで同じ）, 決まらなかった理由)。`where` は cwd か `--repo` のパス（`repo`）。
+    決まらなければ、決めようとした場所を名指しした理由を返す（#1505）。"""
+    label = f"`--repo` のパス {flat(str(where))}" if repo else f"cwd {flat(str(where))}"
+    hint = "" if repo else "——対象のリポジトリを `--repo <パス>` で指すか、cwd をその中に移す"
+    if not where.is_dir():
+        return None, f"{label} はディレクトリでない"
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            cwd=cwd, capture_output=True, text=True, check=False,
+            cwd=where, capture_output=True, text=True, check=False,
         )
-    except OSError:
-        return None
+    except OSError as exc:
+        return None, f"git を起こせない（{exc}）——{label} の枠を決められない"
     out = proc.stdout.strip()
     if proc.returncode != 0 or not out:
-        return None
-    return Path(out)
+        said = flat(proc.stderr.strip().splitlines()[0]) if proc.stderr.strip() else f"終了コード {proc.returncode}"
+        return None, f"{label} は git の作業ツリーの外か、git が判定できない（git: {said}）{hint}"
+    return Path(out), ""
 
 
 def closes(line: str, char: str, width: int) -> bool:
@@ -564,9 +586,9 @@ def holders(lockdir: Path, mine: frozenset = frozenset()) -> list[str]:
 
 def show_holders() -> int:
     """`holders` の口: 持ち主を標準出力に 1 回だけ出して終わる。枠を取らず、枠のディレクトリを作らない。"""
-    common = common_dir(Path.cwd())
+    common, why = locate(Path.cwd())
     if common is None:
-        say("枠を決められない（git の共通ディレクトリが決まらない）")
+        say(f"枠を決められない（git の共通ディレクトリが決まらない）——{why}")
         return CANNOT
     running = holders(common / "dev-loop-serial")
     print("\n".join(running) if running else "走っているものは無い", flush=True)
@@ -756,16 +778,24 @@ def run(command: list[str], env: dict[str, str], timeout: int) -> int:
     return 128 - code if code < 0 else code
 
 
-def options(argv: list[str]) -> tuple[list[str], int] | None:
-    """(コマンド, 期限の秒数)。使い方に合わなければ言って None。"""
-    usage = "使い方: run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]（持ち主を出すだけなら run-serial.py holders）"
+def options(argv: list[str]) -> tuple[list[str], int, Path | None] | None:
+    """(コマンド, 期限の秒数, `--repo` のパス)。使い方に合わなければ言って None。"""
+    usage = "使い方: run-serial.py [--timeout <秒>] [--repo <パス>] -- <コマンド> [引数 …]（持ち主を出すだけなら run-serial.py holders）"
     if "--" not in argv or not argv[argv.index("--") + 1:]:
         say(usage)
         return None
     head, command = argv[:argv.index("--")], argv[argv.index("--") + 1:]
+    repo = None
     timeout = DEFAULT_TIMEOUT
     while head:
         arg = head.pop(0)
+        if arg == "--repo" or arg.startswith("--repo="):
+            value = head.pop(0) if arg == "--repo" and head else arg.partition("=")[2]
+            if not value:
+                say(f"`--repo` に値が無い——{usage}")
+                return None
+            repo = Path(value)
+            continue
         if arg == "--timeout" and head:
             value = head.pop(0)
         elif arg.startswith("--timeout="):
@@ -780,7 +810,7 @@ def options(argv: list[str]) -> tuple[list[str], int] | None:
             say(f"`--timeout` の値 {value!r} は 1 以上の整数（7 桁まで）でない——走らせていない")
             return None
         timeout = int(value)
-    return command, timeout
+    return command, timeout, repo
 
 
 def main(argv: list[str]) -> int:
@@ -793,11 +823,11 @@ def main(argv: list[str]) -> int:
     parsed = options(argv)
     if parsed is None:
         return USAGE
-    command, timeout = parsed
+    command, timeout, repo = parsed
 
-    common = common_dir(Path.cwd())
+    common, why = locate(Path.cwd() if repo is None else repo.absolute(), repo is not None)
     if common is None:
-        say("枠を決められない（git の共通ディレクトリが決まらない）——走らせていない")
+        say(f"枠を決められない（git の共通ディレクトリが決まらない）——{why}。走らせていない")
         return CANNOT
     lockdir = common / "dev-loop-serial"
 
