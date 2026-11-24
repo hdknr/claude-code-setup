@@ -259,6 +259,8 @@ cruise: 直す線 = 既定
 - **親は版を割り当てません。** 各周は PR で版を上げ、マージの直前に PR が main より古ければ、main を取り込んで main より上に上げ直してからマージします。
   利用者の判断を待つ PR があっても、同じプラグインを触る他の周を先にマージできます。
   対象リポジトリの決まりがそう書いていれば（このリポジトリは書いている）、取り込みの後は手元で全部の歯止めを回し直さず、軽い検査だけ回して push し、PR 側の CI が全部通ったのを見てからマージします（[#831](https://github.com/hdknr/claude-code-setup/issues/831)）。
+- **main が進むたびの取り込み直しを減らします**（[#1506](https://github.com/hdknr/claude-code-setup/issues/1506)）。親は触るファイルが重ならない周を並べて始め、同じ番号・名前（migration の番号・seed の名前など）を足しうる周の組を始める前に名指して並べません。
+  マージを待つ PR が 2 本以上あれば、先にマージの順を決め、取り込みを頼むのは順の先頭の 1 本だけです。親の依頼には印（依頼の時刻と PR の先端の SHA）を付け、子は報告の 1 行目にそれを写すので、古い依頼への報告を取り違えません。
 - 決まりは
   [`references/parallel.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/references/parallel.md)
   を正とします。
