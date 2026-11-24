@@ -24,7 +24,7 @@
    引用の両側・括弧の言い換えと、引いた先も言い換えて続きの行に文面がある言い換え（G61〜G63・G67。0）・引用の行ごと付け替え先へ移す・文字を含む印で下ろす・番号の印だけを写す・
    付け替え先の ID も新しい引きの項へ寄せる付け替え（G64〜G66・G68・G69。1）・元の項の頭を付け替え先の頭の写しにして付け替え先を言い換える付け替え（G70。1）・
    引いた先の項の頭も言い換えたうえで、引用の行を頭の行に上げる・頭だけの本文の行を残す・上げた引用を折り返す・括弧を落とす自分の頭の言い換え（G71〜G73・G81。0——#1453）・
-   元の項の頭を付け替え先の頭と引用の後ろの文面の写しにする付け替え（G74〜G80。1）・
+   元の項の頭を付け替え先の頭と引用の後ろの文面の写しにする付け替え（G74〜G80・G82。1）・
    改名（G32〜G34・G39。改名だけなら 0——R1。コミット前でも 0）。
 4. **原本との突き合わせ**——本物の台帳が 0 で通る・`references/prune.md` の記録の例が本体の正規表現に当たる・「削らない」が「黙って削らない」に置き換わっている。
 
@@ -668,6 +668,9 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
              copy_head_with_tail("要点: BBB ふたつめの行です（上と同じ）", "要点: BBB"), pre_base=pre_body("   - BBB ふたつめの行です（上と同じ）"))
     scenario("G80 G75 で、頭を付け替え先の新しい頭の縮めと上げた引用の行にしても 1", 1, "付け替えた",
              copy_head_with_tail("BBB 二つめ（下の「BBB ふたつめの行です」と同じ）", "BBB 二つめ（"), pre_base=pre_quote_bbb)
+    # #1453 の狭いパスの R1: 引用の手前の文面が元の項の頭と語尾だけ偶然に重なる付け替え（1）
+    scenario("G82 G78 で、前置きが元の項の頭と語尾だけ重なっても 1（`この行です:`）", 1, "付け替えた",
+             copy_head_with_tail("この行です: 「BBB ふたつめの行です」と同じ）", "この行です: 「BBB"), pre_base=pre_quote_bbb)
     return bad
 
 
@@ -769,6 +772,8 @@ MUTATIONS = [
     ("頭の行の引いた頭が引用の前後の文面と続いていても、頭の写しと見る", "guard", ' or lifted_quote(flat(f), prev_lines, head_text, flat(prev or ""))', "", "guard"),
     ("引用の手前の文面が元の項の頭と関わらなくても、引用を上げた言い換えと見る", "guard", " and shares(head_text[:j], prev_head):", ":", "guard"),
     ("頭の行の下の折り返しの行を頭に数えない", "guard", 'head_text = flat("\\n".join(head_wrap))', 'head_text = flat(head_wrap[0]) if head_wrap else ""', "guard"),
+    ("元の項の頭の書き出しでなく、どこかの 3 字が重なれば言い換えと見る", "guard", "return start is not None and start in text",
+     "return any(prev_head[i:i + n] in text for i in range(len(prev_head) - n + 1) if any(c.isalnum() for c in prev_head[i:i + n]))", "guard"),
     ("引用の手前に引いた頭の写しがあっても、引用を上げた言い換えと見る", "guard", " and head not in head_text[:j] and", " and", "guard"),
 ]
 
