@@ -273,7 +273,14 @@ def observe_cannot(script: Path, tmp: Path, tag: str) -> dict:
     mark2 = tmp / f"{tag}-outside-repo.ran"
     code2, err2 = run_once(script, outside, [sys.executable, "-c", f"open({str(mark2)!r}, 'w').write('x')"],
                            env=env, opts=("--repo", str(missing)))
+    # `holders` は `--repo` を取らないので、外の cwd からは cwd を移すよう言い、`--repo` で指せとは言わない（#1505 の 1 パス目）
+    held = subprocess.run([sys.executable, str(script), "holders"], cwd=outside, capture_output=True, text=True,
+                          timeout=LIMIT, env=env)
     return {"125": code == 125, "走らせていない": not mark.exists(), "理由を言う": "走らせていない" in err,
+            "holders: 125 で cwd を名指しし、`--repo` で指せと言わない":
+                held.returncode == 125
+                and (f"cwd {outside.resolve()}" in held.stderr or f"cwd {outside}" in held.stderr)
+                and "`--repo <パス>` で指す" not in held.stderr and "cwd を対象のリポジトリの中に移す" in held.stderr,
             # 決めようとした場所（cwd）を名指しし、`--repo` で指すよう言う（#1505）
             "cwd を名指しする": f"cwd {outside.resolve()}" in err or f"cwd {outside}" in err,
             "--repo で指すよう言う": "`--repo <パス>` で指す" in err,
@@ -313,7 +320,20 @@ def observe_repo(script: Path, tmp: Path, tag: str) -> dict:
     codes = finish(a, b)
     text_b = err_b.read_text(encoding="utf-8")
     ran_in = cwd_file.read_text(encoding="utf-8") if cwd_file.exists() else ""
+    # 環境変数の GIT_DIR が別のリポジトリを指していても、`--repo` の指す先の枠で数える（#1505 の 1 パス目）
+    other = tmp / f"{tag}-repo-other"
+    build_repo(other, None)
+    held_file = marks / "held.txt"
+    code_env, _ = run_once(script, outside,
+                           [sys.executable, "-c",
+                            "import os, sys; open(sys.argv[1], 'w').write(os.environ.get('DEV_LOOP_SERIAL_HELD', ''))",
+                            str(held_file)],
+                           env=dict(env, GIT_DIR=str(other / ".git")), opts=("--repo", str(wt)))
+    held_in = held_file.read_text(encoding="utf-8") if held_file.exists() else ""
     return {
+        "GIT_DIR が別のリポジトリを指しても --repo の枠で数えた":
+            code_env == 0 and bool(held_in)
+            and Path(held_in).resolve() == (root / ".git" / "dev-loop-serial").resolve(),
         "A が走った": started,
         "B は A が終わるまで始めなかった": not b_early and (marks / "b.start").exists(),
         "B が待っていると言った": said and "待っている" in text_b,
@@ -1267,6 +1287,10 @@ MUTATIONS = {
     "--repo の空の値を cwd と読む": (
         "            if not value:",
         "            if False:"),
+    # 守る 66: `--repo` を渡したら、リポジトリを名指す環境変数
+    "--repo でも GIT_DIR に従う": (
+        "    env = {k: v for k, v in os.environ.items() if k not in GIT_LOCAL} if repo else None",
+        "    env = None"),
 }
 
 OBSERVERS = {
@@ -1345,6 +1369,7 @@ MUTATION_PROBE = {
     "--repo を見ない": ("repo",),
     "決められない場所を名指さない": ("cannot",),
     "--repo の空の値を cwd と読む": ("codes",),
+    "--repo でも GIT_DIR に従う": ("repo",),
 }
 
 
@@ -1462,6 +1487,8 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
         ck("走らせていないと言う", k["理由を言う"])
         ck("決めようとした場所（cwd）を名指しする（#1505）", k["cwd を名指しする"])
         ck("`--repo` で指すよう言う（#1505）", k["--repo で指すよう言う"])
+        ck("`holders` は外の cwd を名指しし、取らない `--repo` を勧めない（#1505）",
+           k["holders: 125 で cwd を名指しし、`--repo` で指せと言わない"])
         ck("`--repo` がディレクトリでない: 125 で走らせず、そのパスを名指しする（#1505）",
            k["--repo がディレクトリでない: 125 で走らせず、そのパスを名指しする"])
     if "repo" in o:
@@ -1472,6 +1499,8 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
         ck("B が待っていると言った", r["B が待っていると言った"])
         ck("B が走っているもの（A の pid）を名指しした", r["B が A を名指しした"])
         ck("B のコマンドは呼んだ cwd（リポジトリの外）で走った", r["B のコマンドは呼んだ cwd で走った"])
+        ck("環境変数の GIT_DIR が別のリポジトリを指しても、`--repo` の指す先の枠で数えた",
+           r["GIT_DIR が別のリポジトリを指しても --repo の枠で数えた"])
         ck("両方 0 で終わった", r["終了コード"] == [0, 0])
     if "decl" in o:
         head("\n読めない宣言・コードブロックと HTML コメントの中の宣言では、実効の枠が 1")

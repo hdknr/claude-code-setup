@@ -191,11 +191,14 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - `--repo <パス>` を渡したら、cwd に依らずそのパスのリポジトリの枠で数え、コマンドは呼んだ cwd のまま走らせる（#1505）
 - 枠を決められないときは、決めようとした場所（cwd か `--repo` のパス）を名指しし、cwd から決めようとしたなら `--repo` で指すよう言う（#1505）
 - `--repo` に値が無い（空を含む）なら、走らせずに 2 を返す（#1505）
+- `--repo` を渡したら、リポジトリを名指す環境変数（`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR`・`GIT_INDEX_FILE`）に依らず、そのパスから枠を決める（#1505）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
 - `--repo` が指すのが周の対象のリポジトリかは見ない——指した先の枠で数える（別のリポジトリを指せば、そちらの枠を待つ）
-- `holders` は `--repo` を取らない——cwd のリポジトリの持ち主を出す（外なら 125 で、場所を名指しする）
+- `holders` は `--repo` を取らない——cwd のリポジトリの持ち主を出す（外なら 125 で、場所を名指しし、cwd を移すよう言う——`--repo` で指せとは言わない）
+- `--repo` で外の cwd から取った枠の持ち主は、場所に呼んだ cwd（外）が出る——`references/parallel.md` の「止まっている枠の持ち主」の照らし合わせ（台帳の `worktree`）には当たらない
+- `--repo` を渡さないときは、環境変数の `GIT_DIR` などに従う（cwd より先に git が読む）
 - 順番待ちを通さずに走ったもの（周の言語モデルの体そのもの・これを通さない検査）は数えない
 - 走っている側が固まったら、待つ側は走っている側の期限まで待つ（待つ側自身の待ち時間に上限は無い——前に並ぶ全部の期限の和まで待ちうる）
 - 期限は枠を取ってから数える——待っている時間は数えない
@@ -278,17 +281,23 @@ def say(message: str) -> None:
     print(f"run-serial: {message}", file=sys.stderr, flush=True)
 
 
-def locate(where: Path, repo: bool = False) -> tuple[Path | None, str]:
+GIT_LOCAL = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE")
+
+
+def locate(where: Path, repo: bool = False,
+           hint: str = "——対象のリポジトリを `--repo <パス>` で指すか、cwd をその中に移す") -> tuple[Path | None, str]:
     """(共通ディレクトリ（worktree をまたいで同じ）, 決まらなかった理由)。`where` は cwd か `--repo` のパス（`repo`）。
-    決まらなければ、決めようとした場所を名指しした理由を返す（#1505）。"""
+    決まらなければ、決めようとした場所を名指しした理由を返す（#1505）。`hint` は cwd から決めようとしたときにだけ添える。
+    `--repo` のときは、リポジトリを名指す環境変数（`GIT_LOCAL`）を外して git に訊く——外さないと git がそちらを先に読み、`--repo` が黙って効かない。"""
     label = f"`--repo` のパス {flat(str(where))}" if repo else f"cwd {flat(str(where))}"
-    hint = "" if repo else "——対象のリポジトリを `--repo <パス>` で指すか、cwd をその中に移す"
+    hint = "" if repo else hint
+    env = {k: v for k, v in os.environ.items() if k not in GIT_LOCAL} if repo else None
     if not where.is_dir():
         return None, f"{label} はディレクトリでない"
     try:
         proc = subprocess.run(
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            cwd=where, capture_output=True, text=True, check=False,
+            cwd=where, capture_output=True, text=True, check=False, env=env,
         )
     except OSError as exc:
         return None, f"git を起こせない（{exc}）——{label} の枠を決められない"
@@ -586,7 +595,7 @@ def holders(lockdir: Path, mine: frozenset = frozenset()) -> list[str]:
 
 def show_holders() -> int:
     """`holders` の口: 持ち主を標準出力に 1 回だけ出して終わる。枠を取らず、枠のディレクトリを作らない。"""
-    common, why = locate(Path.cwd())
+    common, why = locate(Path.cwd(), hint="——cwd を対象のリポジトリの中に移す（`holders` は `--repo` を取らない）")
     if common is None:
         say(f"枠を決められない（git の共通ディレクトリが決まらない）——{why}")
         return CANNOT
