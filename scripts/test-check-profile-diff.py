@@ -103,7 +103,13 @@ CASES: list[tuple[str, dict, list[str], int, tuple[str, ...], tuple[str, ...]]] 
     # #1515（案 A）: 末尾が綴りだけの設定のタグは、末尾の無い後ろの版も数える——Issue の示した入力（v2.0.0-beta・v2.0.0・v2.1.0）
     ("プレリリースの設定のタグ", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_beta}"], 1,
      ("タグ v2.0.0-beta → v2.1.0", "起票の候補 4 件"), ()),
-    ("末尾の綴りの版に末尾の無い版", with_(OK, settings=settings("v1.0-lts")), [], 1, ("タグ v1.0-lts → v10", "起票の候補 4 件"), ()),
+    # 末尾の同じ後ろの版（v1.1-lts）があれば、末尾の無い v10 より先にそれを選ぶ（共有の clone には v10 が在る）
+    ("末尾の同じ版を先に", with_(OK, settings=settings("v1.0-lts")), [], 1, ("タグ v1.0-lts → v1.1-lts", "起票の候補 4 件"), ("→ v10",)),
+    # 同じ数字なら末尾の無い v2.0.0 が後ろ（git の既定の版の並びでは v2.0.0-beta が後ろに来る）
+    ("正式版", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_ga}"], 1, ("タグ v2.0.0-beta → v2.0.0", "起票の候補 4 件"), ()),
+    # 数字で前の末尾の無い v1.9.0 は数えない
+    ("前の末尾の無い版", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_old}"], 0,
+     ("設定のタグ v2.0.0-beta より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
     # 末尾に数字を持つ v2.0.0-rc1 は自分の形に当たらないので、末尾の無い v2.1.0 も数えない（数えなかったタグに名指す）
     ("末尾に数字を持つプレリリース", with_(OK, settings=settings("v2.0.0-rc1")), ["--clone", "{clone_beta}"], 0,
      ("設定のタグ v2.0.0-rc1 より後ろの、名前の形が同じタグが無い。比べない", "を持つタグ: v2.1.0"), ("起票の候補: ",)),
@@ -152,10 +158,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("接頭辞を正規表現として読む", "body = re.escape(prefix) + ", "body = prefix + ", "接頭辞は文字どおり"),
     ("区切った数字を数えない", "r\"[0-9]+(?:\" + separator + r\"[0-9]+)*\"\n", "r\"[0-9]+\"\n", "区切った数字の版"),
     ("区切りを設定のタグから読まない", "separators = sorted(set(re.sub(r\"[0-9]\", \"\", middle))) or [\".\"]", "separators = [\".\"]", "日付の版"),
-    ("末尾の綴りを無視する", "\"(?:\" + re.escape(suffix) + \")?\"", "\"(?:-[a-z]+)?\"", "末尾の綴りの版"),
-    ("末尾の無い版を数えない", "if suffix else shape", "if False else shape", "プレリリースの設定のタグ"),  # 綴りなら何でも当てる——v1.2-rc を新しい版にする
+    ("末尾の綴りを無視する", "return re.compile(parts[0] + re.escape(parts[1]))", "return re.compile(parts[0] + r\"(?:-[a-z]+)?\")", "末尾の綴りの版"),  # 綴りなら何でも当てる——v1.2-rc を新しい版にする
+    ("末尾の無い版を数えない", "return re.compile(parts[0]) if parts is not None and parts[1] else None", "return None", "プレリリースの設定のタグ"),  # v2.0.0-beta の設定で比べずに 0
+    ("末尾の同じ版を先にしない", "        if found is not None and found != old:\n            return found, skipped\n", "", "末尾の同じ版を先に"),
+    ("同じ数字の末尾の無いタグを前にする", ">= version_numbers(old)", "> version_numbers(old)", "正式版"),
+    ("前の末尾の無いタグも数える", "if plain_found is not None and version_numbers(plain_found) >= version_numbers(old):", "if plain_found is not None:", "前の末尾の無い版"),
     ("区切りを持たないタグを . にしない", "or [\".\"]", "or [\"-\"]", "区切りを持たない版"),
-    ("自分の形に当たらないタグでも比べる", "    if not shape.fullmatch(tag):\n        return re.compile(re.escape(tag))\n", "", "区切りが続く版"),
+    ("自分の形に当たらないタグでも比べる", "    if not re.fullmatch(body + re.escape(suffix), tag):\n        return None\n", "", "区切りが続く版"),
     ("profile を持たないタグも数える", "            if want not in ext.list_files(clone, commit):\n                continue", "            if False:\n                continue", "候補"),
     ("タグと同じでも比べる", "            if new in (old, checked):", "            if new == checked:", "--new がタグと同じ"),
     ("確かめたタグと同じでも比べる", "            if new in (old, checked):", "            if new == old:", "確かめたタグ"),
@@ -269,6 +278,9 @@ def make_series(root: Path, env: dict, tags: list[tuple[str, str]]) -> Path:
 SERIES_LTS = [("v1.0-lts", LAYER_A), ("v1.1-lts", LAYER_B), ("v1.2-rc", LAYER_A)]
 # #1515 の示した入力（v2.0.0-beta・v2.0.0・v2.1.0）に、末尾に数字を持つ v2.0.0-rc1
 SERIES_BETA = [("v2.0.0-beta", LAYER_A), ("v2.0.0", LAYER_A), ("v2.1.0", LAYER_B), ("v2.0.0-rc1", LAYER_A)]
+# ベータから正式版（同じ数字・末尾の無い v2.0.0 だけが後ろ）と、数字で前の末尾の無い版だけを持つ系列
+SERIES_GA = [("v2.0.0-beta", LAYER_A), ("v2.0.0", LAYER_B)]
+SERIES_OLD = [("v1.9.0", LAYER_B), ("v2.0.0-beta", LAYER_A)]
 
 
 def lay_out(plugins: Path, spec_loop: Path, source: str | None = None) -> Path:
@@ -384,10 +396,11 @@ def reference_mismatches(module, infra_md: str) -> list[str]:
 
 
 SELF_SHAPE = "自分の名前の形に当たらない"
-NO_SUFFIX = "末尾の無い後ろの版も数える"
+NO_SUFFIX = "末尾の無い後ろの版を数える"
+SAME_FIRST = "末尾の無い版より先に"
 # 本体の「守ること」の行のうち、同じ言い方で原本にもあるべきもの（行を見分ける語句, 足した Issue）と、崩し方（壊す前, 壊した後）
-SHARED_RULES = [(SELF_SHAPE, "#1514"), (NO_SUFFIX, "#1515")]
-RULE_BREAKS = {SELF_SHAPE: ("（比べずに 0）", ""), NO_SUFFIX: ("も数える", "を数える")}
+SHARED_RULES = [(SELF_SHAPE, "#1514"), (NO_SUFFIX, "#1515"), (SAME_FIRST, "#1515")]
+RULE_BREAKS = {SELF_SHAPE: ("（比べずに 0）", ""), NO_SUFFIX: ("を数える", "も数える"), SAME_FIRST: ("先に", "後に")}
 
 
 def guarded_rule(module, key: str) -> str | None:
@@ -413,13 +426,24 @@ def main() -> int:
         shutil.copytree(SPEC_LOOP, spec_loop, ignore=shutil.ignore_patterns("__pycache__"))
         clone_lts = make_series(tmp / "profile-lts", env, SERIES_LTS)
         clone_beta = make_series(tmp / "profile-beta", env, SERIES_BETA)
-        tokens = {"clone": str(clone), "clone_lts": str(clone_lts), "clone_beta": str(clone_beta)}
+        clone_ga = make_series(tmp / "profile-ga", env, SERIES_GA)
+        clone_old = make_series(tmp / "profile-old", env, SERIES_OLD)
+        tokens = {"clone": str(clone), "clone_lts": str(clone_lts), "clone_beta": str(clone_beta), "clone_ga": str(clone_ga), "clone_old": str(clone_old)}
         platform = lay_out(tmp / "plugins", spec_loop)
-        clones = (clone, clone_lts, clone_beta)
+        clones = (clone, clone_lts, clone_beta, clone_ga, clone_old)
         before_clone = [tip.clone_state(c, env) for c in clones]
         for index, (name, files, args, _, _, _) in enumerate(CASES):
             result = run_case(platform, tmp / f"case{index}", files, args, tokens, env)
             check(f"試料が期待どおりでない（番号の無い候補の行を含む）: {name}", as_expected(name, result), f"exit={result[0]} {result[1][-700:]}")
+
+        # 利用者の git の versionsort.suffix に依らない（#1515）——末尾のあるタグを前・後ろに並べる 2 つの設定で、試料「正式版」が同じ
+        for index, suffix in enumerate(("-beta", "-")):
+            config = tmp / f"versionsort{index}.gitconfig"
+            config.write_text(f"[versionsort]\n\tsuffix = {suffix}\n", encoding="utf-8")
+            sorted_env = dict(env, GIT_CONFIG_GLOBAL=str(config))
+            files, args = next((f, a) for n, f, a, _, _, _ in CASES if n == "正式版")
+            result = run_case(platform, tmp / f"versionsort{index}", files, args, tokens, sorted_env)
+            check(f"versionsort.suffix = {suffix} の設定で試料「正式版」が期待どおりでない", as_expected("正式版", result), result[1][-300:])
 
         # 読むだけ: clone と正本が変わらない・__pycache__ ができない
         check("clone の状態が変わった", [tip.clone_state(c, env) for c in clones] == before_clone)
