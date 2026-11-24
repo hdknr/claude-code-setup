@@ -10,6 +10,7 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 - **古い版は案件の設定の `タグ`、新しい版は `--new` か**、手元の clone のタグのうち、設定のタグと名前の形（接頭辞（最初の数字より前）と末尾の綴り（最後の数字より後ろ）が文字どおり同じで、
   真ん中が数字を設定のタグの区切りの文字（区切りを持たない `v3` なら `.`）で区切った並び——桁と個数は問わない。`v3`・`v1.0` なら `v10`・`v1.1.0`、`v1.0-lts` なら `v1.1-lts`、`2024-10-01` なら `2025-03-01`）が同じで、
   その profile の `profile.csv` を持つものの中で版の順（git の `v:refname`）が最も後ろのもの。
+  **設定のタグの末尾が綴りだけ（`v2.0.0-beta`）で、末尾の同じ後ろの版が無いときは、末尾を除いた形の後ろの版（`v2.1.0`・`v2.0.0`）を新しい版にする**（#1515。数字の並びで比べ、同じ数字なら末尾の無いほうを後ろにする）。
   **新しい版が `タグ` か任意の項目 `確かめたタグ` と同じなら、比べずに 0**（発注者が見て、採らないと決めた版）。
 - **候補**は、`profile の行` が指す ID のうち、2 つの版の間で**変わった**（どの列でも）・**消えた**（新しい版の基盤の層に無い。層ごと無い場合も）・
   **新しい版でリンクの切れた**行。表の行・項目・ID・種類と、比べた 2 つの版を名指す。**足した行・指していない行は出さない。番号を振らない**——
@@ -45,8 +46,13 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 - 新しい版の数字は区切った並びを、桁と個数を問わずに数える（`v1.0` の次の `v1.1.0`）
 - 数字の区切りは設定のタグの区切りの文字で読む（`2024-10-01` なら `-`。区切りを持たない `v3` は `.`）
 - 設定のタグの末尾の綴り（最後の数字より後ろ）は文字どおりに比べる（`v1.0-lts` の次の `v1.1-lts`。末尾の違う `v1.2-rc` は数えない）
+- 設定のタグの末尾が綴りだけで、末尾の同じ後ろの版が無いなら、末尾の無い後ろの版を数える（`v2.0.0-beta` の次の `v2.1.0`）
+- 末尾の同じ後ろの版があれば、末尾の無い版より先にそれを新しい版にする（`v1.0-lts` の次は、`v10` があっても `v1.1-lts`）
+- 末尾の無いタグは、数字が同じなら設定のタグより後ろに数える（`v2.0.0-beta` の次の `v2.0.0`。利用者の git の `versionsort.suffix` に依らない）
+- 末尾の無いタグが設定のタグより数字で前なら、新しい版に数えない（`v2.0.0-beta` に対する `v1.9.0`）
+- 新しい版にしなかった末尾の無いタグも、数えなかったタグとして名指す（`v2.0.0-beta` に対する `v1.9.0`）
 - 区切りを持たない設定のタグは、`.` で区切った新しい版も数える（`w1` の次の `w1.1`）
-- 設定のタグが自分の名前の形に当たらない（区切りが 2 文字以上続く `v1.0-lts2`）なら、ほかのタグを新しい版に数えない（比べずに 0）
+- 設定のタグが自分の名前の形に当たらない（区切りが 2 文字以上続く `v1.0-lts2`・`v2.0.0-rc1`）なら、ほかのタグを新しい版に数えない（比べずに 0）
 - 新しい版が `タグ` と同じなら比べずに 0
 - 新しい版が `確かめたタグ` と同じなら比べずに 0
 - 新しい版が `タグ`・`確かめたタグ` と同じでも、古い版の層と、指した ID が古い版に在るかは照らす
@@ -64,7 +70,8 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 | 守らないもの | なぜ |
 | --- | --- |
 | **接頭辞を変えた版**（`v9` の次を `release-10` にした） | 接頭辞と末尾の綴りが同じで、真ん中が区切った数字だけのタグを新しい版に数える（別の profile・層の版名・プレリリースを拾わないため）。数えなかった profile を持つタグは出力に名指すので、接頭辞を変えたなら設定のタグを上げるか `--new` で名指す |
-| **末尾の綴りに数字を持つ名前**（`v1.0-lts2`） | 最初の数字から最後の数字までを真ん中と読み、その間の数字でない文字（`.`・`-`・`l`・`t`・`s`）を 1 文字ずつ区切りの候補にするが、数字の間に置ける区切りは 1 文字だけなので、区切りが 2 文字以上続く名前（`v1.0-lts2`・`v2.0.0-rc1`）は自分自身とも形が合わない。そのときは設定のタグだけに当たる形にして、ほかのタグ（`v10` など）を新しい版に数えない（比べずに 0。数えなかったタグは出力に名指す）。そうした付け方は試料に無く、規則を足さない（#1501） |
+| **末尾の綴りに数字を持つ名前**（`v1.0-lts2`） | 最初の数字から最後の数字までを真ん中と読み、その間の数字でない文字（`.`・`-`・`l`・`t`・`s`）を 1 文字ずつ区切りの候補にするが、数字の間に置ける区切りは 1 文字だけなので、区切りが 2 文字以上続く名前（`v1.0-lts2`・`v2.0.0-rc1`）は自分自身とも形が合わない。そのときは設定のタグだけに当たる形にして、ほかのタグ（`v10` など）を新しい版に数えない（比べずに 0。数えなかったタグは出力に名指す）。そうした付け方は試料に無く、規則を足さない（#1501）。**`v2.0.0-rc1` も同じで、末尾の無い後ろの版（`v2.1.0`）も数えない**——末尾が綴りだけの設定のタグの規則（#1515）は当たらない。`v1.0-lts2` と同じ形なので、`v2.1.0` を数えれば `v1.0-lts2` に対する `v10` も数えることになる。新しい版は `--new` で名指す |
+| **末尾の綴りがプレリリース（`-beta`）か版の線（`-lts`）か** | 見分けない——末尾の同じ後ろの版があればそれを、無ければ末尾の無い後ろの版を新しい版にする（#1515）。`v2.0.0-beta` の設定で `v2.1.0-beta` と `v3.0.0` があれば `v2.1.0-beta` を、`v1.0-lts` の設定で線の中の次の版が無く `v10` があれば `v10` を選ぶ。別のものと比べたいなら `--new` で名指す |
 | **新しい版が古い版より前（タグを下げた）か** | 比べる 2 つを決めるだけで、向きは見ない（`--new` に古いタグを渡せば、その差分が出る） |
 | **古い版でリンクが切れていたか** | 新しい版で切れた行だけを候補にする（古い版のリンクは `external-profile.py check` が見る） |
 | **基盤の層の `項目` と案件の行の `項目` が合うか** | 照合の段（`check-infra-profile.py`）の守らないものと同じ |
@@ -103,22 +110,44 @@ base = _load("platform_spec_check_infra_profile", HERE / "check-infra-profile.py
 Stop, Unreadable = base.Stop, base.Unreadable
 
 
-def name_shape(tag: str) -> "re.Pattern[str]":
-    """タグの名前の形——タグを接頭辞（最初の数字より前）・真ん中（最初の数字から最後の数字まで）・末尾の綴り（最後の数字より後ろ）に分け、
-    接頭辞と末尾はそのまま同じで、真ん中が数字を設定のタグの区切りの文字（真ん中の数字でない文字。無ければ `.`）で区切った並びのもの
-    （`v1.0-lts` → `v[0-9]+(?:[.][0-9]+)*-lts`、`2024-10-01` → `[0-9]+(?:[-][0-9]+)*`、`v3` → `v[0-9]+(?:[.][0-9]+)*`。数字の桁の数と区切りの数は問わない）。
-    別の profile や層の版名（`zz-screen-v1`）・プレリリース（`v10-rc1`）・接頭辞を変えた版（`release-4`）・末尾の違う版（`v1.2-rc`）は当たらない。
-    数字を持たないタグと、作った形に自分自身が当たらないタグ（区切りが 2 文字以上続く `v1.0-lts2`）は自分だけに当たる。"""
+def _shape_parts(tag: str) -> tuple[str, str] | None:
+    """タグを接頭辞（最初の数字より前）・真ん中（最初の数字から最後の数字まで）・末尾の綴り（最後の数字より後ろ）に分け、
+    (接頭辞と真ん中の形, 末尾の綴り) を返す。真ん中の形は、数字を設定のタグの区切りの文字（真ん中の数字でない文字。無ければ `.`）で区切った並び。
+    数字を持たないタグと、作った形に自分自身が当たらないタグ（区切りが 2 文字以上続く `v1.0-lts2`・`v2.0.0-rc1`）は None。"""
     digits = [m.start() for m in re.finditer(r"[0-9]", tag)]
     if not digits:
-        return re.compile(re.escape(tag))
+        return None
     prefix, middle, suffix = tag[:digits[0]], tag[digits[0]:digits[-1] + 1], tag[digits[-1] + 1:]
     separators = sorted(set(re.sub(r"[0-9]", "", middle))) or ["."]
     separator = "[" + "".join(re.escape(c) for c in separators) + "]"
-    shape = re.compile(re.escape(prefix) + r"[0-9]+(?:" + separator + r"[0-9]+)*" + re.escape(suffix))
-    if not shape.fullmatch(tag):
+    body = re.escape(prefix) + r"[0-9]+(?:" + separator + r"[0-9]+)*"
+    if not re.fullmatch(body + re.escape(suffix), tag):
+        return None
+    return body, suffix
+
+
+def name_shape(tag: str) -> "re.Pattern[str]":
+    """タグの名前の形——接頭辞と末尾はそのまま同じで、真ん中が数字を設定のタグの区切りの文字で区切った並びのもの
+    （`v1.0-lts` → `v[0-9]+(?:[.][0-9]+)*-lts`、`2024-10-01` → `[0-9]+(?:[-][0-9]+)*`、`v3` → `v[0-9]+(?:[.][0-9]+)*`。数字の桁の数と区切りの数は問わない。
+    実際の形は区切りの文字を `re.escape` した `[\\.]` など）。
+    別の profile や層の版名（`zz-screen-v1`）・プレリリース（`v10-rc1`）・接頭辞を変えた版（`release-4`）・末尾の違う版（`v1.2-rc`）は当たらない。
+    数字を持たないタグと、作った形に自分自身が当たらないタグ（`v1.0-lts2`・`v2.0.0-rc1`）は自分だけに当たる。"""
+    parts = _shape_parts(tag)
+    if parts is None:
         return re.compile(re.escape(tag))
-    return shape
+    return re.compile(parts[0] + re.escape(parts[1]))
+
+
+def bare_shape(tag: str) -> "re.Pattern[str] | None":
+    """末尾が綴りだけのタグ（`v2.0.0-beta`）の、末尾を除いた形（`v[0-9]+(?:[.][0-9]+)*`。`v2.1.0`・`v2.0.0` が当たる。#1515）。
+    末尾が無いタグ・数字を持たないタグ・自分の形に当たらないタグは None。"""
+    parts = _shape_parts(tag)
+    return re.compile(parts[0]) if parts is not None and parts[1] else None
+
+
+def version_numbers(tag: str) -> tuple[int, ...]:
+    """タグの数字の並び（`v2.0.0-beta` → (2, 0, 0)）。末尾の無いタグが設定のタグより後ろかを、git の並び（利用者の `versionsort.suffix` で変わる）に依らずに比べる。"""
+    return tuple(int(n) for n in re.findall(r"[0-9]+", tag))
 
 
 def candidates(refs: list[tuple[str, str, list[str]]], old_rows: dict, new_rows: dict | None, broken: list[tuple[str, str, str]]) -> list[tuple[str, str, str, str, str]]:
@@ -153,16 +182,18 @@ class Differ(base.Checker):
 
     def newest(self, clone: Path, name: str, old: str) -> tuple[str, list[str]]:
         """(新しい版, 名前の形が違うので数えなかった、その profile を持つタグ)。新しい版は、設定のタグと名前の形が同じで、
-        その profile の `profile.csv` を持つタグのうち版の順が最も後ろのもの。無ければ設定のタグ。"""
+        その profile の `profile.csv` を持つタグのうち版の順が最も後ろのもの。それが設定のタグ自身なら、末尾を除いた形のタグのうち
+        版の順が最も後ろで、数字が設定のタグより前でないもの（#1515）。どれも無ければ設定のタグ。"""
         ext = self.ext
-        shape = name_shape(old)
+        shape, bare = name_shape(old), bare_shape(old)
         proc = ext._git(clone, "for-each-ref", "--sort=-v:refname", "--format=%(refname:strip=2)", "refs/tags/")
         if proc.returncode != 0:
             raise Stop(f"{clone} のタグを並べられない: {proc.stderr.decode('utf-8', 'replace').strip()}")
         want = f"{ext.PROFILE_ROOT}/{name}/{ext.PROFILE_FILE}"
-        found, skipped = None, []
+        found, plains, seen = None, [], []
         for tag in proc.stdout.decode("utf-8", "surrogateescape").split():
             matches = bool(shape.fullmatch(tag))
+            plain = not matches and bare is not None and bool(bare.fullmatch(tag))
             if matches and found is not None:
                 continue
             try:
@@ -174,8 +205,19 @@ class Differ(base.Checker):
             if matches:
                 found = tag
             else:
-                skipped.append(tag)
-        return (found if found is not None else old), skipped
+                seen.append(tag)
+                if plain:
+                    plains.append(tag)
+        plain_found = plains[0] if plains else None
+        chosen = old
+        if found is not None and found != old:
+            chosen = found
+        # 末尾の同じ後ろの版が無いときだけ、末尾の無いタグを数える。後ろかは数字で比べる——同じ数字なら末尾の無いほうが後ろ（#1515）
+        elif plain_found is not None and version_numbers(plain_found) >= version_numbers(old):
+            chosen = plain_found
+        # 新しい版にしなかった末尾の無いタグも、数えなかったタグとして名指す（版の順のまま）
+        skipped = [tag for tag in seen if tag != chosen]
+        return chosen, skipped
 
     def layer(self, clone: Path, commit: str, name: str, tag: str, missing_ok: bool):
         ext = self.ext
