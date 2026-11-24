@@ -129,6 +129,8 @@
 #   名前が `issue-<番号>` で始まらない worktree（`EnterWorktree` のランダム名など）には当たらない。
 #   **それを見つけるのは `find-cycle.py` である**（`SKILL.md` の「途中から再開する周」が、作る前に走らせる）。
 #   **改行を含むパスの worktree**も、`git worktree list --porcelain` の行で読むので当て損ねうる。
+# - **設定に無いリモート追跡参照で、番号の境界を守ること**——リモートの名前の段数が分からないので、`/` の切れ目ごとの後ろの
+#   どれかが `issue/<番号>[-…]` なら当てる。`gone/spec/issue/<番号>-x` のような別の枝にも当たって 3 で止まりうる（当てすぎる側）。
 # - **`git worktree add` そのものが失敗したとき（文書化した番号の外の終了コード）に、標準出力から
 #   「作ろうとしているもの」を消すこと**——**消さない。** 断る照合を全部通って作りに行った後なので、
 #   行の言うこと（作ろうとした）は偽ではない。失敗の中身は標準エラーに出る。
@@ -163,7 +165,10 @@ PATH_ABS="${MAIN}/.claude/worktrees/issue-${NUMBER}"
 # 部分一致で、`issue/831-foo`・`spec/83…`・`…/issue-831` にも当たっていた。
 # **worktree はパスを `--porcelain` で読む**——素の一覧は `<パス> <SHA> [<ブランチ>]` で、パスに空白があると切り出せない。
 # **ブランチは完全な参照名で読む**——短い名前では、ローカルの `spec/issue/83-x` とリモートの `spec/issue/83-x` を分けられない。
-if ! WT_ALL="$(git worktree list --porcelain 2>/dev/null)" || ! BR_ALL="$(git branch --all --format='%(refname) %(refname:short)' 2>/dev/null)"; then
+# **リモートの名前も同じ守りの中で取る**——取れないまま空と読むと、名前に `/` を含むリモートの参照を当て損ね、
+# 既にある周の隣に作る（#1504 の `/code-review` 2 パス目）。
+if ! WT_ALL="$(git worktree list --porcelain 2>/dev/null)" || ! BR_ALL="$(git branch --all --format='%(refname) %(refname:short)' 2>/dev/null)" \
+   || ! REMOTES="$(git remote 2>/dev/null)"; then
   echo "git で既存の worktree / ブランチを見られなかった。作らない。" >&2
   echo "**「当たらなかった」とは答えない**——見られていない。" >&2
   # **root の解決とは別の終了コードにする。** 同じにすると**2 つの守りが
@@ -183,35 +188,42 @@ wt_matches() {
 # （`issue/<番号>` そのものも当てる——規約の `-` が無い名前でも、同じ番号の周であることは変わらない）。
 # **リモートの名前は `/` を含みうる**（`my/fork`）——1 段だけ外すと `refs/remotes/my/fork/issue/83-x` に当たらず、
 # 既にある周の隣に新しい周を作る（#1504 の `/code-review` 1 パス目）。**設定にあるリモートの名前で、いちばん長く当たるものを外す。**
-# 設定に無いリモート追跡参照（リモートを消した後に残った参照など）だけ、最初の 1 段を外す。
-REMOTES="$(git remote 2>/dev/null || true)"
-remote_rest() {
+# **設定に無いリモート追跡参照**（リモートを消した後に残った参照・`git fetch <url> <refspec>` で作った参照）は、リモートの名前の段数が
+# 分からないので、**`/` の切れ目ごとの後ろのどれかが当たれば当てる**——当てすぎる側（`gone/spec/issue/83-x` にも当たる）に倒す。
+# 当て損ねると既にある周の隣に作り、当てすぎても新しい周を再開の道へ送るだけである（#1504 の Verifier 2 パス目）。
+# **コマンド置換でサブシェルを起こさない**——参照の数だけ fork すると、参照の多いリポジトリで入場が遅くなる（同 `/code-review` 2 パス目）。
+is_issue_rest() {
+  case "$1" in
+    "issue/${NUMBER}"|"issue/${NUMBER}-"*) return 0 ;;
+  esac
+  return 1
+}
+remote_matches() {
   local ref="${1#refs/remotes/}" r best=""
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     case "$ref" in
-      "$r"/*) [ "${#r}" -gt "${#best}" ] && best="$r" ;;
+      "$r"/*) if [ "${#r}" -gt "${#best}" ]; then best="$r"; fi ;;
     esac
   done <<EOF_REMOTES
 $REMOTES
 EOF_REMOTES
   if [ -n "$best" ]; then
-    printf '%s' "${ref#"$best"/}"
-  else
-    printf '%s' "${ref#*/}"   # 最短の一致——最初の 1 段だけを外す
+    is_issue_rest "${ref#"$best"/}"
+    return
   fi
+  while [ "${ref#*/}" != "$ref" ]; do
+    ref="${ref#*/}"
+    if is_issue_rest "$ref"; then return 0; fi
+  done
+  return 1
 }
 br_matches() {
-  local rest
   case "$1" in
-    refs/heads/*)   rest="${1#refs/heads/}" ;;
-    refs/remotes/*) rest="$(remote_rest "$1")" ;;
+    refs/heads/*)   is_issue_rest "${1#refs/heads/}" ;;
+    refs/remotes/*) remote_matches "$1" ;;
     *) return 1 ;;
   esac
-  case "$rest" in
-    "issue/${NUMBER}"|"issue/${NUMBER}-"*) return 0 ;;
-  esac
-  return 1
 }
 EXISTING_WT="$(printf '%s\n' "$WT_ALL" | sed -n 's/^worktree //p' | while IFS= read -r p; do
   if wt_matches "$p"; then printf '%s\n' "$p"; fi

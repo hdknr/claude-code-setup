@@ -23,7 +23,7 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
 触る:
 
 - `plugins/dev-loop/skills/dev-loop/scripts/prepare-worktree.sh` — 「先に見る」の当て方を番号の境界にする・「何を守るか」に 1 行・「何を守らないか」に 1 行
-- `scripts/test-worktree-scripts.py` — 境界の試料（`boundary_observations`）・`exists_lists_indented` の当て方・変異（`MUTATIONS` に 1・`BOUNDARY_MUTATIONS` に 3）・`main()` の表明
+- `scripts/test-worktree-scripts.py` — 境界の試料（`boundary_observations`）・`exists_lists_indented` の当て方・変異（`MUTATIONS` に 1・`BOUNDARY_MUTATIONS` に 6——1 パス目の指摘対応で 4、2 パス目の指摘対応で 6）・`main()` の表明
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
 - `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行だけ
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
@@ -49,10 +49,13 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
 
 - **worktree は `git worktree list --porcelain` のパスのディレクトリの名前で当てる**——素の一覧（`<パス> <SHA> [<ブランチ>]`）の行に `grep -F "issue-<番号>"` を当てると、パスの途中・ブランチ名・別の番号（`issue-831`）に当たる。
   名前は `issue-<番号>` か `issue-<番号>-…`（Issue の「その番号で始まる worktree 名」を、番号の後ろが `-` か終わりの境界で読む）。
-- **ブランチは完全な参照名で当てる**——ローカルは `refs/heads/issue/<番号>`・`refs/heads/issue/<番号>-…`、リモート追跡参照は `refs/remotes/<リモートの 1 段>/issue/<番号>[-…]`。
+- **ブランチは完全な参照名で当てる**——ローカルは `refs/heads/issue/<番号>`・`refs/heads/issue/<番号>-…`、リモート追跡参照は `refs/remotes/<リモート>/issue/<番号>[-…]`。
+  リモートの名前は設定（`git remote`）にあるものでいちばん長く当たるものを外す（`/` を含む `my/fork` も。1 パス目の C1）。設定に無いリモート追跡参照は段数が分からないので `/` の切れ目ごとの後ろのどれかで当てる（当てすぎる側。2 パス目の V2-1）。
+  `git remote` を見られなければ 6（2 パス目の CR2-1）。
   `issue/<番号>` そのもの（`-` の無い名前）も当てる——規約から外れても同じ番号の周であることは変わらず、当てすぎる側は安全（新しい周を再開の道へ送るだけ）。
 - **一覧の表示**: worktree はパスだけ、ブランチは短い名前（`issue/83-foo`・`origin/issue/83-remote`）を出す（以前は素の一覧の行そのまま）。3 の見出し・字下げ・標準エラーの決まり（守る 18〜20）は変えない。
-- **複製の数**: 当て方を述べる箇所は 2（本体の「何を守るか」の項と、テストの `exists_lists_indented` が別に書いた当て方）。**分けない理由**: テストの側は本体の写しではなく期待値を独立に作る側で、食い違えば「3 の一覧のどの行も同じ字下げ」が赤になる。
+- **複製の数**: 当て方を述べる箇所は 2（本体の「何を守るか」の項と、テストの `exists_lists_indented`）。**`exists_lists_indented` は同じ規則を Python で書き直した写しである**（2 パス目の CR2-4 で主張を弱めた）——
+  同じ誤りを両方が持てば見えない。境界の当たり方そのものは `boundary_observations` の試料（rc と一覧の行）で見る。**分けない理由**: 一覧の字下げの期待値を作るのに当て方が要る。
   本体の冒頭の「当たり方は部分一致で、広い」の行は新しい項に置き換えた（古い主張を残さない）。
 
 ## verify の受入基準
@@ -72,7 +75,8 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
 | 経路 | 守り方 |
 | --- | --- |
 | ローカルのブランチ（`git branch` の `refs/heads/`） | `br_matches` の `refs/heads/*` の枝（不変条件 1・2。試料 `issue/831-foo`・`spec/83-x`・`spec/issue/83-x` と `observe()` の `issue/42-sample`・`issue/42-extra`） |
-| リモート追跡参照（`refs/remotes/<リモート>/…`） | `br_matches` の `refs/remotes/*` の枝でリモートの名前を 1 段だけ外す（試料 `origin/issue/831-bar`・`origin/spec/issue/83-y`・陽性 `origin/issue/83-remote`） |
+| リモート追跡参照（`refs/remotes/<リモート>/…`） | `remote_matches`——設定のリモートの名前でいちばん長く当たるものを外す。設定に無ければ `/` の切れ目ごとに当てる（試料 `origin/issue/831-bar`・`origin/spec/issue/83-y`（origin を設定）・陽性 `origin/issue/83-remote`・`my/fork/issue/83-x`・設定に無い `gone/fork/issue/83-x`） |
+| リモートの名前を取るコマンドの失敗 | `git remote` も 6 の守りの中で取る（試料: `remote` だけ失敗する偽の `git`） |
 | worktree のディレクトリの名前 | `wt_matches`（試料 `issue-831`・陽性 `issue-83-extra`・`observe()` の `issue-42`・`issue-42-extra`） |
 | 既存の一覧を取るコマンドの失敗（偽の `git`） | 取るコマンドを変えても `worktree`・`branch` のどちらかが失敗すれば 6（既存の観測「既存を見られない rc」） |
 | 空白を含むパスの worktree | `--porcelain` の `worktree <パス>` の行から読む（素の一覧の切り出しをしない） |
@@ -103,6 +107,14 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
   - `/code-review` 1 パス目を `503b0749` に起こした（`Skill` の分岐した背景の実行）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1504-code-review-1-20261124T075141Z.md`
   - Verifier 1 パス目: 通した（`503b0749`）。反証 0 件（弱点として多段のリモート名・`issue/<番号>` そのものの試料が無いことを挙げた）。報告は hand-back と報告のファイル（終わりの印つき）。`dev-loop:dev-loop-verifier` が起動した（ツールは Read・Grep・Glob・Bash）。不変条件 4 は全体を回せず未確認と報告（親の `check-all.py` が回す）
   - `/code-review` 1 パス目: 通した（`503b0749`）。指摘 4 件（報告のファイルは終わりの印つき）。採否は下の「1 パス目の採否の表」
+  - 1 パス目の指摘対応: `eaa896d2`（C1）・`fa97f044`（計画の件数の行）。計画ファイルのほかに 2 ファイル——0 行ではないので 2 パス目を回す
+  - `check-all.py`（`fa97f044`）: 緑（28 本を回し 77 本は CACHED。失敗 0）。`503b0749` の回は `check-plan-counts.py`（件数の行が無かった）と `test-intake-code.py`（「このリポジトリの作業ツリーを変えていない」——回している間に著者が計画ファイルを書き換えた）で落ちていた
+  - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っていたのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+  - Verifier 2 パス目（`dev-loop:dev-loop-verifier`・sonnet）を `fa97f044` に起こした。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1504-verifier-2-20261124T081546Z.md`（体は書かず、hand-back だけが届いた——hand-back を報告として読む）
+  - `/code-review` 2 パス目を `fa97f044` に起こした。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1504-code-review-2-20261124T081546Z.md`
+  - Verifier 2 パス目: 通した（`fa97f044`）。反証 1 件（V2-1）
+  - `/code-review` 2 パス目: 通した（`fa97f044`）。指摘 6 件（報告のファイルは終わりの印つき）。採否は下の「2 パス目の採否の表」
+  - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `fa97f044`
 - 交絡を潰した手順: 実験なし（変異テストの陽性対照は下に記録する）
 
 ## 既知の限界・決着済みの論点
@@ -123,6 +135,17 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
 | C2（Verifier の弱点と同じ） | `issue/<番号>`（`-` 無し）に当てる枝をテストが見ていない（外す変異が殺せない） | 示せる（`check_mutant` で FAIL） | 無し（不変条件 2 は `issue/83-…` を挙げる。`-` 無しは決着の表の判断） | 残課題 |
 | C3 | 境界の陰性の試料が置けたかを観測していない | 示せない（手元の git 2.56 では 6 つとも置けた。失敗する git の版・設定は示されていない） | 無し | 残課題 |
 | C4 | 「taihei-prm の実際の枝で止まらない」は未証明ではなく測れる | 示せる（`gh api` の枝の名前で当てた結果） | 無し（計画の記録） | 残課題（未証明の節を測った結果に直した。`spec/q-r-083-…` の形の試料は足さない——新しい当て方は `issue/` で始まらない名前に当たらない） |
+
+### 2 パス目の採否の表（Verifier 2 パス目 反証 1 件・`/code-review` 2 パス目 指摘 6 件）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V2-1 / CR2-2 | 設定に無いリモート（消した後に残った参照）の名前に `/` があると、`refs/remotes/gone/fork/issue/83-x` に当たらず rc=0 で作る（旧版は 3） | 示せる（Verifier と `/code-review` が update-ref の木で rc=0 を再現） | 2 | 直す（設定に無いリモートは `/` の切れ目ごとに当てる——当てすぎる側。本体の「何を守らないか」に書く。試料 `boundary-gone`・変異「設定に無いリモートで 1 段だけ外す」） |
+| CR2-1 | `git remote` が失敗すると空と読み、`/` を含むリモートの同じ番号の隣に作る（6 で止まらない） | 示せる（`remote` だけ失敗する偽の git で再現） | 2 | 直す（`git remote` も 6 の守りの中で取る。試料 `boundary-noremote`・変異「リモートの名前を見られなくても進む」） |
+| CR2-3 | 計画ファイルの経路の表・設計の判断・変更範囲が C1 の前の記述のまま | 示せる（計画ファイルの文面） | 無し（計画の記録） | 残課題（記録を直した） |
+| CR2-4 | `exists_lists_indented` は独立した期待値ではなく同じ規則の写し。設定した `origin` の陽性の試料が無い | 示せない（同じ誤りを両方が持つ実例は示されていない） | 無し | 残課題（設計の判断の主張を弱めた。V2-1 の直しで試料に `origin` を設定した——直しに伴うもの） |
+| CR2-5 | リモート追跡参照ごとにサブシェルを起こして遅い（5000 本で 4.3 秒） | 示せる（実測） | 無し | 残課題（V2-1 の直しで関数を書き直したとき、コマンド置換をやめた——直しに伴うもの） |
+| CR2-6 | コミットに `Fixes #1504` が無い | 示せる | 無し | 残課題（PR の本文に `Fixes #1504` を書く） |
 
 ## 手順 8（経験の還元。マージの前に書く分）
 

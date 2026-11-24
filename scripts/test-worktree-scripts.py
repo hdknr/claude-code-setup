@@ -91,20 +91,20 @@ def run(script: Path, cwd: Path, *args, env=None):
                           capture_output=True, text=True, env=env)
 
 
-def fake_git_dir(base: Path) -> Path:
+def fake_git_dir(base: Path, name: str = "fakebin", refuse: tuple = ("worktree", "branch")) -> Path:
     """**`rev-parse` は本物に通し、`worktree` と `branch` だけ失敗させる `git`。**
 
     **これが無いと、exit 6 の守り（既存の一覧を見られなかったときに作らない）に
     専用の観測が無い**——**壊しても全項目 ok のままになる**（3 巡目の Verifier が
     実験で示した。**スクリプト側に「間接的に当たっている」と書いていたのは誤りだった**）。
     """
-    d = base / "fakebin"
+    d = base / name
     d.mkdir(parents=True, exist_ok=True)
     real = subprocess.run(["which", "git"], capture_output=True, text=True).stdout.strip()
     (d / "git").write_text(
         "#!/usr/bin/env bash\n"
         'case "$1" in\n'
-        "  worktree|branch) echo 'fake: refusing' >&2; exit 1 ;;\n"
+        f"  {'|'.join(refuse)}) echo 'fake: refusing' >&2; exit 1 ;;\n"
         f'  *) exec {real} "$@" ;;\n'
         "esac\n", encoding="utf-8")
     (d / "git").chmod(0o755)
@@ -414,14 +414,18 @@ def exists_lists_indented(res, repo: Path, number: str) -> tuple:
     for line in git(repo, "branch", "--all", "--format=%(refname) %(refname:short)").stdout.splitlines():
         ref, _, short = line.partition(" ")
         if ref.startswith("refs/heads/"):
-            rest = ref[len("refs/heads/"):]
+            rests = [ref[len("refs/heads/"):]]
         elif ref.startswith("refs/remotes/"):
             tail = ref[len("refs/remotes/"):]
             known = [r for r in remotes if tail.startswith(r + "/")]
-            rest = tail[len(max(known, key=len)) + 1:] if known else tail.partition("/")[2]
+            if known:
+                rests = [tail[len(max(known, key=len)) + 1:]]
+            else:   # 設定に無いリモート——`/` の切れ目ごとの後ろのどれか
+                parts = tail.split("/")
+                rests = ["/".join(parts[i:]) for i in range(1, len(parts))]
         else:
             continue
-        if re.fullmatch(rf"issue/{number}(-.*)?", rest):
+        if any(re.fullmatch(rf"issue/{number}(-.*)?", r) for r in rests):
             br.append(short)
     lines = res.stderr.splitlines()
     ok = True
@@ -531,6 +535,9 @@ def boundary_observations(prepare: Path, base: Path) -> dict:
     **リモート追跡参照は `update-ref` で置く**——`origin` は無いので取り直しには出ない（ネットワークに出ない）。"""
     out = {}
     neg = make_repo(base / "boundary-neg")
+    # **`origin` を設定に置く**——設定に無いリモート追跡参照は段数が分からないので広く当てる（本体の「何を守らないか」）。
+    # 置かないと `origin/spec/issue/83-y` に当たるのが正しくなり、陰性の試料にならない。取り直しは失敗するだけで止めない。
+    git(neg, "remote", "add", "origin", str(base / "no-such-origin"))
     for b in ("issue/831-foo", "spec/83-x", "spec/issue/83-x"):
         git(neg, "branch", b)
     for r in ("refs/remotes/origin/issue/831-bar", "refs/remotes/origin/spec/issue/83-y"):
@@ -543,6 +550,7 @@ def boundary_observations(prepare: Path, base: Path) -> dict:
         git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() if wt.is_dir() else "")
 
     remote = make_repo(base / "boundary-remote")
+    git(remote, "remote", "add", "origin", str(base / "no-such-origin"))   # 設定にあるリモートの経路（いちばん長く当たる名前を外す）
     git(remote, "update-ref", "refs/remotes/origin/issue/83-remote", "HEAD")
     res = run(prepare, remote, "83", "boundary")
     out["境界: 同じ番号のリモート追跡参照だけでも断る rc"] = res.returncode
@@ -563,6 +571,18 @@ def boundary_observations(prepare: Path, base: Path) -> dict:
     res = run(prepare, slashed, "83", "boundary")
     out["境界: 名前に / を含むリモートの同じ番号でも断る rc"] = res.returncode
     out["境界: 名前に / を含むリモートの参照を一覧に出す"] = "    my/fork/issue/83-x" in res.stderr.splitlines()
+
+    # **設定に無いリモート追跡参照**（リモートを消した後に残った参照）——段数が分からないので、`/` の切れ目ごとに当てる（#1504 の Verifier 2 パス目）。
+    gone = make_repo(base / "boundary-gone")
+    git(gone, "update-ref", "refs/remotes/gone/fork/issue/83-x", "HEAD")
+    res = run(prepare, gone, "83", "boundary")
+    out["境界: 設定に無いリモートの同じ番号でも断る rc"] = res.returncode
+
+    # **リモートの名前を見られなければ 6**（#1504 の `/code-review` 2 パス目）——空と読むと `/` を含むリモートを当て損ねる。
+    noremote = make_repo(base / "boundary-noremote")
+    res = run(prepare, noremote, "83", "boundary",
+              env=dict(os.environ, PATH=f"{fake_git_dir(base, 'fakebin-remote', ('remote',))}:{os.environ['PATH']}"))
+    out["境界: リモートの名前を見られなければ断る rc"] = res.returncode
     return out
 
 
@@ -918,12 +938,20 @@ BOUNDARY_MUTATIONS = {
         '    *"issue-${NUMBER}"*) return 0 ;;'),
     # 狭めすぎる側——陽性対照の試料（リモート追跡参照だけの木・`issue-83-extra` だけの木）が 0 で作れてしまう。
     "リモート追跡参照を見ない": (PREPARE,
-        '    refs/remotes/*) rest="$(remote_rest "$1")" ;;',
+        '    refs/remotes/*) remote_matches "$1" ;;',
         '    refs/remotes/*) return 1 ;;'),
     # 1 段だけ外す側——名前に `/` を含むリモート（`my/fork`）の同じ番号が 0 で作れてしまう（#1504 の `/code-review` 1 パス目）。
     "リモートの名前を 1 段だけ外す": (PREPARE,
-        '    refs/remotes/*) rest="$(remote_rest "$1")" ;;',
-        '    refs/remotes/*) rest="${1#refs/remotes/*/}" ;;'),
+        '    refs/remotes/*) remote_matches "$1" ;;',
+        '    refs/remotes/*) is_issue_rest "${1#refs/remotes/*/}" ;;'),
+    # 設定に無いリモートで 1 段だけ外す側——`gone/fork/issue/83-x` が 0 で作れてしまう（#1504 の Verifier 2 パス目）。
+    "設定に無いリモートで 1 段だけ外す": (PREPARE,
+        '    if is_issue_rest "$ref"; then return 0; fi\n',
+        '    if is_issue_rest "$ref"; then return 0; fi\n    break\n'),
+    # リモートの名前を見られなくても進む側——空と読んで `/` を含むリモートを当て損ねる（#1504 の `/code-review` 2 パス目）。
+    "リモートの名前を見られなくても進む": (PREPARE,
+        '   || ! REMOTES="$(git remote 2>/dev/null)"; then',
+        '   || ! REMOTES="$(git remote 2>/dev/null || true)"; then'),
     "worktree の名前を完全一致だけにする": (PREPARE,
         '    "issue-${NUMBER}"|"issue-${NUMBER}-"*) return 0 ;;',
         '    "issue-${NUMBER}") return 0 ;;'),
@@ -1832,6 +1860,10 @@ def main(argv: list[str] | None = None) -> int:
         check("名前に / を含むリモート（my/fork）の my/fork/issue/83-x だけでも断り、一覧に出す（#1504 の /code-review 1 パス目）",
               correct["境界: 名前に / を含むリモートの同じ番号でも断る rc"] == 3
               and correct["境界: 名前に / を含むリモートの参照を一覧に出す"])
+        check("設定に無いリモートの gone/fork/issue/83-x だけでも断る（#1504 の Verifier 2 パス目）",
+              correct["境界: 設定に無いリモートの同じ番号でも断る rc"] == 3)
+        check("リモートの名前（git remote）を見られなければ作らずに 6（#1504 の /code-review 2 パス目）",
+              correct["境界: リモートの名前を見られなければ断る rc"] == 6)
         check("ディレクトリの名前が issue-83-… の worktree だけでも断り、一覧に出す（#1504。陽性対照）",
               correct["境界: 同じ番号で始まる worktree だけでも断る rc"] == 3
               and correct["境界: worktree を一覧に出す"])
