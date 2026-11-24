@@ -12,11 +12,14 @@
 1. **#1457 の受入基準 1**——2 つのタグの profile と `infra.csv` で、`profile の行` が指す行のうち変わった・消えた・新しい版でリンクの切れた行が、表の行・項目・ID・種類つきで
    候補として名指しされ（1）、指していない行の変化と足した行は名指されない。候補の行に Q&A の番号が無い。走らせた前後で正本と clone が変わらない。
 2. **新しい版の決め方**——`--new`・profile を持つタグのうち版の順（`v10` は `v9` より後ろ）が最も後ろのもの・profile を持たないタグを数えない・`タグ`／`確かめたタグ` と同じなら比べない。
+   名前の付け方ごとの試料（#1501・#1515）のうち、ほかのタグと混ざると何を数えたかが見えなくなるもの（`v1.0-lts` の系列・`v2.0.0-beta` の系列）は、その系列のタグだけを置いた別の clone で当てる。
 3. **止まり方**——設定の違反は clone を読む前に 1・古い版に無い ID は 1・profile を持つタグが無い・古い版に層が無い・新しい版の層を読めないは 4・新しい版に層が無ければ全部「消えた」・
    設定も値も無ければ 0。`--upto`・`--project`・`--clone` を渡す。
 4. **候補の性質（プロパティテスト）**——標準ライブラリの `random` で古い層・新しい層・切れたリンク・指した ID を生成し、本体の純粋な関数 `candidates` の (ID, 種類) の集合が
    テストの側で別に計算したものと同じこと（500 例。seed を出す）。**性質を破る変異（「消えた」を出さない）でこのテストが落ちる陽性対照つき。**
 5. **本体の定数が `plugins/platform-spec/references/infra-profile.md` の「版の差分と関門」と一致する**（崩すと不一致になる陽性対照つき）。
+   本体の「守ること」の、設定のタグが自分の名前の形に当たらないときの行（#1514）と、末尾が綴りだけの設定のタグで末尾の無い後ろの版も数える行（#1515）も、
+   同じ言い方で原本にあること。
 6. **変異テスト**——本体を 1 箇所ずつ壊し、名指しした試料が期待どおりでなくなること（壊さない写しを同じ置き方で置くと期待どおりになる陰性対照つき）。
    **変異の数は docstring の「守ること」の行の数と同じ**（手で数えない）。変異ごとに、壊す箇所が本体にちょうど 1 回現れることを先に確かめる。
 
@@ -96,7 +99,20 @@ CASES: list[tuple[str, dict, list[str], int, tuple[str, ...], tuple[str, ...]]] 
      ("OTHER-1", "NEW-1", "MON-1", "違反: ")),
     ("区切った数字の版", with_(OK, settings=settings("rel1.0")), [], 1, ("タグ rel1.0 → rel1.1.0", "起票の候補 4 件"), ()),
     # #1501: 数字の後ろに綴りを持つ名前。版の順で後ろの v1.2-rc（末尾が違う・層は変わっていない）を新しい版にしない
-    ("末尾の綴りの版", with_(OK, settings=settings("v1.0-lts")), [], 1, ("タグ v1.0-lts → v1.1-lts", "起票の候補 4 件"), ()),
+    ("末尾の綴りの版", with_(OK, settings=settings("v1.0-lts")), ["--clone", "{clone_lts}"], 1, ("タグ v1.0-lts → v1.1-lts", "起票の候補 4 件"), ()),
+    # #1515（案 A）: 末尾が綴りだけの設定のタグは、末尾の無い後ろの版も数える——Issue の示した入力（v2.0.0-beta・v2.0.0・v2.1.0）
+    ("プレリリースの設定のタグ", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_beta}"], 1,
+     ("タグ v2.0.0-beta → v2.1.0", "起票の候補 4 件"), ()),
+    # 末尾の同じ後ろの版（v1.1-lts）があれば、末尾の無い v10 より先にそれを選ぶ（共有の clone には v10 が在る）
+    ("末尾の同じ版を先に", with_(OK, settings=settings("v1.0-lts")), [], 1, ("タグ v1.0-lts → v1.1-lts", "起票の候補 4 件"), ("→ v10",)),
+    # 同じ数字なら末尾の無い v2.0.0 が後ろ（git の既定の版の並びでは v2.0.0-beta が後ろに来る）
+    ("正式版", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_ga}"], 1, ("タグ v2.0.0-beta → v2.0.0", "起票の候補 4 件"), ()),
+    # 数字で前の末尾の無い v1.9.0 は数えない
+    ("前の末尾の無い版", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_old}"], 0,
+     ("設定のタグ v2.0.0-beta より後ろの、名前の形が同じタグが無い。比べない", "を持つタグ: v1.9.0"), ("起票の候補: ",)),
+    # 末尾に数字を持つ v2.0.0-rc1 は自分の形に当たらないので、末尾の無い v2.1.0 も数えない（数えなかったタグに名指す）
+    ("末尾に数字を持つプレリリース", with_(OK, settings=settings("v2.0.0-rc1")), ["--clone", "{clone_beta}"], 0,
+     ("設定のタグ v2.0.0-rc1 より後ろの、名前の形が同じタグが無い。比べない", "を持つタグ: v2.1.0"), ("起票の候補: ",)),
     ("日付の版", with_(OK, settings=settings("2024-10-01")), [], 1, ("タグ 2024-10-01 → 2025-03-01", "起票の候補 4 件"), ()),
     ("区切りが続く版", with_(OK, settings=settings("v1.0-lts2")), [], 0, ("設定のタグ v1.0-lts2 より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
     ("区切りを持たない版", with_(OK, settings=settings("w1")), [], 1, ("タグ w1 → w1.1", "起票の候補 4 件"), ()),
@@ -139,12 +155,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("版の順で並べない", "\"--sort=-v:refname\"", "\"--sort=-refname\"", "候補"),
     ("名前の形で絞らない", "            matches = bool(shape.fullmatch(tag))", "            matches = True", "候補"),
     ("数えなかったタグを名指さない", "            if skipped:\n                self.notes.append(", "            if False:\n                self.notes.append(", "候補"),
-    ("接頭辞を正規表現として読む", "re.compile(re.escape(prefix) + ", "re.compile(prefix + ", "接頭辞は文字どおり"),
-    ("区切った数字を数えない", "r\"[0-9]+(?:\" + separator + r\"[0-9]+)*\" + re.escape(suffix)", "r\"[0-9]+\" + re.escape(suffix)", "区切った数字の版"),
+    ("接頭辞を正規表現として読む", "body = re.escape(prefix) + ", "body = prefix + ", "接頭辞は文字どおり"),
+    ("区切った数字を数えない", "r\"[0-9]+(?:\" + separator + r\"[0-9]+)*\"\n", "r\"[0-9]+\"\n", "区切った数字の版"),
     ("区切りを設定のタグから読まない", "separators = sorted(set(re.sub(r\"[0-9]\", \"\", middle))) or [\".\"]", "separators = [\".\"]", "日付の版"),
-    ("末尾の綴りを無視する", "+ re.escape(suffix))", "+ r\"-[a-z]+\")", "末尾の綴りの版"),  # 綴りなら何でも当てる——v1.2-rc を新しい版にする
+    ("末尾の綴りを無視する", "return re.compile(parts[0] + re.escape(parts[1]))", "return re.compile(parts[0] + r\"(?:-[a-z]+)?\")", "末尾の綴りの版"),  # 綴りなら何でも当てる——v1.2-rc を新しい版にする
+    ("末尾の無い版を数えない", "return re.compile(parts[0]) if parts is not None and parts[1] else None", "return None", "プレリリースの設定のタグ"),  # v2.0.0-beta の設定で比べずに 0
+    ("末尾の同じ版を先にしない", "        if found is not None and found != old:\n", "        if False:\n", "末尾の同じ版を先に"),
+    ("同じ数字の末尾の無いタグを前にする", ">= version_numbers(old)", "> version_numbers(old)", "正式版"),
+    ("前の末尾の無いタグも数える", "elif plain_found is not None and version_numbers(plain_found) >= version_numbers(old):", "elif plain_found is not None:", "前の末尾の無い版"),
+    ("末尾の無いタグを名指さない", "skipped = [tag for tag in seen if tag != chosen]", "skipped = [tag for tag in seen if tag not in plains]", "前の末尾の無い版"),
     ("区切りを持たないタグを . にしない", "or [\".\"]", "or [\"-\"]", "区切りを持たない版"),
-    ("自分の形に当たらないタグでも比べる", "    if not shape.fullmatch(tag):\n        return re.compile(re.escape(tag))\n", "", "区切りが続く版"),
+    ("自分の形に当たらないタグでも比べる", "    if not re.fullmatch(body + re.escape(suffix), tag):\n        return None\n", "", "区切りが続く版"),
     ("profile を持たないタグも数える", "            if want not in ext.list_files(clone, commit):\n                continue", "            if False:\n                continue", "候補"),
     ("タグと同じでも比べる", "            if new in (old, checked):", "            if new == checked:", "--new がタグと同じ"),
     ("確かめたタグと同じでも比べる", "            if new in (old, checked):", "            if new == old:", "確かめたタグ"),
@@ -235,6 +256,34 @@ def make_profile(root: Path, env: dict) -> Path:
     return root
 
 
+def make_series(root: Path, env: dict, tags: list[tuple[str, str]]) -> Path:
+    """タグを (名前, 層) の順に 1 つずつ置いた、ほかのタグを持たない clone（#1515。v で始まる末尾の無いタグ（`v10`）と混ざらない）。"""
+    assert_in_tmp(root)
+    root.mkdir(parents=True)
+    git(root, env, "init", "-q", "-b", "main")
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text("# 言語\n", encoding="utf-8")
+    base = root / "spec-profile" / "org"
+    base.mkdir(parents=True)
+    for tag, layer in tags:
+        (base / "profile.csv").write_text(PROFILE, encoding="utf-8")
+        (base / "infra.csv").write_text(layer, encoding="utf-8")
+        git(root, env, "add", "-A")
+        git(root, env, "commit", "-q", "--allow-empty", "-m", tag)
+        git(root, env, "tag", tag)
+    git(root, env, "checkout", "-q", tags[0][0])
+    return root
+
+
+# #1501 の示した入力（v1.0-lts・v1.1-lts）に、末尾の違う v1.2-rc（版の順で後ろ・層は変わっていない）
+SERIES_LTS = [("v1.0-lts", LAYER_A), ("v1.1-lts", LAYER_B), ("v1.2-rc", LAYER_A)]
+# #1515 の示した入力（v2.0.0-beta・v2.0.0・v2.1.0）に、末尾に数字を持つ v2.0.0-rc1
+SERIES_BETA = [("v2.0.0-beta", LAYER_A), ("v2.0.0", LAYER_A), ("v2.1.0", LAYER_B), ("v2.0.0-rc1", LAYER_A)]
+# ベータから正式版（同じ数字・末尾の無い v2.0.0 だけが後ろ）と、数字で前の末尾の無い版だけを持つ系列
+SERIES_GA = [("v2.0.0-beta", LAYER_A), ("v2.0.0", LAYER_B)]
+SERIES_OLD = [("v1.9.0", LAYER_B), ("v2.0.0-beta", LAYER_A)]
+
+
 def lay_out(plugins: Path, spec_loop: Path, source: str | None = None) -> Path:
     assert_in_tmp(plugins)
     plugins.mkdir(parents=True)
@@ -257,7 +306,7 @@ def run_case(platform: Path, work: Path, files: dict, args: list[str], tokens: d
     other = work / "project2"  # `--project` が指す、CLAUDE.md だけを置いた場所
     other.mkdir()
     (other / CLAUDE).write_text(DECL.replace("{clone}", tokens["clone"]), encoding="utf-8")
-    argv = [a.format(clone=tokens["clone"], project2=str(other)) for a in args]
+    argv = [a.format(project2=str(other), **tokens) for a in args]
     argv = [] if "--no-docs" in argv else [str(project / "docs"), *argv]
     elsewhere = work / "elsewhere"
     elsewhere.mkdir()
@@ -338,7 +387,27 @@ def reference_mismatches(module, infra_md: str) -> list[str]:
         problems.append("版の順（v:refname）が原本に無い")
     if f"`{module.base.SETTING_CHECKED}`" not in diff:
         problems.append(f"任意の項目 {module.base.SETTING_CHECKED} が原本の「版の差分と関門」に無い")
+    for key, issue in SHARED_RULES:
+        rule = guarded_rule(module, key)
+        if rule is None:
+            problems.append(f"本体の「守ること」に「{key}」の行が 1 行でない")
+        elif rule not in diff:
+            problems.append(f"本体の「守ること」の「{rule}」が、原本の「版の差分と関門」に同じ言い方で無い（{issue}）")
     return problems
+
+
+SELF_SHAPE = "自分の名前の形に当たらない"
+NO_SUFFIX = "末尾の無い後ろの版を数える"
+SAME_FIRST = "末尾の無い版より先に"
+# 本体の「守ること」の行のうち、同じ言い方で原本にもあるべきもの（行を見分ける語句, 足した Issue）と、崩し方（壊す前, 壊した後）
+SHARED_RULES = [(SELF_SHAPE, "#1514"), (NO_SUFFIX, "#1515"), (SAME_FIRST, "#1515")]
+RULE_BREAKS = {SELF_SHAPE: ("（比べずに 0）", ""), NO_SUFFIX: ("を数える", "も数える"), SAME_FIRST: ("先に", "後に")}
+
+
+def guarded_rule(module, key: str) -> str | None:
+    """本体の「守ること」のうち、`key` を含む行（先頭の `- ` を除く）。1 行でなければ None。"""
+    rules = [line[2:] for line in tip.guarded_lines(module.__doc__ or "") if key in line]
+    return rules[0] if len(rules) == 1 else None
 
 
 REFERENCE_MUTATIONS = [
@@ -356,15 +425,29 @@ def main() -> int:
         clone = make_profile(tmp / "profile", env)
         spec_loop = tmp / "spec-loop-copy"
         shutil.copytree(SPEC_LOOP, spec_loop, ignore=shutil.ignore_patterns("__pycache__"))
-        tokens = {"clone": str(clone)}
+        clone_lts = make_series(tmp / "profile-lts", env, SERIES_LTS)
+        clone_beta = make_series(tmp / "profile-beta", env, SERIES_BETA)
+        clone_ga = make_series(tmp / "profile-ga", env, SERIES_GA)
+        clone_old = make_series(tmp / "profile-old", env, SERIES_OLD)
+        tokens = {"clone": str(clone), "clone_lts": str(clone_lts), "clone_beta": str(clone_beta), "clone_ga": str(clone_ga), "clone_old": str(clone_old)}
         platform = lay_out(tmp / "plugins", spec_loop)
-        before_clone = tip.clone_state(clone, env)
+        clones = (clone, clone_lts, clone_beta, clone_ga, clone_old)
+        before_clone = [tip.clone_state(c, env) for c in clones]
         for index, (name, files, args, _, _, _) in enumerate(CASES):
             result = run_case(platform, tmp / f"case{index}", files, args, tokens, env)
             check(f"試料が期待どおりでない（番号の無い候補の行を含む）: {name}", as_expected(name, result), f"exit={result[0]} {result[1][-700:]}")
 
+        # 利用者の git の versionsort.suffix に依らない（#1515）——末尾のあるタグを前・後ろに並べる 2 つの設定で、試料「正式版」が同じ
+        for index, suffix in enumerate(("-beta", "-")):
+            config = tmp / f"versionsort{index}.gitconfig"
+            config.write_text(f"[versionsort]\n\tsuffix = {suffix}\n", encoding="utf-8")
+            sorted_env = dict(env, GIT_CONFIG_GLOBAL=str(config))
+            files, args = next((f, a) for n, f, a, _, _, _ in CASES if n == "正式版")
+            result = run_case(platform, tmp / f"versionsort{index}", files, args, tokens, sorted_env)
+            check(f"versionsort.suffix = {suffix} の設定で試料「正式版」が期待どおりでない", as_expected("正式版", result), result[1][-300:])
+
         # 読むだけ: clone と正本が変わらない・__pycache__ ができない
-        check("clone の状態が変わった", tip.clone_state(clone, env) == before_clone)
+        check("clone の状態が変わった", [tip.clone_state(c, env) for c in clones] == before_clone)
         work = tmp / "readonly"
         run_case(platform, work, OK, [], tokens, env)
         project = work / "project"
@@ -401,6 +484,15 @@ def main() -> int:
         head, _, rest = infra_md.partition("## 版の差分と関門")
         check("崩しても不一致にならない: 版の差分と関門の `確かめたタグ`",
               bool(reference_mismatches(module, head + "## 版の差分と関門" + rest.replace("`確かめたタグ`", "確かめたタグ"))))
+        for key, _ in SHARED_RULES:
+            rule = guarded_rule(module, key)
+            if rule is None or infra_md.count(rule) != 1:
+                check(f"崩す箇所が 1 回でない: 「{key}」の文", False, f"{infra_md.count(rule) if rule else 0} 回")
+                continue
+            before, after = RULE_BREAKS[key]
+            broken_rule = rule.replace(before, after)
+            check(f"崩す箇所が文に無い: 「{key}」の文", broken_rule != rule)
+            check(f"崩しても不一致にならない: 「{key}」の文", bool(reference_mismatches(module, infra_md.replace(rule, broken_rule))))
 
         # 変異
         guarded = tip.guarded_lines(source)
