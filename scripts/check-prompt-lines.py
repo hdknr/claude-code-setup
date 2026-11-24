@@ -27,8 +27,10 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
    **元の項が base の時点から本文（字下げした行）で引いていた別の項の頭のうち、次の 2 つを両方満たすもの**は照らさない
    （前者は統合の言い換え、後者は同じ項の頭の言い換えを付け替えと見ないため）:
    - **引いた先の項が、新しい引きの項とは別の項として HEAD に残る**——頭のまま残るか、base でその頭を引いていた ID が HEAD で新しい引きの項とは別の項を引く
-     （同じ PR で引いた先の項の頭も言い換えた形。#1453）。ID の行き先で残るときは、引いた頭の文面が新しい引きの項の頭の行に無いこと
-     （元の項の頭を引いた先の頭の写しに差し替え、引いた先の頭を言い換える形を止める）。元の項を消して引いた先の項に付け替える形（#1430）は、引いた先が新しい引きの項そのものなので、
+     （同じ PR で引いた先の項の頭も言い換えた形。#1453）。ID の行き先で残るときは、引いた頭の文面が新しい引きの項の頭の行に無いか、
+     頭（頭の行と、その下の印の無い折り返しの行）で、元の項の行の引用の前か後ろの文面（文字か数字を 1 つ以上含むもの）と続き、
+     その手前に、引いた頭を含まず元の項の頭の書き出しの 3 字を持つ頭自身の文面があること（元の項の頭を引いた先の頭の写しに差し替え、引いた先の頭を言い換える形——写しに引用の後ろの文面を添えても——を止め、
+     引用の行を頭の行に上げる言い換えは止めない。#1453）。元の項を消して引いた先の項に付け替える形（#1430）は、引いた先が新しい引きの項そのものなので、
      元の項の引用の行をどんな印（`・`・`>`・`[ ]`・`（1）` など）でそのまま移しても照らす。
    - **新しい引きの項が引用を受け継ぐ**——引いた頭の文面が新しい引きの項の本文（頭の行の外。字下げした続きの行を含む）に残るか、
      元の項の行（行頭の `-`・`1.` などの印を除き、飾りと空白を除いた形）の引用の前か後ろの文面（**文字か数字を 1 つ以上含むもの**）が頭と続いたまま新しい引きの項に残る
@@ -54,6 +56,7 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import re
 import subprocess
 import sys
@@ -119,6 +122,31 @@ def kept_quote(head: str, prev_lines: list[str], cur: str, cur_body: str) -> boo
             before, after = line[:i], line[i + len(head):]
             if (any(c.isalnum() for c in after) and head + after in cur) or (any(c.isalnum() for c in before) and before + head in cur):
                 return True
+            i = line.find(head, i + 1)
+    return False
+
+
+def shares(text: str, prev_head: str, n: int = 3) -> bool:
+    """`text` が元の項の頭 `prev_head` の書き出し（文字か数字を含む最初の続いた n 字）を持つか——頭の言い換えが元の頭の書き出しを残すか。
+    頭のどこかの n 字では見ない（`の行です` のような語尾は、関わらない前置きでも偶然に重なる——#1453 の狭いパスの R1）。"""
+    start = next((prev_head[i:i + n] for i in range(len(prev_head) - n + 1) if any(c.isalnum() for c in prev_head[i:i + n])), None)
+    return start is not None and start in text
+
+
+def lifted_quote(head: str, prev_lines: list[str], head_text: str, prev_head: str) -> bool:
+    """引用の行を頭の行に上げる言い換えか（#1453）——新しい引きの項の頭（`head_text`。頭の行と、その下の印の無い折り返しの行を `flat` した形。
+    行頭の印は含めない）に、元の項の行（`prev_lines`）の引いた頭 `head` が、引用の前か後ろの文面（文字か数字を 1 つ以上含むもの）と
+    続いたまま入り、その手前に、引いた頭を含まず、元の項の頭（`prev_head`。`flat` した形）の書き出しの 3 字（文字か数字を 1 つ以上含む）を持つ頭自身の文面があるか。
+    頭が引いた頭の写しで始まる形・手前を元の項の頭と関わらない文面（`要点:` など）にした形（#1452 の O1 とその変形）は当たらない。"""
+    for line in prev_lines:
+        i = line.find(head)
+        while i >= 0:
+            before, after = line[:i], line[i + len(head):]
+            spans = ([before + head] if any(c.isalnum() for c in before) else []) + ([head + after] if any(c.isalnum() for c in after) else [])
+            for span in spans:
+                j = head_text.find(span)
+                if j >= 0 and head not in head_text[:j] and shares(head_text[:j], prev_head):
+                    return True
             i = line.find(head, i + 1)
     return False
 
@@ -233,6 +261,9 @@ def main(argv: list[str]) -> int:
         cur = None if cur_item is None else flat(cur_item[1])
         cur_body = "" if cur_item is None else flat("\n".join(cur_item[1].split("\n")[1:]))
         cur_head = "" if cur_item is None else flat(cur_item[1].split("\n")[0])
+        head_wrap = [] if cur_item is None else [cur_item[0]] + list(itertools.takewhile(
+            lambda x: x.strip() and x[:1].isspace() and not LIST_MARK.match(x), cur_item[1].split("\n")[1:]))
+        head_text = flat("\n".join(head_wrap))  # 頭の行（印を除く）と、その下の印の無い折り返しの行
         if cur is None:
             continue  # 引きが HEAD の項の頭に当たらない——上の check が名指す
         def lives_on(f: str, cur_head: str) -> bool:
@@ -255,11 +286,12 @@ def main(argv: list[str]) -> int:
             # 統合元の項の頭（取り込んだ文面）と、元の項が base の時点から本文で引いていた別の項の頭のうち、引いた先が新しい引きの項とは
             # 別の項として HEAD に残り（lives_on。引いた先の頭を同じ PR で言い換えても、その ID が別の項を引けば残る——#1453）、
             # 新しい引きの項がその引用を受け継ぐもの（kept_quote）は照らさない。元の項を消して引いた先に付け替える形（#1430）と、
-            # 元の項を引いた頭の写しに差し替える形（#1452）は照らす
+            # 元の項を引いた頭の写しに差し替える形（#1452）は照らす。引いた先の頭を言い換えたときに頭の行に残る引いた頭は、引用の前か後ろの文面と
+            # 続き、その手前に元の項の頭の書き出しを残していれば（引用の行を頭の行に上げた言い換え。lifted_quote）写しと見ない（#1453）
             clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash
                       and not any(f.startswith(m) for m in merged)
                       and not (flat(f) in prev_own and lives_on(f, cur_item[0])
-                               and (f in new_heads or flat(f) not in cur_head)
+                               and (f in new_heads or flat(f) not in cur_head or lifted_quote(flat(f), prev_lines, head_text, flat(prev or "")))
                                and kept_quote(flat(f), prev_lines, cur, cur_body))]
         if clash:
             problems.append(f"{b['ID']}: 引きを base に既にある別の項の頭「{clash[0][:30]}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")
