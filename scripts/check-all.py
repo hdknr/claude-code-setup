@@ -89,9 +89,10 @@
       **`check-all.py` と hook の中身**（集め方と比べ方を直したら、古い記録を当たりにしない）。
 - **入力に数えないもの**: `.git/` の下（git の中身は git コマンドの側で見る）・`__pycache__`・`.pyc`・`.DS_Store`・
   作業ツリーの外（一時ディレクトリなど）。
-- **記録するのは緑だけ。** 落ちた回は、**今の入力で当たる記録だけ**を消す（入力が同じでも次は回る。ほかの状態の記録は残す——#1517）。
-  **落ちた回の途中で入力が変わったら、どの状態で落ちたかが決まらないので、そのテストの記録を全部消す**（走り始めた状態の緑の記録が残ると、
-  その状態に戻したときに落ちたテストが当たりになる）。記録しない回（下の 2 つ）も同じ。中断した回は書きも消しもしない。
+- **記録するのは緑だけ。** 落ちた回は、**そのテストが走り始めた時点で当たっていた記録と、終わった時点の入力で当たる記録**を消す
+  （入力が同じでも次は回る。途中で入力が変わっても、走り始めた状態に戻せば回る。ほかの状態の記録は残す——#1517）。
+  どちらも記録の側の依存で判定する（落ちた回は依存の一部しか読まないことがある）。
+  記録しない回（下の 2 つ）は、終わった時点の入力で当たる記録だけを消す。中断した回は書きも消しもしない。
   **テスト自身（`scripts/<名前>`）を読んだ跡が無い回は記録しない**——hook が入らなかった（`usercustomize` を読まない Python など）。
   空の依存を記録すると、何を変えても当たりになる。
   **回している間に入力が書き換わった回は記録しない**（`check-all.py` を始めた時刻より新しい mtime・git の状態の変化）。
@@ -718,11 +719,16 @@ def matches(rec: dict, name: str, args: list[str], hasher: Hasher) -> bool:
         return False
 
 
-def drop_record(root: Path, name: str, args: list[str], hasher: Hasher, every: bool = False) -> None:
+def matching_records(root: Path, name: str, args: list[str], hasher: Hasher) -> set[Path]:
+    """今の入力で当たる記録のパス。"""
+    return {path for path, rec in load_records(root, name) if matches(rec, name, args, hasher)}
+
+
+def drop_record(root: Path, name: str, args: list[str], hasher: Hasher, also: frozenset[Path] | set[Path] = frozenset()) -> None:
     """**今の入力で当たる記録だけ**を消す——入力が同じでも次は回る。ほかの状態の記録（別の worktree が緑にしたもの）は残す（#1517）。
-    `every` なら、そのテストの記録を全部消す——落ちた回の途中で入力が変わり、どの状態で落ちたかが決まらないとき。"""
+    `also` に渡した記録も消す——落ちた回の、そのテストが走り始めた時点で当たっていた記録。"""
     for path, rec in load_records(root, name):
-        if every or matches(rec, name, args, hasher):
+        if path in also or matches(rec, name, args, hasher):
             with contextlib.suppress(OSError):
                 path.unlink()
 
@@ -743,15 +749,19 @@ def moved_during(ctx: dict, deps: dict) -> list[str]:
 def traced_run(name: str, args: list[str], ctx: dict) -> tuple[bool, str, float]:
     """hook を差し込んで回し、緑なら依存を記録する。落ちた回は、今の入力で当たる記録を消す。"""
     log = ctx["logdir"] / f"{name}.jsonl"
+    # **走り始めた時点で当たる記録を覚えておく**（#1517）——落ちた回の途中で入力が変わっても、走り始めた状態に戻したときに
+    # 落ちたテストを当たりにしないため。判定は記録の側の依存で行う（落ちた回は依存の一部しか読まないことがある）。
+    before = matching_records(ctx["root"], name, args, Hasher(ctx["repo"]))
     ok, out, secs = timed(name, args, trace_env(log, ctx["repo"]))
     if ctx["stopping"]():
         return ok, out, secs  # 中断した回は記録を書きも消しもしない
-    deps = collect_deps(log, ctx["repo"])
     if not ok:
-        # **落ちた回の途中で入力が変わったら、どの状態で落ちたかが決まらない——記録を全部消す**（#1517）。終わった時点の状態の
-        # 記録だけを消すと、走り始めた状態の緑の記録が残り、その状態に戻すと落ちたテストが CACHED になる。
-        drop_record(ctx["root"], name, args, Hasher(ctx["repo"]), every=bool(moved_during(ctx, deps)))
+        # **落ちた回は、走り始めた時点で当たっていた記録と、終わった時点で当たる記録を消す**（#1517）。終わった時点のものだけだと、
+        # 途中で入力が変わったときに走り始めた状態の緑の記録が残り、その状態に戻すと落ちたテストが CACHED になる。全部は消さない——
+        # 別の worktree が別の状態で緑にした記録は残す。
+        drop_record(ctx["root"], name, args, Hasher(ctx["repo"]), also=before)
         return ok, out, secs
+    deps = collect_deps(log, ctx["repo"])
     if f"scripts/{name}" not in deps["files"]:
         # **テスト自身を読んだ跡が無い——hook が入らなかった**（`usercustomize` を読まない Python・中断の途中で記録が消えた）。
         # 空の依存を記録すると、何を変えても当たりになる（#1151 の 1 パス目）。
