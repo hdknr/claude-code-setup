@@ -94,7 +94,7 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `6f9b140cb54a774eb889b7d4a5e1cf430653b06a`
 - 2 パス目の指摘対応: 直す 1 件（CR2-2／V2-A）。狭いパスの終点: `7030879a6a18a3e46ca9a8d8c4eaa8ed9ef8f9ab`。陽性対照: 同じテストを起点 `6f9b140c` の本体に当てて「前の末尾の無い版」が `v1.9.0` を名指さず失敗。歯止め: `test-check-profile-diff.py` が `OK: 試料 31 件・変異 34 件（守ること 34 行）・references の崩し 5 件`、`check-all.py` が `33/105 本を回した（失敗 0 / 飛ばし 0）`・rc=0
 - 狭いパス（`dev-loop:dev-loop-verifier`・sonnet。`6f9b140c`→`7030879a`）: 反証 1 件（NP-1）。テスト全体を写しで走らせて著者の結果と一致。Verifier が設計した変異のうち素通りは `skipped = list(seen)`（選んだ末尾の無いタグも「数えなかった」に名指す）の 1 件——陽性対照つき（`newest()` が `('v2.0.0', ['v2.0.0', 'v1.9.0'])` を返す）。ほかの 3 件は殺せた
-- 外部レビュー・PR 側の CI: PR を作った後に書く
+- PR #1535: PR 側の CI が全部 pass（deploy は skipping）・MERGEABLE。外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）
 
 ```dev-loop-gates
 周の base: 24cfd053fd669e9318821dce58f9725a78de66c1
