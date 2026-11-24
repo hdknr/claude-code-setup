@@ -206,15 +206,19 @@ KILLED_WAIT = 0.2
 SLOW_OK = 0.3
 # **契約 11 の遅い 4 本は、速い 4 本が終わってから眠る**（#1474）——眠りの差（0.15〜0.3 秒）だけで「遅い」を作ると、
 # 負荷で速い子の起動が遅れたときに順位が入れ替わる（`check-all.py --no-cache` 2 本の並走で 200 回に 34 回。速い子が 0.5〜1.1 秒になった）。
-# - `TIMED`——契約 11 が置く印。中身は待つ相手（速い 4 本）の名前。**印が無い契約（slow-bad を使う契約 10 など）では待たない。**
+# - `TIMED`——契約 11 が置く印。中身は、全部を同時に走らせるのに要る作業者の数と、待つ相手（速い 4 本）の名前。
+#   **印が無い契約（slow-bad を使う契約 10 など）では待たない。**
+# - `WORKERS`——`record_pools` のプールが置く、作業者の数の印。**作業者が全部を同時に走らせる数に足りなければ待たない**
+#   ——足りないと遅い 4 本が作業者をふさぎ、速い子が走れずに上限まで待ち切る（`--jobs を無視する` の変異を cpu 4 の機械で回すと、
+#   1 回に約 30 秒延びた。#1474 の 1 パス目の Verifier と /code-review）。作業者が 1 つの回（`SERIAL`）もここに入る。
 # - `DONE`——速い子が終わりに置く印の頭（`done-<名前>`）。どの契約でも置く（出力は変えない）。
 # - `SAW`——遅い子が、待つ相手の印を全部見てから置く印の頭（`saw-<名前>`）。契約 11 はこれで「待った」ことを見る。
 # - `TIMED_WAIT`——待ちの上限（秒）。速い子が走らない変異で止まらないため。**`BARRIER_WAIT` と同じ長さに取る**——
 #   同時に起きるはずの相手が来ないのは起動の遅れである。5 秒だった版は、重い負荷の下で `--part contract` 30 回に 2 回、
 #   `saw-` が置かれずに落ちた（#1474 の周。待ち切ったと推したが、確かめた回では再現しなかった）。
 #   相手が来れば即座に抜けるので、通る回の所要時間には効かない。
-#   **作業者が 1 つの回（`SERIAL` の印）は待たない**——宣言順で遅い子が速い子より先に走るので、待つと上限まで待ち切る。
 TIMED = "timed"
+WORKERS = "workers"
 DONE = "done-"
 SAW = "saw-"
 TIMED_WAIT = BARRIER_WAIT
@@ -227,12 +231,14 @@ def done_mark(name: str) -> str:
 
 
 def wait_fast(me: str) -> str:
-    """遅い子の頭に置く行。印 `timed` があり `SERIAL` が無ければ、名前の全部の `done-` を待ち、見たら `saw-<me>` を置く（#1474）。"""
+    """遅い子の頭に置く行（#1474）。印 `timed` があり、作業者（印 `workers`）が `timed` の数以上なら、
+    名前の全部の `done-` を待ち、見たら `saw-<me>` を置く。"""
     return (
         "import pathlib, time\n"
         f"_d = pathlib.Path('{FLAGS}')\n"
-        f"if (_d / '{TIMED}').exists() and not (_d / '{SERIAL}').exists():\n"
-        f"    _names = (_d / '{TIMED}').read_text().split()\n"
+        f"_t, _w = _d / '{TIMED}', _d / '{WORKERS}'\n"
+        "_need, *_names = _t.read_text().split() if _t.exists() else ['0']\n"
+        "if _t.exists() and _w.exists() and _w.read_text().isdigit() and int(_w.read_text()) >= int(_need):\n"
         f"    _done = lambda: all((_d / ('{DONE}' + n)).exists() for n in _names)\n"
         f"    _end = time.time() + {TIMED_WAIT}\n"
         "    while not _done() and time.time() < _end:\n"
@@ -387,10 +393,11 @@ def record_pools(mod) -> list[RecordingPool]:
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             pools.append(self)
+            flags = Path(mod.SCRIPTS).parent / FLAGS
+            assert_not_real_repo(flags)
+            flags.mkdir(exist_ok=True)
+            (flags / WORKERS).write_text(str(self.workers))  # 契約 11 の遅い子が読む（#1474）
             if self.workers is not None and self.workers < 2:
-                flags = Path(mod.SCRIPTS).parent / FLAGS
-                assert_not_real_repo(flags)
-                flags.mkdir(exist_ok=True)
                 (flags / SERIAL).touch()
 
     mod.ThreadPoolExecutor = Pool
@@ -625,13 +632,14 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     top_n = load(TARGET, f"{tag}_topn").TOP  # 本数は本体の宣言を正とする（変異の側の値ではなく）
     clear_flags(root)  # 契約 10 が置いた killed の印を消す——残っていると slow-bad が待たずに落ちる
     # **遅い 4 本に、速い 4 本の終わりを待たせる**（#1474）——待つ相手は宣言から引く（手で写さない）。
-    # 作業者が 1 つになる変異（直列に戻す）は `SERIAL` の印で待たない（`record_pools`）。
+    # 作業者が 8 本を同時に走らせる数に足りない変異（直列に戻す・cpu の少ない機械での `--jobs を無視する`）は、
+    # `record_pools` が置く作業者の数の印で待たない。
     record_pools(mod)
     slow = [n for n, *_ in mod.GUARDS if n.startswith("slow-")] + [n for n in mod.TESTS if n.startswith("slow-")]
     fast = [n for n, *_ in mod.GUARDS if n.startswith("ok-")] + [n for n in mod.TESTS if n.startswith("ok-")]
     flags = root / FLAGS
     flags.mkdir(exist_ok=True)
-    (flags / TIMED).write_text(" ".join(fast))
+    (flags / TIMED).write_text(" ".join([str(len(fast) + len(slow)), *fast]))
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "8"])
     saw = sorted(n for n in slow if (flags / f"{SAW}{n}").exists())
     (flags / TIMED).unlink()  # 後ろの契約（12）と次の回に持ち越さない
