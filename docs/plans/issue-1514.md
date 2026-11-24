@@ -76,7 +76,7 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 1 パス目の指摘対応: 直す 0 件。判定 `git diff 287c42cf8465520f6143ff6b7def33ab5372d0fe -- ':(top)' ':(top,exclude)docs/plans/issue-1514.md'` が空・`git status --porcelain` は計画ファイルだけ
 - 2 パス目: 該当なし（1 パス目の指摘対応の差分 0 行。起点 `287c42cf`）
 - 狭いパス: 該当なし
-- 外部レビュー: PR の後に `external-reviews.py` で見る
+- PR #1528: PR 側の CI が全部 pass（deploy は skipping）。外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）
 
 ```dev-loop-gates
 周の base: 128c27496b3c46918a8d7864e35f1caa37627e09
