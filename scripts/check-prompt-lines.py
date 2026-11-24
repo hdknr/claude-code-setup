@@ -27,7 +27,8 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
    **元の項が base の時点から本文（字下げした行）で引いていた別の項の頭のうち、次の 2 つを両方満たすもの**は照らさない
    （前者は統合の言い換え、後者は同じ項の頭の言い換えを付け替えと見ないため）:
    - **引いた先の項が、新しい引きの項とは別の項として HEAD に残る**——頭のまま残るか、base でその頭を引いていた ID が HEAD で新しい引きの項とは別の項を引く
-     （同じ PR で引いた先の項の頭も言い換えた形。#1453）。元の項を消して引いた先の項に付け替える形（#1430）は、引いた先が新しい引きの項そのものなので、
+     （同じ PR で引いた先の項の頭も言い換えた形。#1453）。ID の行き先で残るときは、引いた頭の文面が新しい引きの項の頭の行に無いこと
+     （元の項の頭を引いた先の頭の写しに差し替え、引いた先の頭を言い換える形を止める）。元の項を消して引いた先の項に付け替える形（#1430）は、引いた先が新しい引きの項そのものなので、
      元の項の引用の行をどんな印（`・`・`>`・`[ ]`・`（1）` など）でそのまま移しても照らす。
    - **新しい引きの項が引用を受け継ぐ**——引いた頭の文面が新しい引きの項の本文（頭の行の外。字下げした続きの行を含む）に残るか、
      元の項の行（行頭の `-`・`1.` などの印を除き、飾りと空白を除いた形）の引用の前か後ろの文面（**文字か数字を 1 つ以上含むもの**）が頭と続いたまま新しい引きの項に残る
@@ -231,6 +232,7 @@ def main(argv: list[str]) -> int:
         cur_item = next(((f, own_lines(body)) for _, f, body in new_items if f.startswith(h["引き"])), None)
         cur = None if cur_item is None else flat(cur_item[1])
         cur_body = "" if cur_item is None else flat("\n".join(cur_item[1].split("\n")[1:]))
+        cur_head = "" if cur_item is None else flat(cur_item[1].split("\n")[0])
         if cur is None:
             continue  # 引きが HEAD の項の頭に当たらない——上の check が名指す
         def lives_on(f: str, cur_head: str) -> bool:
@@ -257,6 +259,7 @@ def main(argv: list[str]) -> int:
             clash += [f for f in others if flat(f) and flat(f) in cur and f not in clash
                       and not any(f.startswith(m) for m in merged)
                       and not (flat(f) in prev_own and lives_on(f, cur_item[0])
+                               and (f in new_heads or flat(f) not in cur_head)
                                and kept_quote(flat(f), prev_lines, cur, cur_body))]
         if clash:
             problems.append(f"{b['ID']}: 引きを base に既にある別の項の頭「{clash[0][:30]}」に付け替えた（元の項を外したなら ID ごと外して eval を付ける）")

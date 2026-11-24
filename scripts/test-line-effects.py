@@ -22,7 +22,7 @@
    引いた先の項の頭も言い換えた自分の頭の言い換え（G50。0——#1453）・引用の片側を言い換える言い換え（G51。0）・行の印を引用の文面に数えない（G53。1）・
    頭だけの行・折り返した引用を残して自分の頭だけを言い換える言い換え（G54・G55。0）・記号だけを添えた行を下ろす・写す付け替え（G56〜G60。1）・
    引用の両側・括弧の言い換えと、引いた先も言い換えて続きの行に文面がある言い換え（G61〜G63・G67。0）・引用の行ごと付け替え先へ移す・文字を含む印で下ろす・番号の印だけを写す・
-   付け替え先の ID も新しい引きの項へ寄せる付け替え（G64〜G66・G68・G69。1）・
+   付け替え先の ID も新しい引きの項へ寄せる付け替え（G64〜G66・G68・G69。1）・元の項の頭を付け替え先の頭の写しにして付け替え先を言い換える付け替え（G70。1）・
    改名（G32〜G34・G39。改名だけなら 0——R1。コミット前でも 0）。
 4. **原本との突き合わせ**——本物の台帳が 0 で通る・`references/prune.md` の記録の例が本体の正規表現に当たる・「削らない」が「黙って削らない」に置き換わっている。
 
@@ -619,6 +619,14 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
             [["V-01", "prompts/verifier.md", "要点: BBB ふ"] + ROWS[0][3:], ["V-02", "prompts/verifier.md", "要点: BBB ふたつめ"] + ROWS[1][3:], ROWS[2]]))
     scenario("G69 G64 で、付け替え先の ID も同じ新しい引きの項を引くよう言い換えても 1（引いた先が別の項として残らない）", 1, "付け替えた",
              s_both_ids_on_cur, pre_base=pre_quote_bbb)
+    # #1452 の狭いパスの O1: 元の項の頭を付け替え先の頭の写しに差し替え、本文の引用を残し、付け替え先の頭も言い換える
+    def s_copy_head_reword_target(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("   - 入れ子は数えない", "   - 入れ子は数えない（下の「BBB ふたつめの行です」と同じ）").replace(
+            "**AAA ひとつめの行です**", "要点: BBB ふたつめの行です").replace("2. **BBB ふたつめの行です**", "2. **BBB 二つめの行です**"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text(
+            [["V-01", "prompts/verifier.md", "要点: BBB ふたつ"] + ROWS[0][3:], ["V-02", "prompts/verifier.md", "**BBB 二つ"] + ROWS[1][3:], ROWS[2]]))
+    scenario("G70 元の項の頭を付け替え先の頭の写しに差し替えて本文の引用を残し、付け替え先の頭も言い換えて付け替えれば 1（引いた頭が新しい引きの項の頭の行にある）",
+             1, "付け替えた", s_copy_head_reword_target, pre_base=pre_quote_bbb)
     return bad
 
 
@@ -714,6 +722,8 @@ MUTATIONS = [
     ("引用の受け継ぎを、引用の後ろの文面だけで見る", "guard", 'if (any(c.isalnum() for c in after) and head + after in cur) or (any(c.isalnum() for c in before) and before + head in cur):', "if any(c.isalnum() for c in after) and head + after in cur:", "guard"),
     ("記号だけの前後も、文面で引用を受け継いだと見る", "guard", 'if (any(c.isalnum() for c in after) and head + after in cur) or (any(c.isalnum() for c in before) and before + head in cur):', "if (after and head + after in cur) or (before and before + head in cur):", "guard"),
     ("行の印を引用の文面に数える", "guard", 'prev_lines = next(([flat(LIST_MARK.sub("", x))', 'prev_lines = next(([flat(x)', "guard"),
+    # #1452 の狭いパスの O1
+    ("ID の行き先で残る引いた先を、新しい引きの項の頭の行に写しても除外する", "guard", "and (f in new_heads or flat(f) not in cur_head)", "and True", "guard"),
 ]
 
 
