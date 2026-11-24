@@ -35,6 +35,7 @@ R-08,prompts/review-handoff.md,**バックグラウンドのジョブを残さ�
 R-09,prompts/review-handoff.md,**頼まれていない全体スイートを回さない。** ,-,2026-11-20,no-full-suite,,不可
 R-10,prompts/review-handoff.md,**コンテナ・常駐するサービスを起動しない**（,-,2026-11-20,no-containers,,不可
 R-11,prompts/review-handoff.md,**指摘ごとに、それを見つけた「とくに見てほしいこと」,-,2026-11-20,report-item-number,,不可
+R-12,prompts/review-handoff.md,**レビューの結果は、最後の返事に加えて `{{,#1503,2026-11-24,,,不可
 V-01,prompts/verifier.md,**各主張について、その実験は主張を判別している,-,2026-11-20,claim-discriminates,,指摘
 V-02,prompts/verifier.md,**主張 → 一次ソースの引用（ファイル:行 ま,-,2026-11-20,,,指摘
 V-03,prompts/verifier.md,**記述の存在確認と事実確認は別です。** 「〇,-,2026-11-20,existence-vs-fact,,指摘
@@ -62,3 +63,4 @@ V-24,prompts/verifier.md,**コマンドを実行できなかった場合は、�
 V-25,prompts/verifier.md,**反証が 0 件なら「0 件」と明記**してく,-,2026-11-20,,,不可
 V-26,prompts/verifier.md,**重い段（変異・スイート・外部の探索）ごとに、,-,2026-11-20,,,不可
 V-27,prompts/verifier.md,報告は簡潔に。**受入基準と経路の一覧は絞らず、,-,2026-11-20,report-keep-items,,不可
+V-28,prompts/verifier.md,**報告は、最後の返事に加えて `{{報告のファ,#1503,2026-11-24,,,不可
