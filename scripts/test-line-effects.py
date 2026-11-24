@@ -20,6 +20,7 @@
    本文が別の項の頭を引く項の言い換え（G41）と、本文で引いていた頭の言い換え（飾りを外す・前置きを足す・延ばす・折り返す・本文に下ろす）への付け替え（G42〜G46。1——#1430）と、
    引いた文を頭に含める自分の頭の言い換え（G47・G48。0）・元の項を引いていた頭を写した新しい項に差し替える付け替え（G49・G52。1——#1452）・
    引いた先の項の頭も言い換えた自分の頭の言い換え（G50。0——#1453）・引用の片側を言い換える言い換え（G51。0）・行の印を引用の文面に数えない（G53。1）・
+   頭だけの行・折り返した引用を残して自分の頭だけを言い換える言い換え（G54・G55。0）・記号だけを添えた行を下ろす・写す付け替え（G56〜G60。1）・
    改名（G32〜G34・G39。改名だけなら 0——R1。コミット前でも 0）。
 4. **原本との突き合わせ**——本物の台帳が 0 で通る・`references/prune.md` の記録の例が本体の正規表現に当たる・「削らない」が「黙って削らない」に置き換わっている。
 
@@ -562,6 +563,26 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
              1, "付け替えた", s_replace_bare, pre_base=pre_bare_bbb)
     scenario("G53 G52 の base で、元の項を消し、付け替え先に新しい頭を置いて元の頭を本文の項に下ろして付け替えても 1（行の印は引用の文面に数えない）",
              1, "付け替えた", reassign_to_quoted_as("**まったく別の頭です**\n   - BBB ふたつめの行です", "**まったく別"), pre_base=pre_bare_bbb)
+    # #1452 の 1 パス目の /code-review・Verifier: 頭だけ・記号だけを添えた引用の行と、行をまたぐ引用
+    def pre_body(line):
+        def pre(root, skill):
+            (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("   - 入れ子は数えない", line))
+        return pre
+    scenario("G54 本文の行が別の項の頭だけの項が、本文を残して自分の頭だけを言い換えても 0（引いた先の項は残る）", 0, "問題 0 件",
+             reword_quoting_as("1. **AAA 一つめの行です**\n   - CCC みっつめの行です\n"), pre_base=pre_body("   - CCC みっつめの行です"))
+    scenario("G55 本文の引用が字下げした続きの行へ折り返された項が、本文を残して自分の頭だけを言い換えても 0", 0, "問題 0 件",
+             reword_quoting_as("1. **AAA 一つめの行です**\n   - 入れ子は数えない（下の「CCC みっつめ\n     の行です」と同じ）\n"),
+             pre_base=pre_body("   - 入れ子は数えない（下の「CCC みっつめ\n     の行です」と同じ）"))
+    for name, line in (("G56 G53 で、下ろす行の印が `・` でも 1（記号は引用の文面に数えない）", "   ・BBB ふたつめの行です"),
+                       ("G57 G53 で、下ろす行が引用（`>`）でも 1", "   > BBB ふたつめの行です"),
+                       ("G58 G53 で、下ろす行がチェックボックス（`- [ ]`）でも 1", "   - [ ] BBB ふたつめの行です"),
+                       ("G59 G53 で、下ろす行が鉤括弧だけを添えた引用（`「…」`）でも 1", "   - 「BBB ふたつめの行です」")):
+        scenario(name, 1, "付け替えた", reassign_to_quoted_as("**まったく別の頭です**\n" + line, "**まったく別"), pre_base=pre_body(line))
+    def s_replace_kakko(root, skill):
+        (skill / "prompts" / "verifier.md").write_text(PROMPT.replace("1. **AAA ひとつめの行です**\n   - 入れ子は数えない\n", "1. 要点: 「BBB ふたつめの行です」\n"))
+        (skill / "references" / "line-registry.csv").write_text(registry_text([["V-01", "prompts/verifier.md", "要点: 「BBB"] + ROWS[0][3:]] + ROWS[1:]))
+    scenario("G60 元の項の本文の行が鉤括弧だけを添えた付け替え先の頭なら、その行を写した新しい項に差し替えて付け替えれば 1", 1, "付け替えた",
+             s_replace_kakko, pre_base=pre_body("   - 「BBB ふたつめの行です」"))
     return bad
 
 
@@ -636,25 +657,31 @@ MUTATIONS = [
     ("HEAD に残った項に限らない（外した項の頭も照らす）", "guard", "and f in new_heads]", "]", "guard"),
     ("統合した項の頭も照らす", "guard", "and not any(f.startswith(m) for m in merged)\n", "and True\n", "guard"),
     ("統合元の除外を言い換えない付け替えにも掛ける", "guard", "others = [f for _, f, _ in base_items if f != prev]", "others = [f for _, f, _ in base_items if f != prev and not any(f.startswith(m) for m in merged)]", "guard"),
-    ("元の項が base で本文に引いていた頭も照らす", "guard", "and not kept_quote(flat(f), prev_lines, cur)]", "]", "guard"),
+    ("元の項が base で本文に引いていた頭も照らす", "guard", 'and not kept_quote(flat(f), prev_lines, [flat(LIST_MARK.sub("", x)) for x in cur_body.split("\\n")], f in new_heads)]', "]", "guard"),
     ("項の続きの段落まで項に含める", "guard", "if line.strip() and not line[:1].isspace():", "if False:", "guard"),
     ("改名をコミットした履歴でだけ見る", "guard", '"-M", base, "--"', '"-M", f"{base}...HEAD", "--"', "guard"),
     # #1430（#1452 で除外を引用の受け継ぎに変えたので、その時点の式は prev_lines を繋いで再現する）
-    ("本文で引いていた頭の除外を、HEAD に頭として残らない頭にも掛ける", "guard", "and not kept_quote(flat(f), prev_lines, cur)]", 'and flat(f) not in "".join(prev_lines)]', "guard"),
-    ("1 パス目の式に戻す（新しい引きの前方一致の頭だけ照らす）", "guard", "and not kept_quote(flat(f), prev_lines, cur)]",
+    ("本文で引いていた頭の除外を、HEAD に頭として残らない頭にも掛ける", "guard", 'and not kept_quote(flat(f), prev_lines, [flat(LIST_MARK.sub("", x)) for x in cur_body.split("\\n")], f in new_heads)]', 'and flat(f) not in "".join(prev_lines)]', "guard"),
+    ("1 パス目の式に戻す（新しい引きの前方一致の頭だけ照らす）", "guard", 'and not kept_quote(flat(f), prev_lines, [flat(LIST_MARK.sub("", x)) for x in cur_body.split("\\n")], f in new_heads)]',
      'and (flat(f) not in "".join(prev_lines) or flat(f).startswith(flat(h["引き"])))]', "guard"),
-    ("2 パス目の前の式に戻す（新しい引きが当たる項の頭の行に入る頭だけ照らす）", "guard", "and not kept_quote(flat(f), prev_lines, cur)]",
+    ("2 パス目の前の式に戻す（新しい引きが当たる項の頭の行に入る頭だけ照らす）", "guard", 'and not kept_quote(flat(f), prev_lines, [flat(LIST_MARK.sub("", x)) for x in cur_body.split("\\n")], f in new_heads)]',
      'and (flat(f) not in "".join(prev_lines) or flat(f) in next((flat(x) for _, x, _ in new_items if x.startswith(h["引き"])), ""))]', "guard"),
-    ("引いた先が HEAD に残るかを、頭の文面でなく前方一致で見る", "guard", "and not kept_quote(flat(f), prev_lines, cur)]",
+    ("引いた先が HEAD に残るかを、頭の文面でなく前方一致で見る", "guard", 'and not kept_quote(flat(f), prev_lines, [flat(LIST_MARK.sub("", x)) for x in cur_body.split("\\n")], f in new_heads)]',
      'and (flat(f) not in "".join(prev_lines) or not any(x.startswith(f) for x in new_heads))]', "guard"),
     # #1452・#1453
-    ("PR #1449 の式に戻す（引いた先の項が HEAD に頭のまま残れば除外）", "guard", "and not kept_quote(flat(f), prev_lines, cur)]",
+    ("PR #1449 の式に戻す（引いた先の項が HEAD に頭のまま残れば除外）", "guard", 'and not kept_quote(flat(f), prev_lines, [flat(LIST_MARK.sub("", x)) for x in cur_body.split("\\n")], f in new_heads)]',
      'and (flat(f) not in "".join(prev_lines) or f not in new_heads)]', "guard"),
-    ("引用の受け継ぎを、引用の後ろの文面だけで見る", "guard", "if (after and head + after in cur) or (before and before + head in cur):",
-     "if after and head + after in cur:", "guard"),
-    ("頭だけの行も、引用を受け継いだと見る", "guard", "if (after and head + after in cur) or (before and before + head in cur):",
-     "if head + after in cur or before + head in cur:", "guard"),
-    ("行の印を引用の文面に数える", "guard", 'flat(LIST_MARK.sub("", x))', "flat(x)", "guard"),
+    ("引用の受け継ぎを、引用の後ろの文面だけで見る", "guard", "if (any(c.isalnum() for c in after) and head + after in cur_all) or (any(c.isalnum() for c in before) and before + head in cur_all):",
+     "if any(c.isalnum() for c in after) and head + after in cur_all:", "guard"),
+    ("頭だけ・記号だけの行も、文面で引用を受け継いだと見る", "guard", "if (any(c.isalnum() for c in after) and head + after in cur_all) or (any(c.isalnum() for c in before) and before + head in cur_all):",
+     "if (after and head + after in cur_all) or (before and before + head in cur_all):", "guard"),
+    ("行の印を引用の文面に数える", "guard", 'prev_lines = next(([flat(LIST_MARK.sub("", x))', 'prev_lines = next(([flat(x)', "guard"),
+    # #1452 の 1 パス目の指摘対応
+    ("頭だけの行の受け継ぎを、引いた先の項が HEAD に残るかで絞らない", "guard", "if head_kept and before + head + after in cur_body:",
+     "if before + head + after in cur_body:", "guard"),
+    ("頭だけの行の受け継ぎを見ない", "guard", "if head_kept and before + head + after in cur_body:", "if False:", "guard"),
+    ("頭だけの行の受け継ぎを、新しい引きの項の頭の行でも見る", "guard", 'cur_body = "".join(cur_lines[1:])', "cur_body = cur_all", "guard"),
+    ("行をまたぐ引用を、行ごとにだけ見る", "guard", "        joined += line\n", '        joined += line + "\\0"\n', "guard"),
 ]
 
 
