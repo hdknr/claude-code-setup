@@ -79,7 +79,12 @@ Issue の受入基準: (a) 問いの画面に出す限界に、上の観測が�
   - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1507-verifier-1-20261124T163136Z.md`
   - /code-review 1 パス目（high）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1507-code-review-1-20261124T163136Z.md`
   - 結果: Verifier 1 パス目（166 行を読んだと報告——`wc -l` は 166）反証 2 件（V1-1・V1-2）。/code-review 1 パス目 指摘 7 件（CR1-1〜CR1-7）。
-  - 1 パス目の指摘対応: 直す 8 件（下の表。V1-1 と CR1-6 は同じ直し）。範囲は広げていない（同じファイルの中）。
+  - 1 パス目の指摘対応: 直す 8 件（下の表。V1-1 と CR1-6 は同じ直し）。範囲は広げていない（同じファイルの中）。 コミット `5188bd184f10275ae6c084375e7abd247bf8e9fd`。
+- 割り目（手順 6）: 割らない（cruise の周）
+- 2 パス目に渡した（Verifier・/code-review。成果物 `5188bd184f10275ae6c084375e7abd247bf8e9fd`）。
+  - Verifier 2 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1507-verifier-2-20261124T163758Z.md`
+  - /code-review 2 パス目（high）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1507-code-review-2-20261124T163758Z.md`
+  - 結果: Verifier 2 パス目（191 行を読んだと報告——`wc -l` は 191）反証 1 件（V2-A）。/code-review 2 パス目 指摘 7 件（CR2-1〜CR2-7）。
 - 交絡を潰した手順（指摘対応）: cron の行の `PATH` の置き方を `env -i` の `sh` で当てた——環境に無い `PATH` を `PATH=… &&` で置くと `python3` の子に渡らず（KeyError）、`export PATH=… &&` なら渡った。環境に `PATH` がある形（cron と同じ）では `export` 無しでも渡った。例は `export` の形にした。
 - 交絡を潰した手順: `lockf -t 0` の重なりの止め方を手元で当てた（1 本目が握っているあいだの 2 本目が 75 で断られ、離した後の 3 本目は走った——断る側と走る側の両方を見た）。ほかに実験なし。
 
