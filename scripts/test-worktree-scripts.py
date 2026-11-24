@@ -405,8 +405,15 @@ def exists_lists_indented(res, repo: Path, number: str) -> tuple:
     **1 行目だけを見ると、2 行目から字下げを落とした形が緑になる**（`exists_headers_have_lists` はそれを見ない）。
     返すのは (一致したか, 見出しごとの git の行数)。**行数が 2 未満の試料では 2 行目が無く、判別しない**
     ——`main()` が行数も見る（一致が複数ある試料であること）。"""
-    wt = [l for l in git(repo, "worktree", "list").stdout.splitlines() if f"issue-{number}" in l]
-    br = git(repo, "branch", "--all", "--list", f"*{number}*").stdout.splitlines()
+    # **当たり方は本体とは別に書く**（#1504）——worktree はディレクトリの名前、ブランチは `issue/<番号>` の境界。
+    wt = [l[len("worktree "):] for l in git(repo, "worktree", "list", "--porcelain").stdout.splitlines()
+          if l.startswith("worktree ")
+          and re.fullmatch(rf"issue-{number}(-.*)?", Path(l[len("worktree "):]).name)]
+    br = []
+    for line in git(repo, "branch", "--all", "--format=%(refname) %(refname:short)").stdout.splitlines():
+        ref, _, short = line.partition(" ")
+        if re.fullmatch(rf"refs/(heads|remotes/[^/]+)/issue/{number}(-.*)?", ref):
+            br.append(short)
     lines = res.stderr.splitlines()
     ok = True
     for header, expected in (("  worktree:", wt), ("  ブランチ:", br)):
@@ -502,6 +509,45 @@ STDOUT_0_PATHS = (
 )
 
 
+def boundary_observations(prepare: Path, base: Path) -> dict:
+    """**番号の境界で当てるか**（#1504）。番号 83 で入場する試料を 3 つ作って走らせる。
+
+    - **当たらないはずのものだけがある木**——`issue/831-foo`・`spec/83-x`・`spec/issue/83-x`（ローカル）、
+      `origin/issue/831-bar`・`origin/spec/issue/83-y`（リモート追跡参照）、ディレクトリの名前が `issue-831` の worktree。
+      **部分一致だった本体はここで 3 で止まった**（taihei-prm #83・#84 の形）。作れて（rc=0）、`issue/83-…` を切ることを見る。
+    - **当たるはずのものが 1 種類だけある木を 2 つ**——リモート追跡参照 `origin/issue/83-remote` だけの木と、
+      ディレクトリの名前が `issue-83-extra` の worktree（detached。`issue/83` のブランチは無い）だけの木。
+      **陽性対照**——境界を狭めすぎて「何にも当たらない」形を、ここで 3 にならないことで落とす。
+      **ローカルのブランチと `issue-83` そのものの worktree が当たることは、`observe()` の「2 回目は断る」が見る。**
+    **リモート追跡参照は `update-ref` で置く**——`origin` は無いので取り直しには出ない（ネットワークに出ない）。"""
+    out = {}
+    neg = make_repo(base / "boundary-neg")
+    for b in ("issue/831-foo", "spec/83-x", "spec/issue/83-x"):
+        git(neg, "branch", b)
+    for r in ("refs/remotes/origin/issue/831-bar", "refs/remotes/origin/spec/issue/83-y"):
+        git(neg, "update-ref", r, "HEAD")
+    git(neg, "worktree", "add", "-q", "--detach", str(neg / ".claude" / "worktrees" / "issue-831"))
+    res = run(prepare, neg, "83", "boundary")
+    wt = neg / ".claude" / "worktrees" / "issue-83"
+    out["境界: 別の番号・別の枝だけなら作れる rc"] = res.returncode
+    out["境界: 別の番号・別の枝だけなら issue/83 を切る"] = (
+        git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() if wt.is_dir() else "")
+
+    remote = make_repo(base / "boundary-remote")
+    git(remote, "update-ref", "refs/remotes/origin/issue/83-remote", "HEAD")
+    res = run(prepare, remote, "83", "boundary")
+    out["境界: 同じ番号のリモート追跡参照だけでも断る rc"] = res.returncode
+    out["境界: リモート追跡参照を一覧に出す"] = "    origin/issue/83-remote" in res.stderr.splitlines()
+
+    wtonly = make_repo(base / "boundary-wt")
+    extra = wtonly / ".claude" / "worktrees" / "issue-83-extra"
+    git(wtonly, "worktree", "add", "-q", "--detach", str(extra))
+    res = run(prepare, wtonly, "83", "boundary")
+    out["境界: 同じ番号で始まる worktree だけでも断る rc"] = res.returncode
+    out["境界: worktree を一覧に出す"] = f"    {extra.resolve()}" in res.stderr.splitlines()
+    return out
+
+
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
     """両スクリプトの分岐をまとめて観測する。**1 回の観測で 1 つの偽リポジトリを使い切る。**"""
     repo = make_repo(base / "repo")
@@ -541,6 +587,8 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **ふつうの一時ディレクトリには空白が無い**ので、それだけでは素のまま出す変異が殺せない。
         "空白を含むパスでも cd の例が通る": _spaced_cd_example_runs(prepare, base),
         "数字以外は断る": bad_num.returncode,
+        # **番号の境界で当てる**（#1504）。
+        **boundary_observations(prepare, base),
         "作られた場所": wt.is_dir(),
         "切られたブランチ": git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
         if wt.is_dir() else "",
@@ -717,6 +765,10 @@ MUTATIONS = {
     "先に見ずに作る": (PREPARE,
         'if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then',
         'if false; then'),
+    # 守る（prepare）: 番号の境界で当てる（#1504）——ブランチの境界を外し、番号の部分一致に戻す
+    "ブランチの番号の境界を外す": (PREPARE,
+        '    "issue/${NUMBER}"|"issue/${NUMBER}-"*) return 0 ;;',
+        '    *"${NUMBER}"*) return 0 ;;'),
     # 守る 2: 絶対パスで作る
     "相対パスで作る": (PREPARE,
         'PATH_ABS="${MAIN}/.claude/worktrees/issue-${NUMBER}"',
@@ -836,6 +888,23 @@ STDOUT_MUTATIONS = {
         'echo "base:     ${BASE_SHA}"\n',
         'echo "base:     ${BASE_SHA}"\n'
         'if [ "$FETCH_NOTE" = "取り直した" ]; then echo "取り直しに成功した"; fi\n'),
+}
+
+# **「番号の境界で当てる」（#1504）を、ブランチの変異とは別の場所で壊す変異。**
+# **`MUTATIONS` に入れない**——同じ守るを別の形で壊すもので、「守る」の行数と変異の数の照合に数えない（`STDOUT_MUTATIONS` と同じ扱い）。
+# **当てる回は `observe()` を回す**——`boundary_observations()` の試料が、それぞれの形を殺す。
+BOUNDARY_MUTATIONS = {
+    # 境界を外す側——`issue-831` の worktree に当たって 3 で止まる。
+    "worktree の番号の境界を外す": (PREPARE,
+        '    "issue-${NUMBER}"|"issue-${NUMBER}-"*) return 0 ;;',
+        '    *"issue-${NUMBER}"*) return 0 ;;'),
+    # 狭めすぎる側——陽性対照の試料（リモート追跡参照だけの木・`issue-83-extra` だけの木）が 0 で作れてしまう。
+    "リモート追跡参照を見ない": (PREPARE,
+        '    refs/remotes/*) rest="${1#refs/remotes/*/}" ;;',
+        '    refs/remotes/*) return 1 ;;'),
+    "worktree の名前を完全一致だけにする": (PREPARE,
+        '    "issue-${NUMBER}"|"issue-${NUMBER}-"*) return 0 ;;',
+        '    "issue-${NUMBER}") return 0 ;;'),
 }
 
 # **守る 17（cd の例をシェルに貼れる形で出す）を、引用の中身で壊す変異**（#543。#502 の狭いパスの N1 で素通りした 2 件と、#576）。
@@ -1600,9 +1669,9 @@ def demonstrate_base_rule(base: Path) -> None:
 
 
 def check_mutant(name: str, correct: dict, base: Path) -> dict | None:
-    """`MUTATIONS`・`STDOUT_MUTATIONS` のその 1 件を当てた写しに `observe()` を回し、**観測が `correct` と違う（殺せる）か**を見る。
+    """`MUTATIONS`・`STDOUT_MUTATIONS`・`BOUNDARY_MUTATIONS` のその 1 件を当てた写しに `observe()` を回し、**観測が `correct` と違う（殺せる）か**を見る。
     観測を返す（当て先が 1 箇所でない・例外のときは `None`）。"""
-    script, needle, replacement = {**MUTATIONS, **STDOUT_MUTATIONS}[name]
+    script, needle, replacement = {**MUTATIONS, **STDOUT_MUTATIONS, **BOUNDARY_MUTATIONS}[name]
     source = script.read_text(encoding="utf-8")
     if source.count(needle) != 1:
         check(f"変異を当てる先が 1 箇所ある: {name}", False)
@@ -1631,7 +1700,7 @@ def parse_args(argv: list[str]) -> tuple[list[str], list[str]]:
     `mutation-claim:` の `red` が、主張に関係する部分だけを回すために使う。
 
         python3 scripts/test-worktree-scripts.py                         # 全部（check-all.py と CI はこれ）
-        python3 scripts/test-worktree-scripts.py --mutant <名前>          # 本体そのままと、`MUTATIONS`・`STDOUT_MUTATIONS` の
+        python3 scripts/test-worktree-scripts.py --mutant <名前>          # 本体そのままと、`MUTATIONS`・`STDOUT_MUTATIONS`・`BOUNDARY_MUTATIONS` の
                                                                          # その 1 件に `observe()` を回し、観測が違う（殺せる）か
         python3 scripts/test-worktree-scripts.py --quote-mutant <名前>    # 本体そのままが引用の試料を通り（陽性対照）、
                                                                          # `QUOTE_MUTATIONS` のその 1 件が空白の試料は通って引用の試料で落ちるか
@@ -1648,7 +1717,7 @@ def parse_args(argv: list[str]) -> tuple[list[str], list[str]]:
     for arg in it:
         if arg == "--mutant":
             name = next(it, None)
-            if name not in MUTATIONS and name not in STDOUT_MUTATIONS:
+            if name not in MUTATIONS and name not in STDOUT_MUTATIONS and name not in BOUNDARY_MUTATIONS:
                 raise SystemExit(f"--mutant に知らない名前: {name}")
             if name not in mutants:   # **重ねて同じ名前を渡しても 1 度だけ当てる**——2 度目は同じ一時ディレクトリを作ろうとして落ちていた（#668）
                 mutants.append(name)
@@ -1731,6 +1800,16 @@ def main(argv: list[str] | None = None) -> int:
               min(correct["3 の一覧の行数（worktree, ブランチ）"]) >= 2)
         check("3 で終わるとき、一覧のどの行にも同じ字下げが付く（#558）",
               correct["3 の一覧のどの行も同じ字下げ"])
+        check("番号 83 で入場するとき、issue/831-foo・spec/83-x・spec/issue/83-x・origin/issue/831-bar・"
+              "origin/spec/issue/83-y・issue-831 の worktree があっても 3 で止まらず作る（#1504）",
+              correct["境界: 別の番号・別の枝だけなら作れる rc"] == 0
+              and correct["境界: 別の番号・別の枝だけなら issue/83 を切る"] == "issue/83-boundary")
+        check("同じ番号のリモート追跡参照（origin/issue/83-remote）だけでも断り、一覧に出す（#1504。陽性対照）",
+              correct["境界: 同じ番号のリモート追跡参照だけでも断る rc"] == 3
+              and correct["境界: リモート追跡参照を一覧に出す"])
+        check("ディレクトリの名前が issue-83-… の worktree だけでも断り、一覧に出す（#1504。陽性対照）",
+              correct["境界: 同じ番号で始まる worktree だけでも断る rc"] == 3
+              and correct["境界: worktree を一覧に出す"])
         check("空白を含むパスでも、例外の行の cd の例がそのまま通る（#502）",
               correct["空白を含むパスでも cd の例が通る"])
         # **`observe()` の外で見る**——`MUTATIONS` の変異でこの試料にしか殺せないものは無いので、観測ごとには回さない（#449）。
@@ -1785,7 +1864,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print("\n変異テスト（壊したのに緑なら失格）")
         mutant_obs: dict[str, dict] = {}
-        for name in {**MUTATIONS, **STDOUT_MUTATIONS}:
+        for name in {**MUTATIONS, **STDOUT_MUTATIONS, **BOUNDARY_MUTATIONS}:
             mutated = check_mutant(name, correct, base)
             if mutated is not None:
                 mutant_obs[name] = mutated
