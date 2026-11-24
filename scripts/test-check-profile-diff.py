@@ -140,7 +140,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("接頭辞を正規表現として読む", "re.compile(re.escape(prefix) + ", "re.compile(prefix + ", "接頭辞は文字どおり"),
     ("区切った数字を数えない", "r\"[0-9]+(?:\" + separator + r\"[0-9]+)*\" + re.escape(suffix)", "r\"[0-9]+\" + re.escape(suffix)", "区切った数字の版"),
     ("区切りを設定のタグから読まない", "separators = sorted(set(re.sub(r\"[0-9]\", \"\", middle))) or [\".\"]", "separators = [\".\"]", "日付の版"),
-    ("末尾の綴りを無視する", "+ re.escape(suffix))", "+ \".*\")", "末尾の綴りの版"),
+    ("末尾の綴りを無視する", "+ re.escape(suffix))", "+ r\"-[a-z]+\")", "末尾の綴りの版"),  # 綴りなら何でも当てる——v1.2-rc を新しい版にする
     ("profile を持たないタグも数える", "            if want not in ext.list_files(clone, commit):\n                continue", "            if False:\n                continue", "候補"),
     ("タグと同じでも比べる", "            if new in (old, checked):", "            if new == checked:", "--new がタグと同じ"),
     ("確かめたタグと同じでも比べる", "            if new in (old, checked):", "            if new == old:", "確かめたタグ"),
