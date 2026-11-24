@@ -15,9 +15,13 @@
 触る:
 
 - `plugins/dev-loop/skills/cruise/scripts/run-serial.py` — `--repo <パス>` の引数・枠を決められないときに場所を名指しする理由の行（`locate`）・docstring（使い方・「対象のリポジトリ」の節・終了コードの表・守る／守らない）
-- `plugins/dev-loop/skills/cruise/references/parallel.md` — 「重い検査とアプリの起動は、順番待ちに通す」の使い方の行と 125 の項
-- `scripts/test-run-serial.py` — 観測 `repo`（外の cwd から `--repo` で worktree を指す）・`cannot` の名指しの判定・`codes` の `--repo` の値なし・変異 3 件
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/dev-loop/skills/dev-loop/SKILL.md`・`plugins/dev-loop/skills/cruise/SKILL.md` — 版
+- `plugins/dev-loop/skills/cruise/references/parallel.md` — 「重い検査とアプリの起動は、順番待ちに通す」の使い方の行と 125 の項・「止まっている枠の持ち主」の照合の正規表現と文（2 パス目の CR2-1 で広げた）
+- `scripts/test-run-serial.py` — 観測 `repo`（外の cwd から `--repo` で worktree を指す・`GIT_DIR` に負けない）・`cannot` の名指しの判定と `holders` の勧め・`codes` の `--repo` の値なし・変異 4 件
+- `scripts/test-parallel-stop.py` — 親が止まっている持ち主を止める照合が `--repo` の起動を受けること（ケース 16・17 と変異 1 件。2 パス目の CR2-1 で広げた）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版
 - `docs/plans/issue-1505.md` — この計画
 
 触らない:
@@ -52,7 +56,7 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 | 5 | `--repo` に値が無い・空なら、cwd のリポジトリへ落とさずに 2（走らせない） | CLI | 観測 `codes` の「`--repo` の値なし」「`--repo=` の空」と変異 |
 | 6 | 既存の振る舞い（cwd が worktree・メインの作業ツリー・サブディレクトリなら今までどおり。入れ子・期限・持ち主・宣言の読み方）を変えない | CLI・入れ子・`holders` | 既存の観測が全部緑 |
 | 7 | docstring の「守る」の行数と変異の数が 1 対 1 で、どの変異も殺せる | テスト | `test-run-serial.py` |
-| 8 | `references/parallel.md` と docstring が同じことを言い、本体の振る舞いと食い違わない | 原本 | 読み比べ |
+| 8 | `references/parallel.md` と docstring が同じことを言い、本体の振る舞いと食い違わない——`parallel.md` の「止まっている枠の持ち主」の照合も、`--repo` で起こした持ち主を run-serial の起動と読む（2 パス目で広げた経路） | 原本・親の照合のブロック | 読み比べ・`test-parallel-stop.py` のケース 16・17 |
 | 9 | 版が 3 種類（`marketplace.json`・`plugin.json`・`SKILL.md` 2 本）で揃って上がる | 版 | `check-plugin-versions.py`・`check-version-bump.py origin/main` |
 | 10 | 歯止め全部（`check-all.py`）が緑 | 全体 | `run-serial.py` 越しの `check-all.py` と PR 側の CI |
 
@@ -77,6 +81,8 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
   - /code-review 1 パス目（high）: 指摘 9 件（採否は下の表）。テストの全部と変異は順番待ちで確かめられなかったと報告。
   - 1 パス目の指摘対応: 直す 2 件（CR1-1・CR1-3）。陽性対照: 新しい判定を起点の本体（`573c9784`）の写し（リポジトリの外・`.git` なし）に当てると `--part repo --part cannot` で FAIL 4 件（holders の勧め・GIT_DIR・守るの行数・守る 66）、直した本体で合格。
 - 割り目（手順 6）: 割らない（cruise の周）
+- 2 パス目（成果物 `6340e950c64d392a5a545c1d77c4ed7545390c71`）: Verifier 2 パス目（sonnet。251 行を読んだと報告——`wc -l` は 250）反証 0 件・/code-review 2 パス目（high）指摘 5 件（採否は下の表）。
+- 2 パス目の指摘対応: 直す 1 件（CR2-1）。狭いパスの起点 `6340e950c64d392a5a545c1d77c4ed7545390c71`。範囲を広げた（`parallel.md` の照合・`scripts/test-parallel-stop.py`）——受入基準 8 の経路に「親が止まっている持ち主を止める照合（`parallel.md` のブロック）」を足す。
 
 ## 既知の限界・決着済みの論点
 
@@ -111,3 +117,23 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 効いた行: R-02
 - 効いた行: なし
 - 効いた行: なし
+
+### 2 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1: `parallel.md` の「止まっている枠の持ち主」の照合の正規表現が `--repo` の起動を拒み、親が止められない | 示せる——`re.fullmatch` が `python3 /x/run-serial.py --repo /a/wt -- make` に None（/code-review が実行） | 8 | 直す——正規表現と文に `--repo` を足し、`test-parallel-stop.py` にケース 16・17 と変異「`--repo` の選択肢を外す」を足した。CR1-2 の理由（周の子は worktree から呼ぶ）も、`--repo` が外から呼ぶ子のためにある以上弱い——記録の場所は呼んだ cwd のままで照合は cwd どうしを比べるので、止められるようになった |
+| CR2-2: CR1-8（入れ子が `--repo` を引き継がない）は示せる | 示せる——外の cwd で `--repo <wt> -- python3 run-serial.py -- echo` の内側が 125 | 無し（6 は今までの振る舞い。外の cwd からの入れ子はもともと外側も 125） | 残課題（CR1-8 の「示せない」を訂正） |
+| CR2-3: 枠のディレクトリを作れない（OSError）ときの行は場所を名指さず、守る 64 より狭い | 示せない——読み筋。走らせていない | 無し | 残課題 |
+| CR2-4: `--repo=~/wt` の `~` を広げない | 示せる——`…/out/~/wt はディレクトリでない`・125 | 無し（125 で走らせず、パスを名指す） | 残課題 |
+| CR2-5: 計画の変更範囲の「変異 3 件」が古い | 示せる——計画を読んだ | 無し（関門は計画ファイルを検査しない） | 捨てる（計画は直した） |
+
+- 効いた行: R-02
+- 効いた行: R-04
+- 効いた行: R-02
+- 効いた行: R-04
+- 効いた行: R-02
+
+## 手順 8 の記録
+
+- この周の起票: 0 件（不在の cruise の周。周の途中の課題で直すに入った行は無く——直した CR1-1・CR1-3・CR2-1 はこの周の受入基準を破るもの——起票の候補は無い。残課題は PR コメントに残す）
