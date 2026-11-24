@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 2.20.1 -->
-> **このスキルの版: 2.20.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 2.21.0 -->
+> **このスキルの版: 2.21.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1060,6 +1060,11 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   **そのたびに内容が揺れた**（#136）。
   **以下の各項は「何を渡すか」の規定で、テンプレートはその実装である**
   ——**食い違ったら、こちらが正。**
+- **関門の体には、報告をリポジトリの外の 1 つのファイルにも書かせ、完了はそのファイルの終わりの印 `__DEV_LOOP_REPORT_DONE__` で判定する（必須）**——
+  入れ子のサブエージェントの報告は、起こした側に届かないことがある（[#1503](https://github.com/hdknr/claude-code-setup/issues/1503)）。
+  **Verifier の 1・2 パス目・狭いパス・当て直し、手順 6 の `/code-review` の 1・2 パス目、多レンズ・fan-out の体のどれにも掛かる。**
+  **呼び出しの結果・通知が空でも、ファイルに終わりの印つきの報告があれば欠票ではない。印が無いことだけでは起こし直さない。**
+  パスの決め方・書き方・待ち方・欠票と起こし直しの判定は `references/gate-reports.md` を正とする（このスキルと同じ場所にある）。
 - **別モデル Verifier（牽制）**: 実装したエージェントは自分の変更に甘い。受入条件の充足を
   **実装とは別モデルの検証エージェント**で判定させる（`Agent` ツールで `model` に実装時と別ティア
   ＝例: 実装が Opus なら `sonnet` を指定）。**反証が挙がれば手順 6 の採否の表に載せ、
