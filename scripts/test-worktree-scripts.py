@@ -409,10 +409,19 @@ def exists_lists_indented(res, repo: Path, number: str) -> tuple:
     wt = [l[len("worktree "):] for l in git(repo, "worktree", "list", "--porcelain").stdout.splitlines()
           if l.startswith("worktree ")
           and re.fullmatch(rf"issue-{number}(-.*)?", Path(l[len("worktree "):]).name)]
+    remotes = [r for r in git(repo, "remote").stdout.splitlines() if r]
     br = []
     for line in git(repo, "branch", "--all", "--format=%(refname) %(refname:short)").stdout.splitlines():
         ref, _, short = line.partition(" ")
-        if re.fullmatch(rf"refs/(heads|remotes/[^/]+)/issue/{number}(-.*)?", ref):
+        if ref.startswith("refs/heads/"):
+            rest = ref[len("refs/heads/"):]
+        elif ref.startswith("refs/remotes/"):
+            tail = ref[len("refs/remotes/"):]
+            known = [r for r in remotes if tail.startswith(r + "/")]
+            rest = tail[len(max(known, key=len)) + 1:] if known else tail.partition("/")[2]
+        else:
+            continue
+        if re.fullmatch(rf"issue/{number}(-.*)?", rest):
             br.append(short)
     lines = res.stderr.splitlines()
     ok = True
@@ -545,6 +554,15 @@ def boundary_observations(prepare: Path, base: Path) -> dict:
     res = run(prepare, wtonly, "83", "boundary")
     out["境界: 同じ番号で始まる worktree だけでも断る rc"] = res.returncode
     out["境界: worktree を一覧に出す"] = f"    {extra.resolve()}" in res.stderr.splitlines()
+
+    # **名前に `/` を含むリモート**（#1504 の `/code-review` 1 パス目）——1 段だけ外すと `fork/issue/83-x` になって当たらなかった。
+    # **リモートは設定に足すだけで、取りに行かない**（`origin` は無いので本体は取り直さない）。
+    slashed = make_repo(base / "boundary-slashed")
+    git(slashed, "remote", "add", "my/fork", str(base / "no-such-remote"))
+    git(slashed, "update-ref", "refs/remotes/my/fork/issue/83-x", "HEAD")
+    res = run(prepare, slashed, "83", "boundary")
+    out["境界: 名前に / を含むリモートの同じ番号でも断る rc"] = res.returncode
+    out["境界: 名前に / を含むリモートの参照を一覧に出す"] = "    my/fork/issue/83-x" in res.stderr.splitlines()
     return out
 
 
@@ -900,8 +918,12 @@ BOUNDARY_MUTATIONS = {
         '    *"issue-${NUMBER}"*) return 0 ;;'),
     # 狭めすぎる側——陽性対照の試料（リモート追跡参照だけの木・`issue-83-extra` だけの木）が 0 で作れてしまう。
     "リモート追跡参照を見ない": (PREPARE,
-        '    refs/remotes/*) rest="${1#refs/remotes/*/}" ;;',
+        '    refs/remotes/*) rest="$(remote_rest "$1")" ;;',
         '    refs/remotes/*) return 1 ;;'),
+    # 1 段だけ外す側——名前に `/` を含むリモート（`my/fork`）の同じ番号が 0 で作れてしまう（#1504 の `/code-review` 1 パス目）。
+    "リモートの名前を 1 段だけ外す": (PREPARE,
+        '    refs/remotes/*) rest="$(remote_rest "$1")" ;;',
+        '    refs/remotes/*) rest="${1#refs/remotes/*/}" ;;'),
     "worktree の名前を完全一致だけにする": (PREPARE,
         '    "issue-${NUMBER}"|"issue-${NUMBER}-"*) return 0 ;;',
         '    "issue-${NUMBER}") return 0 ;;'),
@@ -1807,6 +1829,9 @@ def main(argv: list[str] | None = None) -> int:
         check("同じ番号のリモート追跡参照（origin/issue/83-remote）だけでも断り、一覧に出す（#1504。陽性対照）",
               correct["境界: 同じ番号のリモート追跡参照だけでも断る rc"] == 3
               and correct["境界: リモート追跡参照を一覧に出す"])
+        check("名前に / を含むリモート（my/fork）の my/fork/issue/83-x だけでも断り、一覧に出す（#1504 の /code-review 1 パス目）",
+              correct["境界: 名前に / を含むリモートの同じ番号でも断る rc"] == 3
+              and correct["境界: 名前に / を含むリモートの参照を一覧に出す"])
         check("ディレクトリの名前が issue-83-… の worktree だけでも断り、一覧に出す（#1504。陽性対照）",
               correct["境界: 同じ番号で始まる worktree だけでも断る rc"] == 3
               and correct["境界: worktree を一覧に出す"])

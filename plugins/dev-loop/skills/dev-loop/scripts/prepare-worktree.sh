@@ -27,7 +27,8 @@
 #   **何に当たるかは、下の「番号の境界で当てる」の項が決める。**
 # - **番号の境界で当てる**（#1504）。ブランチは `issue/<番号>-…`（と `issue/<番号>` そのもの。
 #   リモート追跡参照は `<リモート>/issue/<番号>-…`）、worktree はディレクトリの名前が `issue-<番号>` か
-#   `issue-<番号>-…` のものだけに当たる。**番号を部分一致で探すと、`issue/831-foo`・`spec/83…` のような
+#   `issue-<番号>-…` のものだけに当たる。**リモートの名前は設定にあるもの（`/` を含む `my/fork` も）で外す。**
+#   **番号を部分一致で探すと、`issue/831-foo`・`spec/83…` のような
 #   別の周・別の枝に当たって 3 で止まる**——以前はそうなっており、spin-dd/taihei-prm の cruise で
 #   子が手で `git worktree add` して回避していた（#1401 の 4）。**再開の周を見つけるのは `find-cycle.py` の仕事で、
 #   あちらは部分一致のまま広い**（このスクリプトは「当たるものが無かったときだけ使う」）。
@@ -180,11 +181,31 @@ wt_matches() {
 }
 # ブランチ: ローカルは `refs/heads/issue/<番号>-…`、リモート追跡参照は `refs/remotes/<リモート>/issue/<番号>-…`
 # （`issue/<番号>` そのものも当てる——規約の `-` が無い名前でも、同じ番号の周であることは変わらない）。
+# **リモートの名前は `/` を含みうる**（`my/fork`）——1 段だけ外すと `refs/remotes/my/fork/issue/83-x` に当たらず、
+# 既にある周の隣に新しい周を作る（#1504 の `/code-review` 1 パス目）。**設定にあるリモートの名前で、いちばん長く当たるものを外す。**
+# 設定に無いリモート追跡参照（リモートを消した後に残った参照など）だけ、最初の 1 段を外す。
+REMOTES="$(git remote 2>/dev/null || true)"
+remote_rest() {
+  local ref="${1#refs/remotes/}" r best=""
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    case "$ref" in
+      "$r"/*) [ "${#r}" -gt "${#best}" ] && best="$r" ;;
+    esac
+  done <<EOF_REMOTES
+$REMOTES
+EOF_REMOTES
+  if [ -n "$best" ]; then
+    printf '%s' "${ref#"$best"/}"
+  else
+    printf '%s' "${ref#*/}"   # 最短の一致——最初の 1 段だけを外す
+  fi
+}
 br_matches() {
   local rest
   case "$1" in
     refs/heads/*)   rest="${1#refs/heads/}" ;;
-    refs/remotes/*) rest="${1#refs/remotes/*/}" ;;   # 最短の一致——リモートの名前の 1 段だけを外す
+    refs/remotes/*) rest="$(remote_rest "$1")" ;;
     *) return 1 ;;
   esac
   case "$rest" in

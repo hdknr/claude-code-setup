@@ -81,7 +81,9 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
 
 ### この環境では証明できないもの（未証明）
 
-- **spin-dd/taihei-prm の実際の枝の並びで止まらないこと**——その リポジトリの枝の名前は Issue 本文の要約（「spec の枝など」）しか無く、手元で当てていない。試料は Issue の受入基準の形（`issue/831-foo`・番号を含む別の枝）で置いた。人間のレビューに回す。
+- なし。**着手時は「spin-dd/taihei-prm の実際の枝の並びで止まらないこと」をここに置いたが、測れるものだった**（1 パス目の `/code-review` C4）——
+  `/code-review` が読むだけの `gh api repos/spin-dd/taihei-prm/branches` で 91 本の名前を取り、`origin/*` の参照として置いて番号 83 で当てた: 新版は rc=3 で同じ番号の `origin/issue/83-status-labels` だけを出し、
+  `spec/q-r-083-084-provisional` には当たらない。旧版は両方に当たった。**言えるのはリモートの枝の名前までで、向こうの手元の worktree・ローカルの枝は見ていない。**
 
 ### BLOCKED
 
@@ -96,6 +98,11 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
 - **周の在り処**: ブランチ `issue/1504-worktree-number-boundary`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1504`・
   起点 `ab49d982`（`cruise: 渡すものが残らなければ、終えるときに親 Issue を閉じる（#1462）`）・base の参照 `origin/main`・base の SHA `ab49d9820146892a8961781fd37e7ca34b905800`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 関門: 1 パス目の起点（指摘対応の起点）`503b0749`。
+  - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）を `503b0749` に起こした。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1504-verifier-1-20261124T075141Z.md`
+  - `/code-review` 1 パス目を `503b0749` に起こした（`Skill` の分岐した背景の実行）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1504-code-review-1-20261124T075141Z.md`
+  - Verifier 1 パス目: 通した（`503b0749`）。反証 0 件（弱点として多段のリモート名・`issue/<番号>` そのものの試料が無いことを挙げた）。報告は hand-back と報告のファイル（終わりの印つき）。`dev-loop:dev-loop-verifier` が起動した（ツールは Read・Grep・Glob・Bash）。不変条件 4 は全体を回せず未確認と報告（親の `check-all.py` が回す）
+  - `/code-review` 1 パス目: 通した（`503b0749`）。指摘 4 件（報告のファイルは終わりの印つき）。採否は下の「1 パス目の採否の表」
 - 交絡を潰した手順: 実験なし（変異テストの陽性対照は下に記録する）
 
 ## 既知の限界・決着済みの論点
@@ -106,3 +113,13 @@ Issue 本文（外部入力）から読んだ要件: `prepare-worktree.sh` が�
 | `SKILL.md` 手順 4 の手で打つ `git branch --all --list '*<issue-number>*'` も境界にするか | しない（残課題） | 読む側の確認で、当たれば `find-cycle.py` と `resume.md` に回る。スクリプトのように 3 で止まって作れなくなる形ではない |
 | 規約から外れた名前で作られた同じ番号の周（`worktree-…`・`spec/…`）に当たらないこと | 受け入れる（本体の「何を守らないか」に書いた） | それを見つけるのは作る前に走らせる `find-cycle.py` |
 | `issue/<番号>`（`-` の無い名前）にも当てるか | 当てる | 同じ番号の周で、当てすぎる側は安全 |
+| 名前に `/` を含むリモート（`my/fork`）の参照 | 当てる（1 パス目の C1 で直した） | 設定にあるリモートの名前でいちばん長く当たるものを外す。設定に無いリモート追跡参照だけ最初の 1 段を外す |
+
+### 1 パス目の採否の表（Verifier 1 パス目 反証 0 件・`/code-review` 1 パス目 指摘 4 件）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| C1（Verifier の弱点と同じ） | 名前に `/` を含むリモート（`my/fork`）の `refs/remotes/my/fork/issue/83-x` に当たらず、同じ番号の周の隣に作る（旧版は 3 で止まっていた）。テストの期待値も同じ穴 | 示せる（`git update-ref refs/remotes/my/fork/issue/83-x HEAD` の木で rc=0。レビューと Verifier がそれぞれ再現） | 2 | 直す（設定のリモートの名前で外す。試料 `boundary-slashed`・変異「リモートの名前を 1 段だけ外す」・`exists_lists_indented` も同じ規則に） |
+| C2（Verifier の弱点と同じ） | `issue/<番号>`（`-` 無し）に当てる枝をテストが見ていない（外す変異が殺せない） | 示せる（`check_mutant` で FAIL） | 無し（不変条件 2 は `issue/83-…` を挙げる。`-` 無しは決着の表の判断） | 残課題 |
+| C3 | 境界の陰性の試料が置けたかを観測していない | 示せない（手元の git 2.56 では 6 つとも置けた。失敗する git の版・設定は示されていない） | 無し | 残課題 |
+| C4 | 「taihei-prm の実際の枝で止まらない」は未証明ではなく測れる | 示せる（`gh api` の枝の名前で当てた結果） | 無し（計画の記録） | 残課題（未証明の節を測った結果に直した。`spec/q-r-083-…` の形の試料は足さない——新しい当て方は `issue/` で始まらない名前に当たらない） |
