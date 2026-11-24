@@ -67,7 +67,8 @@ hook の入る子・`-I` の子・Python でない子・環境を組み直した
   CI のステップに書くと、`run:` には在るので上の検査は「走っている」と数えるが、走るのは一部だけである。
   **全部に数えないもの**: 引数が 1 つでもある行・次の行へ折り返した値（**空行を挟んでも**。#752）・
   **`run:` から名前までのあいだに `名前=` の字句がある行**（環境変数で狭める形——`PART=scan python3 …`・`export PART=scan && …`。#750）。
-  **深い字下げのコメントの行は続きと読まない**（#753）。詳細は `full_runs` の docstring を正とする。
+  **深い字下げのコメントの行は続きと読まない**（#753）。**例外はシャード**（#1475）——名前の後ろが `--shard K/N` だけの行が、同じ N で K=1..N を全部覆えば全部に数える。
+  詳細は `full_runs` の docstring を正とする。
 - **収録したスクリプトの生きた `run:` が、GitHub が無条件に走らせる位置に 1 つはあるか**（#931。`gated_runs`）——
   `jobs:` の下のジョブの `steps:` の下にあり、そのジョブが**ジョブ単位の `if:`・`needs:`** を持たず（`steps:` の後ろに書いても）、
   鍵が重なっていないこと。**ジョブを SKIPPED にしても `run:` の行は残るので、上の検査は緑のままで、`merge-pr.py` は SKIPPED を通過と読む**
@@ -825,6 +826,8 @@ FULL_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)(?=\s*(?:$|&&|\|\||;|\|))")
 # **環境変数を置いて狭める**——`run:` から名前までのあいだに `名前=` の字句がある（#750）。前置き（`PART=scan python3 …`・
 # `env PART=scan …`）も、前のコマンドで書き出す形（`export PART=scan && python3 …`）も当たる。
 ENV_RE = re.compile(r"(?:^|\s)[A-Za-z_][A-Za-z0-9_]*=")
+# **シャードで分けて全部を回す行**（#1475）——名前の後ろが `--shard K/N` だけ。同じ名前の行が K=1..N を全部覆えば全部に数える（`covered_shards`）。
+SHARD_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py) --shard ([1-9][0-9]*)/([1-9][0-9]*)(?=\s*(?:$|&&|\|\||;|\|))")
 
 
 def full_runs(ci: str) -> set[str]:
@@ -842,6 +845,12 @@ def full_runs(ci: str) -> set[str]:
     - **`run:` から名前までのあいだに `名前=` の字句がある**——環境変数で狭める形（`PART=scan python3 scripts/x.py`・`env …`・
       `export PART=scan && …`。#750）。**狭めない変数でも、変数でない字句（`echo a=b && …`・`-X utf8=1`）でも当たる。**
 
+    **例外: シャードで分けて全部を回す形**（#1475）——名前の後ろが `--shard K/N` **だけ**の行（`SHARD_RE`。続きの行・環境変数の読み方は上と同じ）を集め、
+    **同じ名前・同じ N の行の K が 1..N をちょうど覆えば**、その名前を全部に数える（`covered_shards`）。覆わないもの——K が欠ける・N の違う行を
+    合わせてやっと覆う・K が N より大きい行が混ざる・`--shard` の後ろに別の引数がある——は全部に数えない（向きは今までと同じ偽陽性）。
+    **見るのは CI の行が 1..N を書いていることまで**で、テストの側の割り当てが全件をちょうど 1 度ずつ覆うかは、そのテスト自身が見る
+    （`test-autopilot-loop.py` の `partition_holes`）。**空白を 2 つ置いた `--shard  1/2` は数えない**（誤って赤）。
+
     **守らないもの**: `|| true`（落ちても通る）は見ない。**`run:` の行の外で置いた環境変数**——ステップ・ジョブの `env:`・
     前のステップが `$GITHUB_ENV` に書いた値——は見ない（`run:` の行だけを読むので、全部に数える。黙って素通しする向き）。
     **`run:` の行の上でも、`名前=` の字句を使わずに読み込む形**（`set -a && . ./env && …`・`uv run --env-file .env …`）は見ない（全部に数える。同じ向き）。
@@ -851,7 +860,7 @@ def full_runs(ci: str) -> set[str]:
     **その行がどのジョブにあるかは見ない**——条件つきのジョブ（`if:`・`needs:`）にしか引数なしの行が無くても「全部」に数える。
     **無条件のジョブで全部を回しているかは `full_ungated_runs` が見る**（#945）。
     """
-    return set().union(*full_lines(ci).values())
+    return set().union(*full_lines(ci).values()) | covered_shards(s for ss in shard_lines(ci).values() for s in ss)
 
 
 def full_lines(ci: str) -> dict[int, set[str]]:
@@ -860,6 +869,35 @@ def full_lines(ci: str) -> dict[int, set[str]]:
     判定は `full_runs` の docstring を正とする。`full_ungated_runs` が `gate_records` と同じ行の番号で突き合わせるために分けた。
     """
     full: dict[int, set[str]] = {}
+    for i, m in run_matches(ci, FULL_RE):
+        full.setdefault(i, set()).add(m.group(1))
+    return full
+
+
+def shard_lines(ci: str) -> dict[int, set[tuple[str, int, int]]]:
+    """シャードの行（#1475）——行の番号から、その行で `--shard K/N` だけを付けて呼んでいる `(名前, K, N)` へ。
+
+    読み方（続きの行・環境変数・コメント）は `full_lines` と同じ（`run_matches`）。名前の後ろが `--shard K/N` のほかに何かあれば数えない。
+    """
+    out: dict[int, set[tuple[str, int, int]]] = {}
+    for i, m in run_matches(ci, SHARD_RE):
+        out.setdefault(i, set()).add((m.group(1), int(m.group(2)), int(m.group(3))))
+    return out
+
+
+def covered_shards(entries) -> set[str]:
+    """`(名前, K, N)` の並びから、**同じ N の K が 1..N をちょうど覆う**名前（#1475）。K が N より大きい行が混ざれば、その N は覆わない。"""
+    by: dict[tuple[str, int], set[int]] = {}
+    for name, k, n in entries:
+        by.setdefault((name, n), set()).add(k)
+    return {name for (name, n), ks in by.items() if ks == set(range(1, n + 1))}
+
+
+def run_matches(ci: str, pattern: re.Pattern):
+    """生きている `run:` の行で、`pattern` が当たったところを `(行の番号, 当たり)` で出す——`full_lines`・`shard_lines` の共通の読み方。
+
+    次の行へ折り返した値の行は飛ばし、`run:` から当たりまでのあいだに `名前=` の字句があれば数えない（判定は `full_runs` の docstring を正とする）。
+    """
     lines = ci.split("\n")
     for i, raw in enumerate(lines):
         alive, _ = split_comment(raw)
@@ -870,11 +908,10 @@ def full_lines(ci: str) -> dict[int, set[str]]:
         if len(nxt) - len(nxt.lstrip()) > indent and not nxt.lstrip().startswith("#"):
             continue  # 次の行に値が続く——その行に引数がありうる
         head = alive.index("run:") + len("run:")
-        for m in FULL_RE.finditer(alive.rstrip()):
+        for m in pattern.finditer(alive.rstrip()):
             if ENV_RE.search(alive[head:m.start()]):
                 continue  # 環境変数を置いて狭めている（#750）
-            full.setdefault(i, set()).add(m.group(1))
-    return full
+            yield i, m
 
 
 # **鍵の行**——行の頭の `名前:` の後ろが空か空白（`run: x` も `steps:` も当たる。`- name: x` は `-` で始まるので当たらない）。
@@ -1014,7 +1051,10 @@ def full_ungated_runs(ci: str) -> set[str]:
     判定の中身（引数・続きの行・環境変数・ジョブの位置）と守らないものは `full_runs` と `gated_runs` の docstring を正とする。
     """
     full = full_lines(ci)
-    return {n for i, names, reasons in gate_records(ci) if not reasons for n in names & full.get(i, set())}
+    shards = shard_lines(ci)
+    records = gate_records(ci)
+    whole = {n for i, names, reasons in records if not reasons for n in names & full.get(i, set())}
+    return whole | covered_shards(s for i, _, reasons in records if not reasons for s in shards.get(i, set()))
 
 
 # **PR と main への push で起動させる、ワークフローの `on:` のイベント**（#946）——両方要る。
@@ -1274,7 +1314,7 @@ def test_ci_runs_every_registered_script() -> None:
     # ジョブの見出しを深くすると（前のジョブの鍵になる）赤:
     # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "\n  dev-loop:\n", "new": "\n    dev-loop:\n", "red": "python3 scripts/test-check-all.py --part registry"}
     # ジョブの見出しを最上位に出すと（`jobs:` の外になる）赤:
-    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "\n  spec-loop-autopilot-loop:\n", "new": "\nspec-loop-autopilot-loop:\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "\n  spec-loop-autopilot-loop-1:\n", "new": "\nspec-loop-autopilot-loop-1:\n", "red": "python3 scripts/test-check-all.py --part registry"}
     ok, why = gated_runs(ci)
     gated = [n for n in registered if n in live and n not in ok]
     check("収録したものの CI ステップが、無条件に走るジョブの `steps:` の下にある（#931）", not gated)
@@ -1285,6 +1325,8 @@ def test_ci_runs_every_registered_script() -> None:
     # **回帰テストは引数なしで回す**（#687）——狭める口を付けたステップは、テストの一部しか回さない。
     # 実物の `plugins.yml` で当てる——狭める引数を足すと、このテストが赤になる:
     # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/test-check-duplicate-counts.py\n", "new": "        run: python3 scripts/test-check-duplicate-counts.py --only-scan\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    # **シャード**（#1475）——無条件のジョブの `--shard K/N` が 1..N を覆えば全部に数える。実物で 1 本のシャードを外すと赤:
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/test-autopilot-loop.py --shard 3/4\n", "new": "        run: python3 scripts/test-autopilot-loop.py --shard 2/4\n", "red": "python3 scripts/test-check-all.py --part registry"}
     full = full_runs(ci)
     narrowed = [n for n in sorted(mod.TESTS) if n in live and n not in full]
     check("収録した回帰テストを CI が引数なしで回している（狭めていない）", not narrowed)
@@ -1684,6 +1726,40 @@ jobs:
       - run: python3 scripts/test-split-needs.py
 """
 
+# **シャードの試料**（#1475）——名前の後ろが `--shard K/N` だけの行が同じ N で 1..N を覆えば全部に数える。覆わない形を 1 つずつ並べる。
+SAMPLE_SHARD = """\
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/test-sh-full.py --shard 1/3
+      - run: python3 scripts/test-sh-full.py --shard 3/3
+      - run: python3 scripts/test-sh-hole.py --shard 1/3
+      - run: python3 scripts/test-sh-hole.py --shard 3/3
+      - run: python3 scripts/test-sh-mixed.py --shard 1/2
+      - run: python3 scripts/test-sh-mixed.py --shard 2/3
+      - run: python3 scripts/test-sh-mixed.py --shard 3/3
+      - run: python3 scripts/test-sh-extra.py --shard 1/2
+      - run: python3 scripts/test-sh-extra.py --shard 2/2 --verbose
+      - run: python3 scripts/test-sh-env.py --shard 1/2
+      - run: PART=x python3 scripts/test-sh-env.py --shard 2/2
+      - run: python3 scripts/test-sh-over.py --shard 1/2
+      - run: python3 scripts/test-sh-over.py --shard 2/2
+      - run: python3 scripts/test-sh-over.py --shard 3/2
+      - run: python3 scripts/test-sh-commented.py --shard 1/2
+      # - run: python3 scripts/test-sh-commented.py --shard 2/2
+      - run: python3 scripts/test-sh-gated.py --shard 1/2
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/test-sh-full.py --shard 2/3
+  c:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/test-sh-gated.py --shard 2/2
+"""
+
 # #946: ワークフローの `on:`。各試料の後ろにジョブを置く——`on:` の子が次の字下げ 0 の行で終わることも見る。
 ON_JOB = "jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: python3 scripts/x.py\n"
 SAMPLE_ON = {
@@ -1745,7 +1821,7 @@ ON_FILES = [
 
 
 def scan_contract(scan, full_of, gate_of, both_of, on_of, idle_of) -> list[tuple[str, bool]]:
-    """**判別の契約。** 各行が `SAMPLE_CI`・`SAMPLE_JOBS`・`SAMPLE_SPLIT`・`SAMPLE_ON`・`ON_FILES` のどれかの経路に対応している。
+    """**判別の契約。** 各行が `SAMPLE_CI`・`SAMPLE_JOBS`・`SAMPLE_SPLIT`・`SAMPLE_SHARD`・`SAMPLE_ON`・`ON_FILES` のどれかの経路に対応している。
 
     **陽性側も取る**——「拾わない」だけを並べると、**もともと空の集合**と区別がつかない
     （**陰性だけの対照は対照ではない**）。
@@ -1758,6 +1834,8 @@ def scan_contract(scan, full_of, gate_of, both_of, on_of, idle_of) -> list[tuple
     split_full = full_of(SAMPLE_SPLIT)
     split_ok, _ = gate_of(SAMPLE_SPLIT)
     both = both_of(SAMPLE_SPLIT)
+    shard_full = full_of(SAMPLE_SHARD)
+    shard_both = both_of(SAMPLE_SHARD)
     on = {k: on_of(v + ON_JOB) for k, v in SAMPLE_ON.items()}
     on_after = on_of(ON_JOB + SAMPLE_ON["block"])
     idle_ok, idle_full = idle_of(ON_FILES)
@@ -1824,6 +1902,18 @@ def scan_contract(scan, full_of, gate_of, both_of, on_of, idle_of) -> list[tuple
          and "test-split-needs.py" not in both),
         ("同じ行の別の名前が引数なしでも、狭めた名前は数えない",
          "test-pair-a.py" in split_full and "test-pair-a.py" in split_ok and "test-pair-a.py" not in both),
+    ] + [
+        # #1475: シャード（陽性側も取る——別のジョブに散っていても 1..N を覆えば全部に数える）
+        ("無条件のジョブの `--shard K/N` が 1..N を覆えば全部に数える（ジョブをまたいでも。陽性対照）",
+         "test-sh-full.py" in shard_full and "test-sh-full.py" in shard_both),
+        ("K が 1 つ欠けたシャードは全部に数えない", "test-sh-hole.py" not in shard_full),
+        ("N の違う行を合わせてやっと覆う形は全部に数えない", "test-sh-mixed.py" not in shard_full),
+        ("`--shard K/N` の後ろに別の引数がある行は数えない", "test-sh-extra.py" not in shard_full),
+        ("環境変数を置いたシャードの行は数えない", "test-sh-env.py" not in shard_full),
+        ("K が N より大きい行が混ざれば全部に数えない", "test-sh-over.py" not in shard_full),
+        ("コメントアウトしたシャードの行は数えない", "test-sh-commented.py" not in shard_full),
+        ("1 つのシャードが条件つきのジョブにあれば、無条件に全部を回したに数えない（全部には数える）",
+         "test-sh-gated.py" in shard_full and "test-sh-gated.py" not in shard_both),
     ] + [
         # #931: ジョブの位置（陽性側も取る——無条件の位置を「無条件」に数える）
         ("無条件のジョブの `steps:` の下を無条件に数える（陽性対照）",
@@ -2025,10 +2115,21 @@ SCAN_MUTANTS = {
     "`-x` も列の項と読む": ('SEQ_RE = re.compile(r"-(?:\\s|$)")', 'SEQ_RE = re.compile(r"-")'),
     # #945: ジョブの位置と引数を同じ行で突き合わせる（`full_ungated_runs`）
     "名前ごとの集合の積で決める（#945 の前の 2 つの検査に戻す）": (
-        "    return {n for i, names, reasons in gate_records(ci) if not reasons for n in names & full.get(i, set())}",
-        "    return full_runs(ci) & gated_runs(ci)[0]"),
+        "    whole = {n for i, names, reasons in records if not reasons for n in names & full.get(i, set())}",
+        "    whole = full_runs(ci) & gated_runs(ci)[0]"),
     "条件つきの位置の行も数える": (" if not reasons for n in names & full", " for n in names & full"),
     "狭めた行も数える": ("for n in names & full.get(i, set())}", "for n in names}"),
+    # #1475: シャード（`shard_lines`・`covered_shards`）
+    "シャードが欠けても全部に数える": ("if ks == set(range(1, n + 1))}", "if ks}"),
+    "N を見ずに名前で束ねる": ("        by.setdefault((name, n), set()).add(k)", "        by.setdefault((name, 3), set()).add(k)"),
+    "条件つきの位置のシャードも数える": (
+        "covered_shards(s for i, _, reasons in records if not reasons for s in", "covered_shards(s for i, _, reasons in records for s in"),
+    "シャードの行の後ろの引数を見ない": (
+        r'SHARD_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py) --shard ([1-9][0-9]*)/([1-9][0-9]*)(?=\s*(?:$|&&|\|\||;|\|))")',
+        r'SHARD_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py) --shard ([1-9][0-9]*)/([1-9][0-9]*)")'),
+    "シャードを全部に数えない（#1475 の前に戻す）": (
+        "    return set().union(*full_lines(ci).values()) | covered_shards(s for ss in shard_lines(ci).values() for s in ss)",
+        "    return set().union(*full_lines(ci).values())"),
     # #946: ワークフローの `on:`（`trigger_reasons`・`untriggered_runs`）
     "`pull_request` を要らない側にする": ('TRIGGER_EVENTS = ("pull_request", "push")', 'TRIGGER_EVENTS = ("push",)'),
     "`push` を要らない側にする": ('TRIGGER_EVENTS = ("pull_request", "push")', 'TRIGGER_EVENTS = ("pull_request",)'),
