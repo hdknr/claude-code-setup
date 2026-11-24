@@ -89,7 +89,9 @@
       **`check-all.py` と hook の中身**（集め方と比べ方を直したら、古い記録を当たりにしない）。
 - **入力に数えないもの**: `.git/` の下（git の中身は git コマンドの側で見る）・`__pycache__`・`.pyc`・`.DS_Store`・
   作業ツリーの外（一時ディレクトリなど）。
-- **記録するのは緑だけ。** 落ちた回は、**今の入力で当たる記録だけ**を消す（入力が同じでも次は回る。ほかの状態の記録は残す——#1517）。記録しない回（下の 2 つ）も同じ。中断した回は書きも消しもしない。
+- **記録するのは緑だけ。** 落ちた回は、**今の入力で当たる記録だけ**を消す（入力が同じでも次は回る。ほかの状態の記録は残す——#1517）。
+  **落ちた回の途中で入力が変わったら、どの状態で落ちたかが決まらないので、そのテストの記録を全部消す**（走り始めた状態の緑の記録が残ると、
+  その状態に戻したときに落ちたテストが当たりになる）。記録しない回（下の 2 つ）も同じ。中断した回は書きも消しもしない。
   **テスト自身（`scripts/<名前>`）を読んだ跡が無い回は記録しない**——hook が入らなかった（`usercustomize` を読まない Python など）。
   空の依存を記録すると、何を変えても当たりになる。
   **回している間に入力が書き換わった回は記録しない**（`check-all.py` を始めた時刻より新しい mtime・git の状態の変化）。
@@ -716,10 +718,11 @@ def matches(rec: dict, name: str, args: list[str], hasher: Hasher) -> bool:
         return False
 
 
-def drop_record(root: Path, name: str, args: list[str], hasher: Hasher) -> None:
-    """**今の入力で当たる記録だけ**を消す——入力が同じでも次は回る。ほかの状態の記録（別の worktree が緑にしたもの）は残す（#1517）。"""
+def drop_record(root: Path, name: str, args: list[str], hasher: Hasher, every: bool = False) -> None:
+    """**今の入力で当たる記録だけ**を消す——入力が同じでも次は回る。ほかの状態の記録（別の worktree が緑にしたもの）は残す（#1517）。
+    `every` なら、そのテストの記録を全部消す——落ちた回の途中で入力が変わり、どの状態で落ちたかが決まらないとき。"""
     for path, rec in load_records(root, name):
-        if matches(rec, name, args, hasher):
+        if every or matches(rec, name, args, hasher):
             with contextlib.suppress(OSError):
                 path.unlink()
 
@@ -729,25 +732,33 @@ def is_cached(root: Path, name: str, args: list[str], hasher: Hasher) -> bool:
     return any(matches(rec, name, args, hasher) for _, rec in load_records(root, name))
 
 
+def moved_during(ctx: dict, deps: dict) -> list[str]:
+    """回している間に変わった入力（`changed_during` と、git を入力にするなら git の状態）。"""
+    moved = changed_during(ctx["repo"], deps, ctx["since_ns"])
+    if deps["git"] and Hasher(ctx["repo"]).git_state() != ctx["git_at_start"]:
+        moved.append("<git の状態>")
+    return moved
+
+
 def traced_run(name: str, args: list[str], ctx: dict) -> tuple[bool, str, float]:
     """hook を差し込んで回し、緑なら依存を記録する。落ちた回は、今の入力で当たる記録を消す。"""
     log = ctx["logdir"] / f"{name}.jsonl"
     ok, out, secs = timed(name, args, trace_env(log, ctx["repo"]))
     if ctx["stopping"]():
         return ok, out, secs  # 中断した回は記録を書きも消しもしない
-    if not ok:
-        drop_record(ctx["root"], name, args, Hasher(ctx["repo"]))
-        return ok, out, secs
     deps = collect_deps(log, ctx["repo"])
+    if not ok:
+        # **落ちた回の途中で入力が変わったら、どの状態で落ちたかが決まらない——記録を全部消す**（#1517）。終わった時点の状態の
+        # 記録だけを消すと、走り始めた状態の緑の記録が残り、その状態に戻すと落ちたテストが CACHED になる。
+        drop_record(ctx["root"], name, args, Hasher(ctx["repo"]), every=bool(moved_during(ctx, deps)))
+        return ok, out, secs
     if f"scripts/{name}" not in deps["files"]:
         # **テスト自身を読んだ跡が無い——hook が入らなかった**（`usercustomize` を読まない Python・中断の途中で記録が消えた）。
         # 空の依存を記録すると、何を変えても当たりになる（#1151 の 1 パス目）。
         drop_record(ctx["root"], name, args, Hasher(ctx["repo"]))
         ctx["unrecorded"].append((name, "読んだものを集められなかった（hook が入っていない）"))
         return ok, out, secs
-    moved = changed_during(ctx["repo"], deps, ctx["since_ns"])
-    if deps["git"] and Hasher(ctx["repo"]).git_state() != ctx["git_at_start"]:
-        moved.append("<git の状態>")
+    moved = moved_during(ctx, deps)
     if moved:
         drop_record(ctx["root"], name, args, Hasher(ctx["repo"]))
         ctx["unrecorded"].append((name, "回している間に入力が変わった: " + ", ".join(moved[:3])))

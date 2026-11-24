@@ -2068,8 +2068,10 @@ CACHE_FAKES = {
     # 落とせる。入力のファイルも読む——落ちた回が、別の入力の状態の記録まで消さないことを見るため（#1517）
     "t-flaky.py": "import os, sys\nopen('data/f.txt').read()\nsys.exit(1 if os.environ.get('CACHE_T_FAIL') else 0)\n",
     # 回している間に自分の入力を書き換える
-    "t-edit.py": "import os\nopen('data/e.txt').read()\n"
-                 "if os.environ.get('CACHE_T_EDIT'):\n    open('data/e.txt', 'a').write('x')\n",
+    # 書き換えたうえで落ちることもできる（`CACHE_T_EDITFAIL`。落ちた回の途中で入力が変わる形——#1517）
+    "t-edit.py": "import os, sys\nopen('data/e.txt').read()\n"
+                 "if os.environ.get('CACHE_T_EDIT'):\n    open('data/e.txt', 'a').write('x')\n"
+                 "sys.exit(1 if os.environ.get('CACHE_T_EDITFAIL') else 0)\n",
     # 隣のモジュールを import する（import の仕組みの列挙を入力にしない）
     "t-import.py": "import sys; sys.path.insert(0, 'scripts'); import helpmod\n",
     # `--jobs` を受ける（`--jobs` はキーに入れない）
@@ -2159,11 +2161,13 @@ def build_cache_repo(root: Path, src: str, hook_src: str) -> Path:
     return root
 
 
-def cache_env(fail: bool = False, edit: bool = False, delete: bool = False, nousersite: bool = False) -> dict[str, str]:
+def cache_env(fail: bool = False, edit: bool = False, delete: bool = False, nousersite: bool = False,
+              editfail: bool = False) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("CHECK_ALL_TRACE")}
     env.pop("PYTHONPATH", None)
     env.pop("PYTHONNOUSERSITE", None)
-    for flag, key in ((fail, "CACHE_T_FAIL"), (edit, "CACHE_T_EDIT"), (delete, "CACHE_T_DEL"), (nousersite, "PYTHONNOUSERSITE")):
+    for flag, key in ((fail, "CACHE_T_FAIL"), (edit, "CACHE_T_EDIT"), (delete, "CACHE_T_DEL"), (nousersite, "PYTHONNOUSERSITE"),
+                      (editfail, "CACHE_T_EDITFAIL")):
         if flag:
             env[key] = "1"
     return env
@@ -2441,6 +2445,34 @@ def cache_contract(root: Path):
     rc, out = cache_run(root)
     yield "記録は上限まで残り、上限を超えて古い状態に戻ると回る（#1517 の C2）", (
         kept == 3 and rc == 0 and only(out, dirty("t-file.py")))
+    # 12) hook が入らずに記録しない回は、今の入力で当たる記録を消す（#1517 の C3）——`--no-cache` でなければ当たる記録のある
+    #     テストは回らないので、消すかどうかは `--no-cache` の回でだけ差が出る。
+    rc, out = cache_run(root, "--no-cache", nousersite=True)
+    rc2, out2 = cache_run(root)
+    yield "hook が入らなかった回は、今の入力で当たる記録を消し、次は全部回る（#1517 の C3）", (
+        rc == 0 and ran_tests(out) == every and rc2 == 0 and ran_tests(out2) == every)
+    # 13) 回している間に入力が変わって記録しない回は、終わった時点の入力で当たる記録を消す（#1517 の C3）——
+    #     終わった時点の状態を前に緑で記録しておき、`--no-cache` で回している間にその状態へ変わる形にする。
+    touch("data/e.txt", "m\nx")
+    rc, out = cache_run(root)
+    touch("data/e.txt", "m\n")
+    rc2, out2 = cache_run(root, "--no-cache", edit=True)
+    rc3, out3 = cache_run(root)
+    yield "回している間に入力が変わった回は、終わった時点の入力で当たる記録を消す（#1517 の C3）", (
+        rc == 0 and rc2 == 0 and "記録しなかった: t-edit.py" in out2 and (root / "data" / "e.txt").read_text() == "m\nx"
+        and rc3 == 0 and "t-edit.py" in ran_tests(out3))
+    #     **`t-edit.py` が回るかだけを見る**——`--no-cache` の回の途中で `t-edit.py` が書き換えると、同じ時に走っていたほかのテスト
+    #     （`t-git.py`・`t-mkd.py` など）も「回している間に入力が変わった」に当たることがあり、どれが当たるかは走る順で変わる。
+    # 14) 落ちた回の途中で入力が変わったら、どの状態で落ちたかが決まらない——そのテストの記録を全部消す（#1517 の C3。
+    #     走り始めた状態の緑の記録を残すと、その状態に戻したときに、落ちたテストが CACHED になる）。
+    touch("data/e.txt", "n\n")
+    rc, out = cache_run(root)
+    rc2, out2 = cache_run(root, "--no-cache", edit=True, editfail=True)
+    touch("data/e.txt", "n\n")
+    rc3, out3 = cache_run(root)
+    yield "落ちた回の途中で入力が変わったら、走り始めた状態の記録も消し、戻すと回る（#1517 の C3）", (
+        rc == 0 and rc2 == 1 and rc3 == 0 and "t-edit.py" in ran_tests(out3))
+    #     **`t-edit.py` が回るかだけを見る**（段 13 と同じ理由）。直す前の本体では、ここで何も回らなかった（再現は計画ファイル）。
 
 
 def cache_contract_list(root: Path, src: str, hook_src: str, stop_first: bool) -> list[tuple[str, bool]]:
@@ -2474,7 +2506,9 @@ CACHE_MUTANTS = {
     "`-I` の子にも hook が入ると見なす": ("check-all", '        if any(ch in a[1:] for ch in "IEsS"):\n', "        if False:\n"),
     "git を入力に数えない": ("check-all", "                git = git or _git_reads_repo(repo, argv, cwd)\n", "                git = False\n"),
     "配置だけの rev-parse も git の状態にする": ("check-all", '    if sub == "rev-parse" and rest and all(r in GIT_LAYOUT_ARGS for r in rest):\n', "    if False:\n"),
-    "落ちた回の記録を消さない": ("check-all", "    if not ok:\n        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]))\n", "    if not ok:\n        pass\n"),
+    "落ちた回の記録を消さない": ("check-all", "        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]), every=bool(moved_during(ctx, deps)))\n",
+                                 "        pass\n"),
+    "落ちた回の途中で入力が変わっても、走り始めた状態の記録を残す（#1517）": ("check-all", "every=bool(moved_during(ctx, deps)))\n", "every=False)\n"),
     "記録を 1 本につき 1 つしか残さない（#1517）": ("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
                                                     "    for _, _, path in sorted(stamped, reverse=True)[1:]:\n"),
     "別の状態の記録を同じファイルに書く（#1517）": ("check-all", '        os.replace(tmp, d / f"{record_id(rec)}.json")\n',
@@ -2483,7 +2517,11 @@ CACHE_MUTANTS = {
                                           "    for _, _, path in sorted(stamped, reverse=True)[len(stamped):]:\n"),
     "上限で新しいほうを消す（#1517）": ("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
                                         "    for _, _, path in sorted(stamped)[CACHE_KEEP:]:\n"),
-    "落ちた回に別の状態の記録まで消す（#1517）": ("check-all", "        if matches(rec, name, args, hasher):\n            with contextlib.suppress(OSError):\n                path.unlink()\n",
+    "hook が入らない回の記録を消さない（#1517）": ("check-all", "        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]))\n        ctx[\"unrecorded\"].append((name, \"読んだものを集められなかった（hook が入っていない）\"))\n",
+                                                   "        ctx[\"unrecorded\"].append((name, \"読んだものを集められなかった（hook が入っていない）\"))\n"),
+    "回している間に入力が変わった回の記録を消さない（#1517）": ("check-all", "        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]))\n        ctx[\"unrecorded\"].append((name, \"回している間に入力が変わった: \"",
+                                                               "        ctx[\"unrecorded\"].append((name, \"回している間に入力が変わった: \""),
+    "落ちた回に別の状態の記録まで消す（#1517）": ("check-all", "        if every or matches(rec, name, args, hasher):\n            with contextlib.suppress(OSError):\n                path.unlink()\n",
                                                   "        if True:\n            with contextlib.suppress(OSError):\n                path.unlink()\n"),
     "回している間の変化を見ない": ("check-all", "            if os.stat(p).st_mtime_ns >= since_ns:\n", "            if False:\n"),
     "壊れた記録で落ちる": ("check-all", "        except (OSError, ValueError):\n            continue\n", "        except OSError:\n            continue\n"),
