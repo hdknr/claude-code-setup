@@ -659,8 +659,8 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
              copy_head_with_tail("**BBB ふたつめの行です」と同じ）**", "**BBB ふたつめの行です」"), pre_base=pre_quote_bbb)
     scenario("G76 G75 で、頭に前置きを足しても 1（引用の手前が元の項の頭と関わらない）", 1, "付け替えた",
              copy_head_with_tail("要点: BBB ふたつめの行です」と同じ）", "要点: BBB ふたつめの行です」"), pre_base=pre_quote_bbb)
-    scenario("G77 G75 で、頭を付け替え先の頭の写しと、上げた引用の行にしても 1（引用の手前に引いた頭がある）", 1, "付け替えた",
-             copy_head_with_tail("**BBB ふたつめの行です**（下の「BBB ふたつめの行です」と同じ）", "**BBB ふたつめの行です**（下"), pre_base=pre_quote_bbb)
+    scenario("G77 G75 で、頭を元の頭の書き出しと付け替え先の頭の写しと上げた引用の行にしても 1（引用の手前に引いた頭がある）", 1, "付け替えた",
+             copy_head_with_tail("AAA BBB ふたつめの行です（下の「BBB ふたつめの行です」と同じ）", "AAA BBB ふたつめの行です（下"), pre_base=pre_quote_bbb)
     # #1453 の 2 パス目の Verifier の F-B と /code-review: 引用の手前を元の項の頭と関わらない文面にした付け替え（1）
     scenario("G78 G75 で、頭を `要点: ` と括弧つきの引用の写しにしても 1（引用の手前が元の項の頭と関わらない）", 1, "付け替えた",
              copy_head_with_tail("要点: 「BBB ふたつめの行です」と同じ）", "要点: 「BBB"), pre_base=pre_quote_bbb)
