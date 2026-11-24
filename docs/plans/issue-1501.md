@@ -9,6 +9,7 @@ Issue #1501 は #1457 の当て直しで残った未達（確認の Issue #1499�
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1508`））。
 版の上げ方: `platform-spec` を **patch**（0.2.0 → 0.2.1。新しい版の決め方の取りこぼしを直す不具合の修正）。
+マージ直前の main の取り込み（`88522a5a`。#1503 ほか）: main の platform-spec は 0.2.0 のままで、この周の 0.2.1 と衝突しないので上げ直さない。取り込みで変わった検査のスクリプトは `scripts/test-check-screens.py` だけ。`check-plugin-versions.py`・`skill-metrics.py --check` が 0。
 
 ## 変更範囲
 
