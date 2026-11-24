@@ -511,8 +511,9 @@ jobs:
       - name: screen-spec の MkDocs のフックのテスト（#1098）
         run: python3 scripts/test-screen-spec-pages.py
 
-  # spec-loop の autopilot の外側のループのテスト（1 本で重い）
-  spec-loop-autopilot-loop:
+  # spec-loop の autopilot の外側のループのテスト（1 本で重い）。変異の観測を --shard K/4 で 4 つのジョブに分ける（#1475）——
+  # 試料の組・陽性対照・変異以外の検査はどのシャードでも回す。4 本で K=1..4 を覆うことは test-check-all.py が見る（matrix にしない——run: の行に名前を残す）
+  spec-loop-autopilot-loop-1:
     runs-on: ubuntu-latest
     steps:
       # 全履歴を取る（冒頭のコメント）
@@ -521,5 +522,41 @@ jobs:
           fetch-depth: 0
 
       # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
-      - name: spec-loop の autopilot の外側のループのテスト（#850）
-        run: python3 scripts/test-autopilot-loop.py
+      - name: spec-loop の autopilot の外側のループのテスト（#850。変異の 1/4。#1475）
+        run: python3 scripts/test-autopilot-loop.py --shard 1/4
+
+  spec-loop-autopilot-loop-2:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
+      - name: spec-loop の autopilot の外側のループのテスト（#850。変異の 2/4。#1475）
+        run: python3 scripts/test-autopilot-loop.py --shard 2/4
+
+  spec-loop-autopilot-loop-3:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
+      - name: spec-loop の autopilot の外側のループのテスト（#850。変異の 3/4。#1475）
+        run: python3 scripts/test-autopilot-loop.py --shard 3/4
+
+  spec-loop-autopilot-loop-4:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
+      - name: spec-loop の autopilot の外側のループのテスト（#850。変異の 4/4。#1475）
+        run: python3 scripts/test-autopilot-loop.py --shard 4/4
