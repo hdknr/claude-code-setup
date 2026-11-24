@@ -98,6 +98,8 @@ CASES: list[tuple[str, dict, list[str], int, tuple[str, ...], tuple[str, ...]]] 
     # #1501: 数字の後ろに綴りを持つ名前。版の順で後ろの v1.2-rc（末尾が違う・層は変わっていない）を新しい版にしない
     ("末尾の綴りの版", with_(OK, settings=settings("v1.0-lts")), [], 1, ("タグ v1.0-lts → v1.1-lts", "起票の候補 4 件"), ()),
     ("日付の版", with_(OK, settings=settings("2024-10-01")), [], 1, ("タグ 2024-10-01 → 2025-03-01", "起票の候補 4 件"), ()),
+    ("区切りが続く版", with_(OK, settings=settings("v1.0-lts2")), [], 0, ("設定のタグ v1.0-lts2 より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
+    ("区切りを持たない版", with_(OK, settings=settings("w1")), [], 1, ("タグ w1 → w1.1", "起票の候補 4 件"), ()),
     ("接頭辞は文字どおり", with_(OK, settings=settings("r.e1")), [], 0, ("設定のタグ r.e1 より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
     ("数字を持たないタグ", with_(OK, settings=settings("stable")), [], 0, ("設定のタグ stable より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
     ("--new で名指す", OK, ["--new", "v2"], 1, ("タグ v1 → v2", "起票の候補 4 件"), ("v10",)),
@@ -141,6 +143,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("区切った数字を数えない", "r\"[0-9]+(?:\" + separator + r\"[0-9]+)*\" + re.escape(suffix)", "r\"[0-9]+\" + re.escape(suffix)", "区切った数字の版"),
     ("区切りを設定のタグから読まない", "separators = sorted(set(re.sub(r\"[0-9]\", \"\", middle))) or [\".\"]", "separators = [\".\"]", "日付の版"),
     ("末尾の綴りを無視する", "+ re.escape(suffix))", "+ r\"-[a-z]+\")", "末尾の綴りの版"),  # 綴りなら何でも当てる——v1.2-rc を新しい版にする
+    ("区切りを持たないタグを . にしない", "or [\".\"]", "or [\"-\"]", "区切りを持たない版"),
+    ("自分の形に当たらないタグでも比べる", "    if not shape.fullmatch(tag):\n        return re.compile(re.escape(tag))\n", "", "区切りが続く版"),
     ("profile を持たないタグも数える", "            if want not in ext.list_files(clone, commit):\n                continue", "            if False:\n                continue", "候補"),
     ("タグと同じでも比べる", "            if new in (old, checked):", "            if new == checked:", "--new がタグと同じ"),
     ("確かめたタグと同じでも比べる", "            if new in (old, checked):", "            if new == old:", "確かめたタグ"),
@@ -182,7 +186,7 @@ LAYER_B = (HEAD + "LANG-1,Python 3.13,docs/guide.md,言語\nHOST-1,AWS ECS,docs/
 
 def make_profile(root: Path, env: dict) -> Path:
     """タグ v1（A）・v2（B）・v9（A）・v10（B）・nolayer・fmt2・badhead（見出しに列を足した B）・zz-screen-v1（A。名前の形が違う）・v12-rc1（A。プレリリース）・
-    v1.0-lts（A）・v1.1-lts（B）・v1.2-rc（A。末尾が違う）・2024-10-01（A）・2025-03-01（B）・v11（profile を持たない）。"""
+    v1.0-lts（A）・v1.1-lts（B）・v1.2-rc（A。末尾が違う）・2024-10-01（A）・2025-03-01（B）・v1.0-lts2（A）・w1（A）・w1.1（B）・v11（profile を持たない）。"""
     assert_in_tmp(root)
     root.mkdir(parents=True)
     git(root, env, "init", "-q", "-b", "main")
@@ -223,6 +227,9 @@ def make_profile(root: Path, env: dict) -> Path:
     commit("v1.2-rc", PROFILE, LAYER_A)  # 版の順では後ろだが末尾の綴りが違う——数えない
     commit("2024-10-01", PROFILE, LAYER_A)  # 日付の版（区切りが -）
     commit("2025-03-01", PROFILE, LAYER_B)  # その次の版
+    commit("v1.0-lts2", PROFILE, LAYER_A)  # 区切りが 2 文字以上続く版——自分の形に当たらない（#1501 の 2 パス目）
+    commit("w1", PROFILE, LAYER_A)  # 区切りを持たない版
+    commit("w1.1", PROFILE, LAYER_B)  # その次の版（. で区切る）
     commit("v11", None, None)  # 名前の形は同じだが profile を持たない
     git(root, env, "checkout", "-q", "v1")
     return root
