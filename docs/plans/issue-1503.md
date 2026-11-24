@@ -131,6 +131,7 @@ Issue 本文（外部入力）から読んだ要件: cruise（dev-loop 2.18.0・
   - 当て直し（`マージ前の判断 = 推奨で決めて起票（後退・未達を含む）` の線で、狭いパスの直すの行を直して 1 回だけ当てる）: 起点 `a73dcdc9`・終点 `ce61c7c3`。Verifier（sonnet）を起こした（報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1503-redo-1-20261124T024734Z.md`）
   - 当て直し: 通した（`a73dcdc9`→`ce61c7c3`）。反証 0 件。N-1 は消えた（直す前の文面で「区切り」・直した後で「届いた」の陽性対照）。N-2 は件数の行を書いて直した（下）
   - PR #1510。PR 側の CI は全部通った（head `2c680993`）。外部レビュー: 該当なし（`外部レビュー:` の宣言が無く 3）
+  - マージ直前の取り込み（親の依頼）: main `72b2e5f8`（#1487。screen-spec だけ）を取り込んだ。main の dev-loop は 2.20.1 のままなので、この周の 2.21.0 は main の先端から minor を 1 つ上げた値で、上げ直しは要らない。`check-plugin-versions.py`・`skill-metrics.py --check` の 2 本だけ回した（緑）
 - 交絡を潰した手順: 上の「確かめたこと」の観測は 1 環境・1 回ずつ（陽性対照はファイルの読み出し）
 
 ```dev-loop-gates
