@@ -1299,7 +1299,7 @@ Eotel 側で同じ範囲を覆う 5 本
 
 <!-- skill-metrics:begin -->
 
-**`SKILL.md` は 1962 行**（うち前書き 48 行は節の外）。**`（必須）` は 193 個**あり、**それを含む節が 1802 行＝全体の 92%**、含まない節が 112 行。
+**`SKILL.md` は 1966 行**（うち前書き 48 行は節の外）。**`（必須）` は 193 個**あり、**それを含む節が 1806 行＝全体の 92%**、含まない節が 112 行。
 
 | 節 | 行 | `（必須）` |
 | --- | --- | --- |
@@ -1315,7 +1315,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | 2. 文脈収集 | 18 | 2 |
 | 3. 計画 | 185 | 27 |
 | 4. 実装 | 356 | 41 |
-| 5. 検証（停止条件）— ここがループの本体 | 419 | 45 |
+| 5. 検証（停止条件）— ここがループの本体 | 423 | 45 |
 | 6. レビュー → PR | 466 | 44 |
 | 7. 本番反映 | 54 | 3 |
 | 8. 経験の還元（次の周を賢くする） | 99 | 9 |
@@ -1325,7 +1325,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | 守ること | 28 | 1 |
 | 複数の Issue を回すとき | 7 | 1 |
 
-**このほかに、起点に載らないファイルが 22 本・3716 行**（`（必須）` 184 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 5678 行・`（必須）` 377 個）。
+**このほかに、起点に載らないファイルが 22 本・3729 行**（`（必須）` 184 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 5695 行・`（必須）` 377 個）。
 
 | 起点に載らないファイル | 行 | `（必須）` |
 | --- | --- | --- |
@@ -1337,7 +1337,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | references/flaky-tests.md | 53 | 2 |
 | references/formal-sync.md | 69 | 4 |
 | references/found-lines.md | 251 | 5 |
-| references/gate-reports.md | 72 | — |
+| references/gate-reports.md | 79 | — |
 | references/guard-rejections.md | 115 | 16 |
 | references/ledger.md | 165 | 7 |
 | references/property-tests.md | 80 | 4 |
@@ -1349,8 +1349,8 @@ Eotel 側で同じ範囲を覆う 5 本
 | references/untrusted-input.md | 52 | 2 |
 | references/verification-trailer.md | 109 | 1 |
 | prompts/implementer.md | 108 | — |
-| prompts/review-handoff.md | 142 | — |
-| prompts/verifier.md | 255 | — |
+| prompts/review-handoff.md | 145 | — |
+| prompts/verifier.md | 258 | — |
 
 <small>この表と上の段落は `scripts/skill-metrics.py` が生成している。**手で書き換えない**——`SKILL.md` を編集したら `python3 scripts/skill-metrics.py` で作り直す（CI が `--check` で見ている）。</small>
 
