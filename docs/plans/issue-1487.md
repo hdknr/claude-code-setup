@@ -72,6 +72,7 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
   - 1 パス目（取り直し）の結果: Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 0 件**（受入基準 2〜6 一致、1 は走らせず未確認・7 は親が回す。`git status --porcelain` は前後同じ）。`/code-review`（high）**指摘 2 件**（どちらも受入基準を破らない——採否の表）。`git status --porcelain` は前後同じ。
   - 1 パス目の指摘対応: 採否の表で「直す」の行 0 件。`git diff 3adb0b35 -- ':(top)' ':(top,exclude)docs/plans/issue-1487.md'` は空、`git status --porcelain` は計画ファイルだけ——**2 パス目: 該当なし**（理由: 1 パス目の指摘対応の差分 0 行。起点 `3adb0b358af04221f43d3c71066f4d3283ebe63e`）。**狭いパス: 該当なし**。2 つ目の割り目も無し。
   - 受入基準 1 は `/code-review` が `run-serial.py` 越しに走らせて `OK: 試料 204 件・変異 169 件・references の崩し 41 件`（前の子の記録も同じ）。受入基準 7 は子が `run-serial.py` 越しに `check-all.py` を回した——`29/105 本を回した（失敗 0 / 飛ばし 0）`・76 本は CACHED（終了コード 0）。2 本は回している間に入力が変わったとしてキャッシュに記録しなかった（緑の結果は変わらない）。
+- PR: #1509。PR 側の CI は全部 pass（deploy は skipping）・`mergeable: MERGEABLE`。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` が 3）。
 - 交絡を潰した手順: 陽性対照（受入基準 3・4）——同じ `pc1487.py`・同じ変異で、base のテストと新しいテストを並べ、変異なしの本体（original）でどちらも 0 件が期待どおりでないこと（試料が環境で落ちていない）を併せて見た
 
 ```dev-loop-gates
