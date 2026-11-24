@@ -50,6 +50,7 @@ spec-loop の関門（spec-loop の `scripts/profile-gate.py`）が、このス�
 - 末尾の同じ後ろの版があれば、末尾の無い版より先にそれを新しい版にする（`v1.0-lts` の次は、`v10` があっても `v1.1-lts`）
 - 末尾の無いタグは、数字が同じなら設定のタグより後ろに数える（`v2.0.0-beta` の次の `v2.0.0`。利用者の git の `versionsort.suffix` に依らない）
 - 末尾の無いタグが設定のタグより数字で前なら、新しい版に数えない（`v2.0.0-beta` に対する `v1.9.0`）
+- 新しい版にしなかった末尾の無いタグも、数えなかったタグとして名指す（`v2.0.0-beta` に対する `v1.9.0`）
 - 区切りを持たない設定のタグは、`.` で区切った新しい版も数える（`w1` の次の `w1.1`）
 - 設定のタグが自分の名前の形に当たらない（区切りが 2 文字以上続く `v1.0-lts2`・`v2.0.0-rc1`）なら、ほかのタグを新しい版に数えない（比べずに 0）
 - 新しい版が `タグ` と同じなら比べずに 0
@@ -189,11 +190,11 @@ class Differ(base.Checker):
         if proc.returncode != 0:
             raise Stop(f"{clone} のタグを並べられない: {proc.stderr.decode('utf-8', 'replace').strip()}")
         want = f"{ext.PROFILE_ROOT}/{name}/{ext.PROFILE_FILE}"
-        found, plain_found, skipped = None, None, []
+        found, plains, seen = None, [], []
         for tag in proc.stdout.decode("utf-8", "surrogateescape").split():
             matches = bool(shape.fullmatch(tag))
             plain = not matches and bare is not None and bool(bare.fullmatch(tag))
-            if (matches and found is not None) or (plain and plain_found is not None):
+            if matches and found is not None:
                 continue
             try:
                 commit = ext.resolve_tag(clone, tag)
@@ -203,16 +204,20 @@ class Differ(base.Checker):
                 continue
             if matches:
                 found = tag
-            elif plain:
-                plain_found = tag
             else:
-                skipped.append(tag)
+                seen.append(tag)
+                if plain:
+                    plains.append(tag)
+        plain_found = plains[0] if plains else None
+        chosen = old
         if found is not None and found != old:
-            return found, skipped
+            chosen = found
         # 末尾の同じ後ろの版が無いときだけ、末尾の無いタグを数える。後ろかは数字で比べる——同じ数字なら末尾の無いほうが後ろ（#1515）
-        if plain_found is not None and version_numbers(plain_found) >= version_numbers(old):
-            return plain_found, skipped
-        return old, skipped
+        elif plain_found is not None and version_numbers(plain_found) >= version_numbers(old):
+            chosen = plain_found
+        # 新しい版にしなかった末尾の無いタグも、数えなかったタグとして名指す（版の順のまま）
+        skipped = [tag for tag in seen if tag != chosen]
+        return chosen, skipped
 
     def layer(self, clone: Path, commit: str, name: str, tag: str, missing_ok: bool):
         ext = self.ext

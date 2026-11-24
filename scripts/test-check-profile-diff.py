@@ -109,7 +109,7 @@ CASES: list[tuple[str, dict, list[str], int, tuple[str, ...], tuple[str, ...]]] 
     ("正式版", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_ga}"], 1, ("タグ v2.0.0-beta → v2.0.0", "起票の候補 4 件"), ()),
     # 数字で前の末尾の無い v1.9.0 は数えない
     ("前の末尾の無い版", with_(OK, settings=settings("v2.0.0-beta")), ["--clone", "{clone_old}"], 0,
-     ("設定のタグ v2.0.0-beta より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
+     ("設定のタグ v2.0.0-beta より後ろの、名前の形が同じタグが無い。比べない", "を持つタグ: v1.9.0"), ("起票の候補: ",)),
     # 末尾に数字を持つ v2.0.0-rc1 は自分の形に当たらないので、末尾の無い v2.1.0 も数えない（数えなかったタグに名指す）
     ("末尾に数字を持つプレリリース", with_(OK, settings=settings("v2.0.0-rc1")), ["--clone", "{clone_beta}"], 0,
      ("設定のタグ v2.0.0-rc1 より後ろの、名前の形が同じタグが無い。比べない", "を持つタグ: v2.1.0"), ("起票の候補: ",)),
@@ -160,9 +160,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("区切りを設定のタグから読まない", "separators = sorted(set(re.sub(r\"[0-9]\", \"\", middle))) or [\".\"]", "separators = [\".\"]", "日付の版"),
     ("末尾の綴りを無視する", "return re.compile(parts[0] + re.escape(parts[1]))", "return re.compile(parts[0] + r\"(?:-[a-z]+)?\")", "末尾の綴りの版"),  # 綴りなら何でも当てる——v1.2-rc を新しい版にする
     ("末尾の無い版を数えない", "return re.compile(parts[0]) if parts is not None and parts[1] else None", "return None", "プレリリースの設定のタグ"),  # v2.0.0-beta の設定で比べずに 0
-    ("末尾の同じ版を先にしない", "        if found is not None and found != old:\n            return found, skipped\n", "", "末尾の同じ版を先に"),
+    ("末尾の同じ版を先にしない", "        if found is not None and found != old:\n", "        if False:\n", "末尾の同じ版を先に"),
     ("同じ数字の末尾の無いタグを前にする", ">= version_numbers(old)", "> version_numbers(old)", "正式版"),
-    ("前の末尾の無いタグも数える", "if plain_found is not None and version_numbers(plain_found) >= version_numbers(old):", "if plain_found is not None:", "前の末尾の無い版"),
+    ("前の末尾の無いタグも数える", "elif plain_found is not None and version_numbers(plain_found) >= version_numbers(old):", "elif plain_found is not None:", "前の末尾の無い版"),
+    ("末尾の無いタグを名指さない", "skipped = [tag for tag in seen if tag != chosen]", "skipped = [tag for tag in seen if tag not in plains]", "前の末尾の無い版"),
     ("区切りを持たないタグを . にしない", "or [\".\"]", "or [\"-\"]", "区切りを持たない版"),
     ("自分の形に当たらないタグでも比べる", "    if not re.fullmatch(body + re.escape(suffix), tag):\n        return None\n", "", "区切りが続く版"),
     ("profile を持たないタグも数える", "            if want not in ext.list_files(clone, commit):\n                continue", "            if False:\n                continue", "候補"),
