@@ -89,7 +89,10 @@
       **`check-all.py` と hook の中身**（集め方と比べ方を直したら、古い記録を当たりにしない）。
 - **入力に数えないもの**: `.git/` の下（git の中身は git コマンドの側で見る）・`__pycache__`・`.pyc`・`.DS_Store`・
   作業ツリーの外（一時ディレクトリなど）。
-- **記録するのは緑だけ。** 落ちた回は記録を消す（入力が同じでも次は回る）。中断した回は書きも消しもしない。
+- **記録するのは緑だけ。** 落ちた回は、**そのテストが走り始めた時点で当たっていた記録と、終わった時点の入力で当たる記録**を消す
+  （入力が同じでも次は回る。途中で入力が変わっても、走り始めた状態に戻せば回る。ほかの状態の記録は残す——#1517）。
+  どちらも記録の側の依存で判定する（落ちた回は依存の一部しか読まないことがある）。
+  記録しない回（下の 2 つ）は、終わった時点の入力で当たる記録だけを消す。中断した回は書きも消しもしない。
   **テスト自身（`scripts/<名前>`）を読んだ跡が無い回は記録しない**——hook が入らなかった（`usercustomize` を読まない Python など）。
   空の依存を記録すると、何を変えても当たりになる。
   **回している間に入力が書き換わった回は記録しない**（`check-all.py` を始めた時刻より新しい mtime・git の状態の変化）。
@@ -98,7 +101,10 @@
   ——Python が `__pycache__` を書くだけで動く。
 - **歯止め（`GUARDS`）は載せない——毎回回す。** 実リポジトリの中身を広く読む（指し先・リンク・版）ので当たらず、
   重いのは `check-mutation-claims.py` だけである。
-- **記録の置き場所**は `git rev-parse --git-common-dir` の下の `check-all-cache/`——**worktree の間で共有する**（中身で引くので安全）。
+- **記録の置き場所**は `git rev-parse --git-common-dir` の下の `check-all-cache/<テスト名>/`——**worktree の間で共有する**（中身で引くので安全）。
+  **1 本につき、入力の状態ごとに別の記録を置き**（ファイル名はキー・依存・指紋から決める）、**当たる記録が 1 つでもあれば当たり**とする（#1517）。
+  前は 1 本につき 1 つで、入力の違う worktree の回が互いの記録を上書きし、自分の入力が変わっていなくても回り直していた。
+  **書いた時刻の新しい順に `CACHE_KEEP` 個まで残す**——それより前の状態に戻れば回る。前の形式（`check-all-cache/<テスト名>.json`）は読まず、消しもしない。
   一時ファイルに書いてから `os.replace` で置き、読めない記録は「無い」と扱う。**git のリポジトリでなければキャッシュを使わず、今までどおり全部回す。**
 - **出力**: 当たったものは `  CACHED <名前>` の行（所要時間を出さず、上位にも入れない）。**`OK` に数えない**——集計の
   「N/M 本を回した」から外し、「キャッシュ: K 本」と別に出す。**`--no-cache` で記録を読まずに全部回す**（緑の記録は書く）。
@@ -284,9 +290,11 @@ TOP = 5
 
 # ------------------------------------------------------------ キャッシュ（#1151）
 # 記録の形の版。**記録の読み方・指紋の取り方を変えたら上げる**——古い記録を当たりにしない。
-CACHE_FORMAT = 1
+CACHE_FORMAT = 2  # 2: 1 本につき入力の状態ごとに複数の記録（#1517）。1 の記録（`<名前>.json`）は読まない
 # 記録の置き場所（`git rev-parse --git-common-dir` の下。worktree の間で共有する——中身で引くので共有して安全）。
 CACHE_DIRNAME = "check-all-cache"
+# 1 本のテストにつき残す記録の数（新しい順）。並行する worktree が同じテストを別の入力で緑にしても、互いの記録を消さないため（#1517）。
+CACHE_KEEP = 8
 # 子の Python に差し込む hook のディレクトリ（`PYTHONPATH` の先頭に置く）。
 TRACE_DIRNAME = "check_all_trace"
 TRACE_LOG = "CHECK_ALL_TRACE_LOG"
@@ -646,44 +654,61 @@ def changed_during(repo: Path, deps: dict, since_ns: int) -> list[str]:
     return hits
 
 
-def record_path(root: Path, name: str) -> Path:
-    return root / f"{name}.json"
+def record_dir(root: Path, name: str) -> Path:
+    """1 本のテストの記録のディレクトリ。中に入力の状態ごとの記録（`<id>.json`）を置く（#1517）。"""
+    return root / name
 
 
-def load_record(root: Path, name: str) -> dict | None:
-    """読めない記録は「無い」と同じに扱う（並行する書き込みの途中・壊れた記録で当たりにしない）。"""
+def record_id(rec: dict) -> str:
+    """記録の id——キーと依存と指紋から決める。**同じ状態は同じファイル、別の状態は別のファイル**になる。"""
+    body = json.dumps([rec["key"], rec["deps"], rec["digests"]], ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(body.encode()).hexdigest()[:32]
+
+
+def load_records(root: Path, name: str) -> list[tuple[Path, dict]]:
+    """そのテストの記録を全部読む。**読めない記録は「無い」と同じに扱う**（並行する書き込みの途中・壊れた記録・
+    前の形式の記録で当たりにしない）。一覧を取った後に消えた記録も飛ばす。"""
     try:
-        rec = json.loads(record_path(root, name).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(rec, dict) or rec.get("format") != CACHE_FORMAT:
-        return None
-    return rec
+        paths = sorted(record_dir(root, name).glob("*.json"))
+    except OSError:
+        return []
+    out = []
+    for path in paths:
+        try:
+            rec = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(rec, dict) and rec.get("format") == CACHE_FORMAT:
+            out.append((path, rec))
+    return out
 
 
 def save_record(root: Path, name: str, rec: dict) -> None:
-    """一時ファイルに書いてから `os.replace` で置く——並行する `check-all.py` が半端な記録を読まない。"""
-    root.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=root, prefix=f".{name}.", suffix=".tmp")
+    """一時ファイルに書いてから `os.replace` で置く——並行する `check-all.py` が半端な記録を読まない。
+    置いた後に、書いた時刻の新しい順に `CACHE_KEEP` 個まで残し、古いものを消す（#1517）。"""
+    d = record_dir(root, name)
+    d.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(rec, f, ensure_ascii=False)
-        os.replace(tmp, record_path(root, name))
+        os.replace(tmp, d / f"{record_id(rec)}.json")
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         raise
+    stamped = []
+    for path in d.glob("*.json"):
+        with contextlib.suppress(OSError):
+            stamped.append((path.stat().st_mtime_ns, path.name, path))
+    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:
+        with contextlib.suppress(OSError):
+            path.unlink()
 
 
-def drop_record(root: Path, name: str) -> None:
-    with contextlib.suppress(OSError):
-        record_path(root, name).unlink()
-
-
-def is_cached(root: Path, name: str, args: list[str], hasher: Hasher) -> bool:
-    """記録があり、キーが同じで、記録した依存の指紋が今も同じなら当たり。"""
-    rec = load_record(root, name)
-    if rec is None or rec.get("key") != cache_key(name, args):
+def matches(rec: dict, name: str, args: list[str], hasher: Hasher) -> bool:
+    """キーが同じで、記録した依存の指紋が今も同じなら当たり。"""
+    if rec.get("key") != cache_key(name, args):
         return False
     deps, want = rec.get("deps"), rec.get("digests")
     if not isinstance(deps, dict) or not isinstance(want, dict):
@@ -694,27 +719,58 @@ def is_cached(root: Path, name: str, args: list[str], hasher: Hasher) -> bool:
         return False
 
 
+def matching_records(root: Path, name: str, args: list[str], hasher: Hasher) -> set[Path]:
+    """今の入力で当たる記録のパス。"""
+    return {path for path, rec in load_records(root, name) if matches(rec, name, args, hasher)}
+
+
+def drop_record(root: Path, name: str, args: list[str], hasher: Hasher, also: frozenset[Path] | set[Path] = frozenset()) -> None:
+    """**今の入力で当たる記録だけ**を消す——入力が同じでも次は回る。ほかの状態の記録（別の worktree が緑にしたもの）は残す（#1517）。
+    `also` に渡した記録も消す——落ちた回の、そのテストが走り始めた時点で当たっていた記録。"""
+    for path, rec in load_records(root, name):
+        if path in also or matches(rec, name, args, hasher):
+            with contextlib.suppress(OSError):
+                path.unlink()
+
+
+def is_cached(root: Path, name: str, args: list[str], hasher: Hasher) -> bool:
+    """当たる記録が 1 つでもあれば当たり（#1517。前は 1 本につき 1 つだった）。"""
+    return any(matches(rec, name, args, hasher) for _, rec in load_records(root, name))
+
+
+def moved_during(ctx: dict, deps: dict) -> list[str]:
+    """回している間に変わった入力（`changed_during` と、git を入力にするなら git の状態）。"""
+    moved = changed_during(ctx["repo"], deps, ctx["since_ns"])
+    if deps["git"] and Hasher(ctx["repo"]).git_state() != ctx["git_at_start"]:
+        moved.append("<git の状態>")
+    return moved
+
+
 def traced_run(name: str, args: list[str], ctx: dict) -> tuple[bool, str, float]:
-    """hook を差し込んで回し、緑なら依存を記録する。落ちた回は記録を消す。"""
+    """hook を差し込んで回し、緑なら依存を記録する。落ちた回は、今の入力で当たる記録を消す。"""
     log = ctx["logdir"] / f"{name}.jsonl"
+    # **走り始めた時点で当たる記録を覚えておく**（#1517）——落ちた回の途中で入力が変わっても、走り始めた状態に戻したときに
+    # 落ちたテストを当たりにしないため。判定は記録の側の依存で行う（落ちた回は依存の一部しか読まないことがある）。
+    before = matching_records(ctx["root"], name, args, Hasher(ctx["repo"]))
     ok, out, secs = timed(name, args, trace_env(log, ctx["repo"]))
     if ctx["stopping"]():
         return ok, out, secs  # 中断した回は記録を書きも消しもしない
     if not ok:
-        drop_record(ctx["root"], name)
+        # **落ちた回は、走り始めた時点で当たっていた記録と、終わった時点で当たる記録を消す**（#1517）。終わった時点のものだけだと、
+        # 途中で入力が変わったときに走り始めた状態の緑の記録が残り、その状態に戻すと落ちたテストが CACHED になる。全部は消さない——
+        # 別の worktree が別の状態で緑にした記録は残す。
+        drop_record(ctx["root"], name, args, Hasher(ctx["repo"]), also=before)
         return ok, out, secs
     deps = collect_deps(log, ctx["repo"])
     if f"scripts/{name}" not in deps["files"]:
         # **テスト自身を読んだ跡が無い——hook が入らなかった**（`usercustomize` を読まない Python・中断の途中で記録が消えた）。
         # 空の依存を記録すると、何を変えても当たりになる（#1151 の 1 パス目）。
-        drop_record(ctx["root"], name)
+        drop_record(ctx["root"], name, args, Hasher(ctx["repo"]))
         ctx["unrecorded"].append((name, "読んだものを集められなかった（hook が入っていない）"))
         return ok, out, secs
-    moved = changed_during(ctx["repo"], deps, ctx["since_ns"])
-    if deps["git"] and Hasher(ctx["repo"]).git_state() != ctx["git_at_start"]:
-        moved.append("<git の状態>")
+    moved = moved_during(ctx, deps)
     if moved:
-        drop_record(ctx["root"], name)
+        drop_record(ctx["root"], name, args, Hasher(ctx["repo"]))
         ctx["unrecorded"].append((name, "回している間に入力が変わった: " + ", ".join(moved[:3])))
         return ok, out, secs
     try:
