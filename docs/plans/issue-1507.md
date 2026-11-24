@@ -75,6 +75,12 @@ Issue の受入基準: (a) 問いの画面に出す限界に、上の観測が�
 - 周の在り処: ブランチ `issue/1507-cron-after-usage-limit`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1507`・
   起点 `59b5db8b`・base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `59b5db8ba4db19fe2dd891b181ba18ab11871280`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 関門: 1 パス目に渡した（Verifier・/code-review。成果物 `da7d0910`）。1 パス目の指摘対応の起点: `da7d091094f73d98ac691846729aa34906f41f00`
+  - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1507-verifier-1-20261124T163136Z.md`
+  - /code-review 1 パス目（high）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f6308801-996d-4682-8ce3-f3ee617842d3/scratchpad/gate-1507-code-review-1-20261124T163136Z.md`
+  - 結果: Verifier 1 パス目（166 行を読んだと報告——`wc -l` は 166）反証 2 件（V1-1・V1-2）。/code-review 1 パス目 指摘 7 件（CR1-1〜CR1-7）。
+  - 1 パス目の指摘対応: 直す 8 件（下の表。V1-1 と CR1-6 は同じ直し）。範囲は広げていない（同じファイルの中）。
+- 交絡を潰した手順（指摘対応）: cron の行の `PATH` の置き方を `env -i` の `sh` で当てた——環境に無い `PATH` を `PATH=… &&` で置くと `python3` の子に渡らず（KeyError）、`export PATH=… &&` なら渡った。環境に `PATH` がある形（cron と同じ）では `export` 無しでも渡った。例は `export` の形にした。
 - 交絡を潰した手順: `lockf -t 0` の重なりの止め方を手元で当てた（1 本目が握っているあいだの 2 本目が 75 で断られ、離した後の 3 本目は走った——断る側と走る側の両方を見た）。ほかに実験なし。
 
 ## 既知の限界・決着済みの論点
@@ -82,6 +88,28 @@ Issue の受入基準: (a) 問いの画面に出す限界に、上の観測が�
 - `outer-loop.py` に利用上限を読んで解除の時刻まで待つ機能を足さない（決着: 採らない。理由: Issue は案内を求めている。本物の `claude -p` の上限の出力の形は測っておらず、spec-loop の `autopilot-loop.py` もその形を測っていないと書いている）。
 - cron の行を繰り返しにしない（決着: 1 回きり。理由: `outer-loop.py` は止まるたびに通知し、上限が解けていなければ起動のたびに止まる）。
 - cron から起こした `claude` の認証・cron からの起動そのものは確かめない（決着: 未証明として書く。理由: 利用者の crontab を書き換え、本物の `claude` を起こすので、この周ではしない）。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-1・CR1-6: 「解除の時刻を過ぎても約 17 回分」は、17 回が解除の前の 4 回を含むのに解除の後だけと読める | 示せる——#1401 の「2am の解除後も含めて 00:07〜08:07 の約 17 回分」と文面 | 2 | 直す——「解除の時刻の後も含めて約 17 回分（00:07〜08:07）」・参照は前 4 回と後 13 回に分けた |
+| V1-2: cron の `PATH` に `node` が無いと `claude` が起きない・`osascript` の通知が出ない点が無い | 示せる——cron の `PATH` が短いこと（CR1-4 と同じ根） | 5 | 直す——CR1-4 と同じ直し（`export PATH=`）。通知が出るかは確かめていないことに足した |
+| CR1-1: 上限で止まる経路に、`--max-total-usd` を渡したときの 12 が抜けている。「上限の扱いは docstring に無い」は docstring の「守らない」と食い違う | 示せる——関門が偽の `claude` で `--max-total-usd 5` なら 12・なしなら 6 を実測。docstring の「守らない」の文 | 4 | 直す——12 を足し、docstring の「守らない」の文を書いた（参照と公開ページ） |
+| CR1-2: 対話のセッションで回す cruise に離れる前に cron を用意すると、タイマーか自動継続で戻った親と 2 体になる——案内自体がその形を作る | 示せる——#1401 の 08:25 の発火と、`lockf` が対話の親を見ないこと（`outer-loop.py` の「守らない」） | 6 | 直す——経路は外側のループで起こす形だけで、対話のセッションを終えてから使う、と原本・`SKILL.md`・公開ページに書いた |
+| CR1-3: 手で起こすループの例に `lockf` が無く、cron のループと並ぶ | 示せる——例の行 | 6 | 直す——手の例にも同じロックのファイルを通した |
+| CR1-4: cron の環境が貧しい（`gh`・`node`・rc の変数）のに、行のパスを絶対パスにする注意で終わる | 示せる——cron の `PATH` と `outer-loop.py` が環境をそのまま渡すこと | 5 | 直す——行の先頭に `export PATH=`、rc の変数も置く、と書いた |
+| CR1-5: その時刻に Mac が眠っていると 1 回きりの cron は起こさない | 示せる——cron は逃した時刻を走らせない | 5 | 直す——注意に足し、スリープは起動時の点検の項を指した |
+| CR1-7: 例の `/usr/bin/python3` は Command Line Tools の shim のことがある | 示せる——例の行 | 5 | 直す——`command -v python3` で調べた絶対パスにした |
+
+- 効いた行: V-02
+- 効いた行: V-07
+- 効いた行: R-02
+- 効いた行: なし
+- 効いた行: なし
+- 効いた行: R-02
+- 効いた行: なし
+- 効いた行: なし
 
 ## 手順 8 の記録
 
