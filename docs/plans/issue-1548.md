@@ -29,8 +29,27 @@
 
 ## 受入基準
 
-1. spec-gap.md の出どころの記述が `docs/design/sources.csv` を含み、handoff-issue.md と食い違わない
-2. 版を揃えて上げ、`scripts/check-all.py` が通る
+| # | 受入基準 |
+| --- | --- |
+| 1 | spec-gap.md の出どころの記述が `docs/design/sources.csv` を含み、handoff-issue.md と食い違わない |
+| 2 | 版を揃えて上げ、`scripts/check-all.py` が通る |
+
+## 関門の記録
+
+事実だけを書く。Verifier（opus）1 パス目は先端 565a9a3f に当て、反証 1 件（計画の変更範囲の書き方で `check-plan-scope.py` が赤）を計画ファイルだけの直しで直した。
+`/code-review` 相当は general-purpose（opus）を df2e077c に当て、指摘なし（`feature-dev:code-reviewer` に 1 回目を当てたが報告が届かず、読めていない——記録しない）。
+直した分への 2 パス目と狭いパスは回していない。直しが計画ファイルだけで、`check-plan-scope.py` が通り、PR 側の CI が全部通ったため。
+
+```dev-loop-gates
+周の base: 5734eebe3949f081bc7523730ec69c2d07db072f
+関門: Verifier 1 565a9a3f40b08f9e8b5c43f03c98c68948e12b0e 反証=1
+関門: /code-review 1 df2e077ca94585bb7b4eeca92a7d3f39465586a6 指摘=0
+関門: 2 パス目 該当なし 565a9a3f40b08f9e8b5c43f03c98c68948e12b0e
+関門: 狭いパス 該当なし
+受入基準: 1 満たす
+受入基準: 2 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
 
 ## 既知の限界
 
