@@ -23,8 +23,13 @@
 - `plugins/spec-loop/templates/mkdocs/mkdocs.yml` — `exclude_docs`
 - `plugins/screen-spec/scripts/build-mock.py` — `screen-spec/renderers/` を `docs/` の下にも置ける
 - `plugins/screen-spec/references/mock.md` — 描き方の差し替えの置き場所
-- `scripts/test-scaffold-screens.py`・`scripts/test-build-mock.py` — 回帰テスト
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/spec-loop/skills/*/SKILL.md`・`plugins/screen-spec/.claude-plugin/plugin.json`・`plugins/screen-spec/skills/*/SKILL.md`・`.claude-plugin/marketplace.json` — 版
+- `scripts/test-scaffold-screens.py` — 回帰テスト
+- `scripts/test-build-mock.py` — 回帰テスト
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版（2 行）
+- `plugins/screen-spec/.claude-plugin/plugin.json` — 版
+- `plugins/screen-spec/skills/*/SKILL.md` — 版（2 行）
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-1542.md` — この計画
 
 触らない:
