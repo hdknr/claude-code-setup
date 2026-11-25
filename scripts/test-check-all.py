@@ -2664,6 +2664,37 @@ def cache_contract(root: Path):
     rc2, out2 = cache_run(root)
     yield "落ちた回が依存の一部しか読まなくても、走り始めた状態の記録を消し、戻すと回る（#1517 の R2-2・C3）", (
         rc == 1 and rc2 == 0 and "t-two.py" in ran_tests(out2))
+    # 17) 追い出しは最後に当たった時刻の順（LRU。#1541）——`t-file.py` の記録を [元, v6, v7] にし（元が最も古い）、元で当ててから
+    #     v8 を足すと、消えるのは元ではなく v6。**陽性対照**: v6 に戻すと回る（上限で実際に追い出していて、追い出したのが v6）。
+    #     書いた時刻の順のままなら、v8 で元が消え、元に戻すと回る。
+    for body in ("a v6\n", "a v7\n"):
+        touch("data/a.txt", body)
+        cache_run(root)
+    touch("data/a.txt", orig)
+    rc, out = cache_run(root)
+    touch("data/a.txt", "a v8\n")
+    rc2, out2 = cache_run(root)
+    kept = len(list((store / "t-file.py").glob("*.json")))
+    touch("data/a.txt", orig)
+    rc3, out3 = cache_run(root)
+    touch("data/a.txt", "a v6\n")
+    rc4, out4 = cache_run(root)
+    yield "当たった記録は追い出しで後に回り、当たっていない古い記録が先に消える（#1541）", (
+        rc == 0 and "t-file.py" in cached_tests(out) and rc2 == 0 and "t-file.py" in ran_tests(out2) and kept == 3
+        and rc3 == 0 and "t-file.py" in cached_tests(out3) and rc4 == 0 and "t-file.py" in ran_tests(out4))
+    # 18) 当たった記録の時刻を新しくするときに、その記録が消えていても（並行する回が消した直後）落ちず、当たりは変わらない（#1541）——
+    #     写した本体を読み込み、`os.utime` が `FileNotFoundError` を出す形で `is_cached` を呼ぶ。直前の段で `t-file.py` は v6 で緑。
+    probe = ("import importlib.util, os, sys\nfrom pathlib import Path\n"
+             "spec = importlib.util.spec_from_file_location('ca', sys.argv[1]); m = importlib.util.module_from_spec(spec)\n"
+             "spec.loader.exec_module(m)\n"
+             "def gone(*a, **k):\n    raise FileNotFoundError(a[0])\n"
+             "os.utime = gone\n"
+             "repo = Path(sys.argv[2])\n"
+             "print('hit' if m.is_cached(m.cache_root(repo), 't-file.py', [], m.Hasher(repo)) else 'miss')\n")
+    proc = subprocess.run([sys.executable, "-c", probe, str(root / "scripts" / "check-all.py"), str(root)],
+                          capture_output=True, text=True, cwd=root, env=cache_env(), timeout=120)
+    yield "当たった記録が触る前に消えていても落ちず、当たりのまま（#1541）", (
+        proc.returncode == 0 and proc.stdout.strip() == "hit")
 
 
 def cache_contract_list(root: Path, src: str, hook_src: str, stop_first: bool) -> list[tuple[str, bool]]:
@@ -2706,7 +2737,12 @@ CACHE_MUTANTS = {
                                                     '        os.replace(tmp, d / "r.json")\n'),
     "上限で古い記録を消さない（#1517）": ("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
                                           "    for _, _, path in sorted(stamped, reverse=True)[len(stamped):]:\n"),
-    "上限で新しいほうを消す（#1517）": ("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
+    "当たっても記録の時刻を新しくしない（#1541）": ("check-all", "                os.utime(path)\n", "                pass\n"),
+    "当たった記録が消えていると落ちる（#1541）": ("check-all", "            with contextlib.suppress(OSError):\n                os.utime(path)\n",
+                                                  "            if True:\n                os.utime(path)\n"),
+    "当たった記録を消えたら当たらないことにする（#1541）": ("check-all", "            hit = True\n            with contextlib.suppress(OSError):\n                os.utime(path)\n",
+                                                            "            try:\n                os.utime(path)\n                hit = True\n            except OSError:\n                pass\n"),
+    "上限で新しいほうを消す（#1517）":("check-all", "    for _, _, path in sorted(stamped, reverse=True)[CACHE_KEEP:]:\n",
                                         "    for _, _, path in sorted(stamped)[CACHE_KEEP:]:\n"),
     "hook が入らない回の記録を消さない（#1517）": ("check-all", "        drop_record(ctx[\"root\"], name, args, Hasher(ctx[\"repo\"]))\n        ctx[\"unrecorded\"].append((name, \"読んだものを集められなかった（hook が入っていない）\"))\n",
                                                    "        ctx[\"unrecorded\"].append((name, \"読んだものを集められなかった（hook が入っていない）\"))\n"),
