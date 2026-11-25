@@ -59,7 +59,9 @@
 
 ### 未証明・BLOCKED
 
-- 未証明: 実際の MkDocs（`mkdocs build`）で `exclude_docs` が CSV・JS を落とすこと。CI に MkDocs の組が無い。テストは雛形の文面までを見る。
+- 未証明: 実際の MkDocs（`mkdocs build`）で `exclude_docs` が CSV・JS を落とすこと——**当初は「CI に MkDocs の組が無い」として未証明に置いたが、Verifier 1 パス目（R1）に反証された**。手元に MkDocs 1.6.1 があり、
+  雛形の 2 パターンだけの設定で `docs/design/sources.csv`・`docs/screen-spec/renderers/*.js` は `site/` に出ず、`docs/foo/t.txt`（対照）は出ることを著者も走らせて確かめた（scratchpad の最小の設定。MkDocs 1.6.1・2026-11-25）。
+  CI に MkDocs の組が無いので、実効は CI では当てていない（雛形の文面を見るテストも無い——採否の表の R1・CR3）。
 - BLOCKED: なし。
 
 ### 生成物
@@ -75,9 +77,55 @@
 - 仕様の振る舞い: 変えない（このリポジトリは spec-loop の正本ではない）。
 - 形式検査のモデル: なし。
 
+## 既知の限界・決着済みの論点
+
+採否の表（Verifier と `/code-review` の 1 パス目。既定の線: 「示せる」かつ「この周の受入基準を破る」行だけ直す）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R1（V）未証明の分類が誤り・「テストは雛形の文面までを見る」が偽 | 示せる（MkDocs 1.6.1 の実測・scripts/ の grep）。計画の記述は上のとおり直した | 無し | 残課題（計画の文は直した。雛形を見るテストは足さない） |
+| R2（V・項目 12）`差分テスト: なし` だが受入基準 2 は「変えない」 | 示せる（Verifier が新旧を同じ試料に当て、根の直下・置かない形でバイト一致、docs の形は差が出る陽性対照）。build-mock の `good` は旧との同一性を見ない | 無し（基準 2 は Verifier の実験で満たす） | 残課題 |
+| R3（V）docs の下の描き方を未コミットで直すと表の出どころが「docs に未コミットの変更あり」になる | 示せる（Verifier の e1） | 無し | 残課題（文言どおり正しい。記録だけ） |
+| R4（V）大文字小文字を区別しない FS で `docs/Design` が scaffold・生成器に読まれ MkDocs には公開される | 示せる（Verifier の e1。scaffold は未実行） | 無し | 残課題（記録だけ） |
+| R5＝CR6（V・CR）mock.md が `screen-spec/` を足すと書くが雛形は `/screen-spec/renderers/`・指し先の節に exclude_docs が無い | 示せる（行の突き合わせ） | 無し（基準 7 は表と定数で、文は対象外） | 残課題（文言。記録だけ） |
+| CR1 req-loop・spec-review・scaffold の SKILL.md と spec-scope.md の「正本の根に `design/sources.csv` があれば」が `docs/design/sources.csv` で発火しない | 示せる（行の読み: req-loop:382・spec-review:160・455・scaffold:165・spec-scope:131-136） | 無し | 残課題（利用者に見える誤りとして直す候補に振る） |
+| CR2 exclude_docs が MkDocs の既定（`.*`・`/templates/`）を上書きする | **示せない**——MkDocs 1.6.1 で `.DS_Store`・`.hid/`・`templates/` は雛形と同じ設定でも `site/` に出なかった | 無し | 残課題（捨てる） |
+| CR3 雛形の exclude_docs を見るテストが無い | 示せる（grep） | 無し | 残課題（試料の穴。記録だけ） |
+| CR4 両方に在る scaffold の末尾の 1 行が根のパスだけを名指しする | 示せる（コードの読み。出力は未実行） | 無し（基準 4 は 1 で止まること。1 行目は両方を名指す） | 残課題（文言。記録だけ） |
+| CR5 docs の下の違反の `--dry-run`・`--upto` を見る試料が無い | 示せる（Verifier の e2 が挙動を確認。試料は無い） | 無し | 残課題（試料の穴。記録だけ） |
+
+振り分け（`references/found-lines.md`。PR コメントにも書く）: 直す（台帳に足して直す）は CR1 の 1 件。記録だけは R1・R2・R3・R4・R5＝CR6・CR3・CR4・CR5。捨てるは CR2。
+
+受入基準の判定: 1〜7 すべて満たす（Verifier が各行を走らせ・読んで確かめた。7 は写しの突き合わせが緑）。
+
+- 周の外での決め: 置き場所の決め方は推奨（A 案）で決めた。確認の Issue は親が立てる。
+
 ## 関門の進捗（再開点）
 
-- 実装: 済（コミット前）
-- 割り目: 訊かない（cruise の周）。割らない。
+- 実装: 済（`78e897ee`）。計画の表化（`1645886e`）
+- 割り目: 訊かない（cruise の周）。割らない（実装後・2 パス目の前とも）。
+- 関門 1 パス目（HEAD `1645886e3435ae03bc820ca4bb1174da6b59dd81` を渡した。base `a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32`）:
+  - Verifier（`dev-loop:dev-loop-verifier`・opus。実装は sonnet）: 反証 5 件（R1〜R5）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1542-verifier-1-20261125T022713Z.md`
+  - `/code-review`（high）: 指摘 6 件（CR1〜CR6）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1542-code-review-1-20261125T023820Z.md`
+  - 1 パス目の指摘対応の起点: `1645886e3435ae03bc820ca4bb1174da6b59dd81`。「直す」の行が 0 件（下の採否の表）なので成果物の差分は 0 行。2 パス目: 該当なし。狭いパス: 該当なし。
+- 交絡を潰した手順: 実験は MkDocs の `exclude_docs` の実効だけ（対照に `docs/foo/t.txt` が公開されること・`.DS_Store`・`templates/` が出ないことを同じ設定で見た）。それ以外は実験なし。
 
 - この周の起票: 0 件（仕様の穴は推奨で決めて起票の線だが、確認の Issue は親が立てる。周の中では起票しない）
+
+## 関門の記録
+
+```dev-loop-gates
+周の base: a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32
+関門: Verifier 1 1645886e3435ae03bc820ca4bb1174da6b59dd81 反証=5
+関門: /code-review 1 1645886e3435ae03bc820ca4bb1174da6b59dd81 指摘=6
+関門: 2 パス目 該当なし 1645886e3435ae03bc820ca4bb1174da6b59dd81
+関門: 狭いパス 該当なし
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+受入基準: 5 満たす
+受入基準: 6 満たす
+受入基準: 7 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
