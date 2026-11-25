@@ -66,9 +66,38 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 周の在り処: ブランチ `issue/1537-profile-lts-same-digits`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1537`・
   起点 `a50e080f`・base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 歯止め（実装後・`02ae5a89`）: `run-serial.py` 越しの `test-check-profile-diff.py` が `OK: 試料 34 件・変異 34 件（守ること 34 行）・references の崩し 5 件`、`check-all.py` が `36/105 本を回した（失敗 0 / 飛ばし 0）`・rc=0。PR #1543 を作成。
+- 関門: 1 パス目に渡した（Verifier・/code-review。成果物 `02ae5a89e6bc66fc6af29d7d1f34dd76ae4d4460`）。1 パス目の指摘対応の起点: `02ae5a89e6bc66fc6af29d7d1f34dd76ae4d4460`
+- Verifier 1 パス目（`dev-loop:dev-loop-verifier`・opus。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1537-verifier-1-20261125T010405Z.md`）: 反証 2 件（V1-1・V1-2。文言）。主張（1・確かめたタグで 0・`--new` で 0）は一致。変異 8 本のうち殺せなかった 1 本は等価変異（陽性対照つき）。差分テスト「なし」の判定（実行コードが 1 行も変わっていない）は AST の比べで一致
+- /code-review 1 パス目（high。報告 `…/gate-1537-code-review-1-20261125T012000Z.md`）: 指摘 4 件（重要 1・nit 3）。テスト全体は別の周の `check-all.py` の順番待ちで未確認と報告
+
+```dev-loop-gates
+周の base: a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32
+関門: Verifier 1 02ae5a89e6bc66fc6af29d7d1f34dd76ae4d4460 反証=2
+関門: /code-review 1 02ae5a89e6bc66fc6af29d7d1f34dd76ae4d4460 指摘=4
+```
 
 ## 既知の限界・決着済みの論点
 
 - 綴りがプレリリースか版の線かを名前から見分けない（決着: 採らない——(b)・(c) は #1536 で選ばれなかった。外し方を書く）。
+
+### 1 パス目の採否の表（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 | 振り分け |
+| --- | --- | --- | --- | --- |
+| V1-1／CR1-1: 「`v1.0` を新しい版にして逆向きに比べて 1 を返す」は無条件ではない（指した行が 2 つの版で同じなら候補 0・0 を返す） | 示せる——両方の関門が一時 clone で `v1.0-lts`・`v1.0` に同じ層を置いて `タグ v1.0-lts → v1.0`・候補 0 件・exit 0 を実測 | 1・4（docstring と原本の主張が事実と食い違う） | 直す——「比べる。違えば候補が出て 1、違わなければ 0」に書き直す | — |
+| CR1-2: 外し方の `--new v1.0-lts` は関門 `profile-gate.py` 越しでは使えない（`--new` を渡す口が無い） | 示せる——`profile-gate.py` 211〜215 行で子に渡す引数は `<docs> --spec-loop [--upto] [--project]` だけ（著者が grep で確認） | 4 | 直す——関門越しは `確かめたタグ` だけ・`--new` は CLI を直に呼ぶとき、と書き分ける | — |
+| V1-2: docstring と原本の同じ文が文字どおり同じ言い方でない | 示せる（文面） | 4（同じ言い方） | 直す——V1-1・CR1-2 の書き直しで 2 箇所を同じ言い方に揃える | — |
+| CR1-3: 「前のリリース」と「後ろに」が同じ文で食い違い読みにくい（コードは前後を見ない） | 示せない（文面の読みにくさ。破る基準なし） | 無し | 残課題 | 記録だけ |
+| CR1-4: 試料は `v1.0` が違う中身（LAYER_B）の 1 件だけで、同じ中身で 0 になる陰性側を固定しない | 示せない（試料の穴。実害は書き直した文面が条件つきなので無い） | 無し | 残課題 | 記録だけ |
+
+効いた行（指摘の中身から引いた。V1-1・CR1-1・V1-2・CR1-2 は記述が事実か（R-02）、CR1-3・CR1-4 は文面の読みにくさと試料の穴で当たる行なし）:
+
+- 効いた行: R-02
+- 効いた行: R-02
+- 効いた行: R-02
+- 効いた行: R-02
+- 効いた行: なし
+- 効いた行: なし
 
 - この周の起票: 0 件（振る舞いを変えない文面と試料の周。起票の候補なし）
