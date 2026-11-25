@@ -205,8 +205,9 @@ jobs:
       - name: コミットの検証の印の hook のテスト（#1192）
         run: python3 scripts/test-commit-gate.py
 
-  # dev-loop の委譲文の行の台帳と PR のマージの手続きのテストと、cruise の道具（親 Issue・子プロセス・片付け）と、
-  # コードブロックとコメントの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせのテスト（#1463。ジョブの名前より広い）
+  # dev-loop の PR のマージの手続きのテストと、cruise の道具（親 Issue・子プロセス・片付け）と、
+  # コードブロックとコメントの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせのテスト（#1463。ジョブの名前より広い）。
+  # 委譲文の行の台帳のテストは下の dev-loop-line-effects-K に分けた（#1553）
   dev-loop-cruise:
     runs-on: ubuntu-latest
     steps:
@@ -214,9 +215,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194）
-        run: python3 scripts/test-line-effects.py
 
       - name: 親 Issue の一覧から台帳を作るテスト（#446）
         run: python3 scripts/test-parent-issue.py
@@ -232,6 +230,52 @@ jobs:
 
       - name: PR のマージの手続きのテスト（#389）
         run: python3 scripts/test-merge-pr.py
+
+  # dev-loop の委譲文の行の台帳と最後に効いた周の集計のテスト（1 本で重い）。変異の観測を --shard K/4 で 4 つのジョブに分ける（#1553）——
+  # 試料と原本の突き合わせはどのシャードでも回す。4 本で K=1..4 を覆うことは test-check-all.py が見る（matrix にしない——run: の行に名前を残す）
+  dev-loop-line-effects-1:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194。変異の 1/4。#1553）
+        run: python3 scripts/test-line-effects.py --shard 1/4
+
+  dev-loop-line-effects-2:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194。変異の 2/4。#1553）
+        run: python3 scripts/test-line-effects.py --shard 2/4
+
+  dev-loop-line-effects-3:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194。変異の 3/4。#1553）
+        run: python3 scripts/test-line-effects.py --shard 3/4
+
+  dev-loop-line-effects-4:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 委譲文の行の台帳と最後に効いた周の集計のテスト（#1194。変異の 4/4。#1553）
+        run: python3 scripts/test-line-effects.py --shard 4/4
 
   # cruise の順番待ちのテスト（1 本で重い）
   cruise-run-serial:
