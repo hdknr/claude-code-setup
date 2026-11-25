@@ -502,7 +502,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-feasibility-csv.py` / `test-schedule-to-gantt.py` / `test-check-signoff.py` /
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと
-    タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）
+    タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）。
+    **`test-build-proposal.py` は子プロセスだけで判定する変異を作業者のプールで同時に当てる**（#1555。`--jobs N`、既定と上限 4。`check-all.py` が入れ子として親の半分を渡す）
   - `test-check-design-csv.py` - spec-loop のシステム設計書の成果物の表の検査（#957）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の
     「性能のほかの種類」の表と一致することも見る**（`test-check-qa-csv.py` と同じ形）

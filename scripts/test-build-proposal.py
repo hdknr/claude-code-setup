@@ -2,6 +2,7 @@
 """`build-proposal.py`（照合が通ったときだけ提案書を作る）の回帰テスト。
 
     python3 scripts/test-build-proposal.py
+    python3 scripts/test-build-proposal.py --jobs 1   # 変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
 
 **本体はプラグインの中にある**（`plugins/spec-loop/scripts/`）。照合そのものの分岐は
 `scripts/test-check-signoff.py` が見る。ここで見るのは**生成の側が照合に従うこと**:
@@ -51,16 +52,26 @@
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 名指しの変異（`LEFTOVER_MUTATIONS`）は、**名指しした試料だけ**を走らせて殺せることを見る（#550）——名札の外の試料が殺していても緑にしない。
+
+**子プロセスだけで判定する変異（`MUTATIONS`・`QA_MUTATIONS`・`PREVIOUS_MUTATIONS`・`NO_GIT_MUTATIONS`）は、作業者のプールで同時に当てる**（#1555。
+`--jobs N`、既定と上限 4。`check-all.py` が入れ子として親の半分を渡す）。結果は宣言順に `check` するので、失敗の行の並びは 1 つずつ当てたときと同じ。
+本体を同じプロセスに読み込んで呼ぶ変異（`COMPOSE_MUTATIONS` ほか）は、プールが終わった後に 1 つずつ当てる——`entry_problems` は `os.environ` の `PATH` を
+書き換え、`link_problems` は標準出力を差し替えるので、同時に走らせると他の作業者に効く。試料（`CASES`）も 1 つずつ回す（範囲の外。#1555）。
 """
 from __future__ import annotations
 
+import argparse
+import concurrent.futures
+import functools
 import importlib.util
+import itertools
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -1940,6 +1951,8 @@ def run_git(repo: Path, env: dict[str, str], *args: str) -> None:
 # 試料のリポジトリの写しの置き場（#494）。`main` が一時ディレクトリの中に決める。None なら写しを使わず毎回作る
 TEMPLATES: Path | None = None
 _templates: dict[tuple, Path] = {}
+_templates_lock = threading.Lock()
+_template_names = itertools.count()
 
 
 def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) -> None:
@@ -1949,22 +1962,30 @@ def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) ->
     写しは `.git` ごとのバイトの複製なので、本体が読むもの（コミットとタグの中身・作業ツリーのファイル・権限・symlink）は同じ。
     本体は git を索引や作業ツリーと突き合わせて読まない（`show`・`ls-tree`・`cat-file`・コミット間の `diff`・`rev-parse`・`tag --list`）ので、索引の stat 情報の違いは効かない。
     2026-11-01 の測定で、`build_repo` は 296 回・48 秒（git の子 3,769 本）で、変異の回は正しい本体の回と同じ `steps` を作り直していた。
-    権限を変える手順（`chmod`——読めないファイルは写せない）を含む `steps` は写しを使わない。写しを取れなければ（`OSError`）その `steps` は毎回作る。"""
+    権限を変える手順（`chmod`——読めないファイルは写せない）を含む `steps` は写しを使わない。写しを取れなければ（`OSError`）その `steps` は毎回作る。
+
+    **変異の作業者が同時に呼ぶ**（#1555）——写しの一覧は `_templates_lock` の中でだけ読み書きし、写しの名前は数え上げで振る
+    （`len(_templates)` で振ると、同じ `steps` を同時に作り終えた 2 つの作業者が同じ名前に写し、片方の `rmtree` が他方の写しを消す）。
+    一覧に載せるのは写し終えた後だけなので、載った写しを複製する側が書きかけを読むことは無い。"""
     assert_in_tmp(root)
     key = (tuple(tuple(step) for step in steps), tuple(sorted(env.items())))
     cacheable = TEMPLATES is not None and not any(step[0] == "chmod" for step in steps)
-    if cacheable and key in _templates:
-        shutil.copytree(_templates[key], root, symlinks=True)
+    with _templates_lock:
+        cached = _templates.get(key) if cacheable else None
+    if cached is not None:
+        shutil.copytree(cached, root, symlinks=True)
         return
     _build_repo(root, steps, env)
     if cacheable:
-        template = TEMPLATES / str(len(_templates))
+        with _templates_lock:
+            template = TEMPLATES / str(next(_template_names))
         try:
             shutil.copytree(root, template, symlinks=True)
         except OSError:
             shutil.rmtree(template, ignore_errors=True)
             return
-        _templates[key] = template
+        with _templates_lock:
+            _templates.setdefault(key, template)
 
 
 def _build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) -> None:
@@ -2078,18 +2099,25 @@ def read_pptx(directory: Path) -> dict:
     return found
 
 
-def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = False, worktree: bool = False) -> Result:
+def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = False, worktree: bool = False,
+               shape_checks: list[tuple[str, bool, str]] | None = None) -> Result:
     """作れる状態のリポジトリと古い出力を置いてから、git を起動できない PATH で生成する。
 
     `subdir` なら `--out` を渡さず下位ディレクトリから走らせる——既定の出力先（根の下）の古い出力が消えるか。
     `worktree` なら根を `git worktree add` で作る——根の `.git` が**ファイル**の形（#218 の狭いパス NP-1。#291）。
     これが無いと、`.git` を上へたどる判定を `.is_dir()` にしても緑のまま（試料の `.git` が常にディレクトリなので）。
+    `shape_checks` を渡せば、試料の形の確かめを `check` せずにそこへ足す（#1555）——変異の作業者の中から `check` すると、
+    宣言順に `check` する前の変異の結果より先に失敗の行が並ぶので、呼ぶ側が宣言順の位置で `check` する。
     """
     if worktree:
         main = root.parent / f"{root.name}-main"
         build_repo(main, SIGNED, env)
         run_git(main, env, "worktree", "add", "-q", str(root))
-        check("試料が worktree 型でない（根の .git がファイルでない）", (root / ".git").is_file(), str(root))
+        shape = ("試料が worktree 型でない（根の .git がファイルでない）", (root / ".git").is_file(), str(root))
+        if shape_checks is None:
+            check(*shape)
+        else:
+            shape_checks.append(shape)
     else:
         build_repo(root, SIGNED, env)
     out = root / "build" / "proposal" / "proposal.md"
@@ -2223,7 +2251,60 @@ def case_insensitive(tmp: Path) -> bool:
     return (tmp / "CASE-PROBE").exists()
 
 
+# **子プロセスだけで判定する変異は作業者のプールで同時に当てる**（#1555）——直列に 1 件ずつ当てていて、単体で壁時計 160 秒・CPU ÷ 壁時計 0.9
+# だった（#1517 の計測 1）。変異はそれぞれ別の一時ディレクトリに本体の写しと試料を作り、子プロセス（本体・git）を走らせるので互いに独立している。
+# **プロセスではなくスレッド**——仕事の大半は子プロセスの待ちで GIL を放す（`test-scaffold.py` の #1361 と同じ形）。
+# **結果は渡した順に `check` する**（終わった順ではない）——失敗の行の並びは直列のときと同じ。
+# **`--jobs N` で絞る**——`check-all.py` が入れ子として親の半分を渡す（`NESTED`）。上限は `test-scaffold.py`・`test-ledger.py` と同じ 4。
+JOBS_MAX = max(1, min(4, os.cpu_count() or 1))
+JOBS = JOBS_MAX
+pool_sizes: list[int] = []
+
+
+class _Pool(concurrent.futures.ThreadPoolExecutor):
+    """変異の作業者のプール。**渡された作業者の数を `pool_sizes` に残す**（`--pool-size` が出す）。"""
+
+    def __init__(self, max_workers, **kwargs):
+        pool_sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+def run_jobs(jobs: list[Callable[[], tuple[bool, str]]]) -> list[tuple[bool, str]]:
+    """`jobs` を `JOBS` 個の作業者で当て、結果を**渡した順に**返す。"""
+    with _Pool(max_workers=JOBS) as pool:
+        return list(pool.map(lambda job: job(), jobs))
+
+
+def check_pool_size() -> None:
+    """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
+    （`test-scaffold.py` と同じ形——受けた `--jobs` を使わなくても、遅く・速くなるだけで緑のままなので）。`--jobs 0` は断る（2）。"""
+    for asked in (1, 99):
+        want = min(asked, JOBS_MAX)
+        proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
+                              capture_output=True, text=True, timeout=120)
+        got = proc.stdout.strip()
+        check(f"--jobs {asked} で変異のプールに渡す作業者は {want}（出力: {got or '空'}・終了コード {proc.returncode}）",
+              proc.returncode == 0 and got == str(want))
+    proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", "0", "--pool-size"],
+                          capture_output=True, text=True, timeout=120)
+    check(f"--jobs 0 を断らない（終了コード {proc.returncode}）", proc.returncode == 2)
+
+
 def main() -> int:
+    global JOBS
+    parser = argparse.ArgumentParser(description="build-proposal.py の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=JOBS_MAX,
+                        help=f"子プロセスだけで判定する変異を同時に当てる作業者の数（既定と上限: {JOBS_MAX}。1 で 1 つずつ）")
+    parser.add_argument("--pool-size", action="store_true",
+                        help="変異のプールに渡す作業者の数を出して終わる（試料の中で使う）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    JOBS = min(opts.jobs, JOBS_MAX)
+    if opts.pool_size:
+        run_jobs([])  # 変異を当てる経路そのもの（`run_jobs`）でプールを作る——仕事が 0 件なので作業者は起きない
+        print(pool_sizes[-1] if pool_sizes else "")
+        return 0
     check("_Found・_AgainSkipped は BaseException の直接の子（将来 except Exception に飲まれない）",
           _Found.__bases__ == (BaseException,) and _AgainSkipped.__bases__ == (BaseException,))
     if shutil.which("git") is None:
@@ -2260,45 +2341,76 @@ def main() -> int:
         check("試料が期待どおりでない: 本物の前の実行が書いたものを消す", previous_removed(result), str(result[:2]) + result[2][-300:])
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
+        qa_source = (SCRIPTS / QA_TARGET).read_text(encoding="utf-8")
+        fold_fs = case_insensitive(tmp_path)
+        # 子プロセスだけで判定する変異は、宣言順に予定を並べてプールで当て、結果を宣言順に check する（#1555）
+        planned: list[tuple[str, int | None, bool, str]] = []  # (失敗のときの文言, jobs の番号。当てないなら None, 当てないときの判定, 詳細)
+        jobs: list[Callable[[], tuple[bool, str]]] = []
+
+        def plan(message: str, job: Callable[[], tuple[bool, str]]) -> None:
+            """`job` は (生き残ったか, 詳細) を返す。"""
+            planned.append((message, len(jobs), True, ""))
+            jobs.append(job)
+
+        def unreached(name: str, detail: str) -> None:
+            planned.append((f"変異が届いていない: {name}", None, False, detail))
+
+        def previous_job(index: int, text: str) -> tuple[bool, str]:
+            mutated = copy_scripts(tmp_path / f"mut-prev{index}")
+            (mutated / TARGET).write_text(text, encoding="utf-8")
+            result = run_previous(mutated, tmp_path / f"mutwork-prev{index}", env)
+            return previous_removed(result), result[2][-300:]
+
+        def no_git_job(index: int, text: str, subdir: bool, worktree: bool) -> tuple[bool, str, list[tuple[str, bool, str]]]:
+            """試料の形の確かめ（worktree 型）は返して、宣言順の位置で check する（作業者の中で check しない）。"""
+            mutated = copy_scripts(tmp_path / f"mut-nogit{index}")
+            (mutated / TARGET).write_text(text, encoding="utf-8")
+            shapes: list[tuple[str, bool, str]] = []
+            result = run_no_git(mutated, tmp_path / f"mutwork-nogit{index}", env, subdir, worktree, shapes)
+            return no_git(result), result.output[-300:], shapes
+
+        def judged_job(label: str, index: int, target: str, text: str, killer: str) -> tuple[bool, str]:
+            mutated = copy_scripts(tmp_path / f"mut{label}{index}")
+            (mutated / target).write_text(text, encoding="utf-8")
+            ok, result = judge_mutant(mutated, tmp_path / f"mut{label}work{index}", killer, env)
+            return ok, result.output[-300:]
+
         for index, (name, before, after) in enumerate(PREVIOUS_MUTATIONS):
             if source.count(before) != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                unreached(name, f"壊す箇所が {source.count(before)} 回現れる")
                 continue
-            mutated = copy_scripts(tmp_path / f"mut-prev{index}")
-            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            result = run_previous(mutated, tmp_path / f"mutwork-prev{index}", env)
-            check(f"変異が生き残った: {name}", not previous_removed(result), result[2][-300:])
+            plan(f"変異が生き残った: {name}", functools.partial(previous_job, index, source.replace(before, after)))
         for index, (name, before, after, subdir, worktree) in enumerate(NO_GIT_MUTATIONS):
             if source.count(before) != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                unreached(name, f"壊す箇所が {source.count(before)} 回現れる")
                 continue
-            mutated = copy_scripts(tmp_path / f"mut-nogit{index}")
-            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            result = run_no_git(mutated, tmp_path / f"mutwork-nogit{index}", env, subdir, worktree)
-            check(f"変異が生き残った: {name}", not no_git(result), result.output[-300:])
-        fold_fs = case_insensitive(tmp_path)
+            plan(f"変異が生き残った: {name}", functools.partial(no_git_job, index, source.replace(before, after), subdir, worktree))
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             if killer in CASE_FOLD_ONLY and not fold_fs:
                 folded_skips.append(name)
                 continue
             count = source.count(before)
             if count != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                unreached(name, f"壊す箇所が {count} 回現れる")
                 continue
-            mutated = copy_scripts(tmp_path / f"mut{index}")
-            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            ok, result = judge_mutant(mutated, tmp_path / f"mutwork{index}", killer, env)
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, result.output[-300:])
-        qa_source = (SCRIPTS / QA_TARGET).read_text(encoding="utf-8")
+            plan(f"変異が生き残った: {name}（{killer} で殺せるはず）",
+                 functools.partial(judged_job, "", index, TARGET, source.replace(before, after), killer))
         for index, (name, before, after, killer) in enumerate(QA_MUTATIONS):
             count = qa_source.count(before)
             if count != 1:
-                check(f"変異が届いていない: {name}", False, f"{QA_TARGET} で壊す箇所が {count} 回現れる")
+                unreached(name, f"{QA_TARGET} で壊す箇所が {count} 回現れる")
                 continue
-            mutated = copy_scripts(tmp_path / f"mutqa{index}")
-            (mutated / QA_TARGET).write_text(qa_source.replace(before, after), encoding="utf-8")
-            ok, result = judge_mutant(mutated, tmp_path / f"mutqawork{index}", killer, env)
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, result.output[-300:])
+            plan(f"変異が生き残った: {name}（{killer} で殺せるはず）",
+                 functools.partial(judged_job, "qa", index, QA_TARGET, qa_source.replace(before, after), killer))
+        results = run_jobs(jobs)
+        for message, k, fixed, detail in planned:  # 宣言順（終わった順ではない）
+            if k is None:
+                check(message, fixed, detail)
+            else:
+                ok, detail, *shapes = results[k]
+                for shape in (shapes[0] if shapes else ()):  # 試料の形の確かめは、1 つずつ当てたときと同じく変異の判定の前
+                    check(*shape)
+                check(message, not ok, detail)
 
         problems = compose_problems(SCRIPTS)
         check("compose が暫定・確定・未決定を分けない", not problems, "; ".join(problems))
@@ -2397,6 +2509,8 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
                   found(leftover_problems, mutated, tmp_path / f"mutleftwork{index}", env, killer))
+
+    check_pool_size()
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
