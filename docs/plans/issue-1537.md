@@ -70,6 +70,8 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 関門: 1 パス目に渡した（Verifier・/code-review。成果物 `02ae5a89e6bc66fc6af29d7d1f34dd76ae4d4460`）。1 パス目の指摘対応の起点: `02ae5a89e6bc66fc6af29d7d1f34dd76ae4d4460`
 - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・opus。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1537-verifier-1-20261125T010405Z.md`）: 反証 2 件（V1-1・V1-2。文言）。主張（1・確かめたタグで 0・`--new` で 0）は一致。変異 8 本のうち殺せなかった 1 本は等価変異（陽性対照つき）。差分テスト「なし」の判定（実行コードが 1 行も変わっていない）は AST の比べで一致
 - /code-review 1 パス目（high。報告 `…/gate-1537-code-review-1-20261125T012000Z.md`）: 指摘 4 件（重要 1・nit 3）。テスト全体は別の周の `check-all.py` の順番待ちで未確認と報告
+- 1 パス目の指摘対応: 直す 3 件（V1-1／CR1-1・CR1-2・V1-2）を `7894c505` で直した（`git diff 02ae5a89` が空でない）。歯止め: `check-all.py` が `20/105 本を回した（失敗 0 / 飛ばし 0）`・rc=0（`test-check-profile-diff.py` を含む）
+- 割り目（手順 6）: 割らない（cruise の周）。残っている着地点: 手順 5 の当て直し（Verifier 2 パス目）と /code-review 2 パス目の両方
 
 ```dev-loop-gates
 周の base: a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32
