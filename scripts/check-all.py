@@ -104,7 +104,7 @@
 - **記録の置き場所**は `git rev-parse --git-common-dir` の下の `check-all-cache/<テスト名>/`——**worktree の間で共有する**（中身で引くので安全）。
   **1 本につき、入力の状態ごとに別の記録を置き**（ファイル名はキー・依存・指紋から決める）、**当たる記録が 1 つでもあれば当たり**とする（#1517）。
   前は 1 本につき 1 つで、入力の違う worktree の回が互いの記録を上書きし、自分の入力が変わっていなくても回り直していた。
-  **書いた時刻の新しい順に `CACHE_KEEP` 個まで残す**——それより前の状態に戻れば回る。前の形式（`check-all-cache/<テスト名>.json`）は読まず、消しもしない。
+  **書いた時刻か最後に当たった時刻の新しい順に `CACHE_KEEP` 個まで残す**（当たった記録は時刻を新しくする——LRU。#1541）——それより前の状態に戻れば回る。前の形式（`check-all-cache/<テスト名>.json`）は読まず、消しもしない。
   一時ファイルに書いてから `os.replace` で置き、読めない記録は「無い」と扱う。**git のリポジトリでなければキャッシュを使わず、今までどおり全部回す。**
 - **出力**: 当たったものは `  CACHED <名前>` の行（所要時間を出さず、上位にも入れない）。**`OK` に数えない**——集計の
   「N/M 本を回した」から外し、「キャッシュ: K 本」と別に出す。**`--no-cache` で記録を読まずに全部回す**（緑の記録は書く）。
@@ -293,7 +293,7 @@ TOP = 5
 CACHE_FORMAT = 2  # 2: 1 本につき入力の状態ごとに複数の記録（#1517）。1 の記録（`<名前>.json`）は読まない
 # 記録の置き場所（`git rev-parse --git-common-dir` の下。worktree の間で共有する——中身で引くので共有して安全）。
 CACHE_DIRNAME = "check-all-cache"
-# 1 本のテストにつき残す記録の数（新しい順）。並行する worktree が同じテストを別の入力で緑にしても、互いの記録を消さないため（#1517）。
+# 1 本のテストにつき残す記録の数（書いた時刻か最後に当たった時刻の新しい順。#1541）。並行する worktree が同じテストを別の入力で緑にしても、互いの記録を消さないため（#1517）。
 CACHE_KEEP = 8
 # 子の Python に差し込む hook のディレクトリ（`PYTHONPATH` の先頭に置く）。
 TRACE_DIRNAME = "check_all_trace"
@@ -685,7 +685,8 @@ def load_records(root: Path, name: str) -> list[tuple[Path, dict]]:
 
 def save_record(root: Path, name: str, rec: dict) -> None:
     """一時ファイルに書いてから `os.replace` で置く——並行する `check-all.py` が半端な記録を読まない。
-    置いた後に、書いた時刻の新しい順に `CACHE_KEEP` 個まで残し、古いものを消す（#1517）。"""
+    置いた後に、記録の時刻（書いた時刻か、最後に当たった時刻——`is_cached` が新しくする。#1541）の新しい順に
+    `CACHE_KEEP` 個まで残し、古いものを消す（#1517）。"""
     d = record_dir(root, name)
     d.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".", suffix=".tmp")
@@ -734,8 +735,17 @@ def drop_record(root: Path, name: str, args: list[str], hasher: Hasher, also: fr
 
 
 def is_cached(root: Path, name: str, args: list[str], hasher: Hasher) -> bool:
-    """当たる記録が 1 つでもあれば当たり（#1517。前は 1 本につき 1 つだった）。"""
-    return any(matches(rec, name, args, hasher) for _, rec in load_records(root, name))
+    """当たる記録が 1 つでもあれば当たり（#1517。前は 1 本につき 1 つだった）。
+    **当たった記録は時刻を新しくする**——追い出し（`save_record`）が最後に当たった時刻の順（LRU）になり、
+    よく当たる状態（main など）の記録が、早く書かれたというだけで先に消えない（#1541）。
+    並行する `check-all.py` が消した直後の記録は、触れずに飛ばす（当たりの判定は変えない）。"""
+    hit = False
+    for path, rec in load_records(root, name):
+        if matches(rec, name, args, hasher):
+            hit = True
+            with contextlib.suppress(OSError):
+                os.utime(path)
+    return hit
 
 
 def moved_during(ctx: dict, deps: dict) -> list[str]:
