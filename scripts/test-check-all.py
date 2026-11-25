@@ -20,6 +20,7 @@
 **契約の 11) と 6) の末尾は #1040**——1 本ごとの所要時間が `OK` と `FAIL` の行に出て `SKIP` の行に出ないこと、
 集計の上位（長い順・本数・`OK` と `FAIL` の両方・行の値と一致）と全体の壁時計が出ること、
 `--jobs 1` で後ろの 1 本が前の 1 本の時間を背負わない（順番待ちを測らない）こと。
+**契約 6 の所要時間は論理時計（`fake_clock`）で見る**（#1526）——壁時計で比べると、負荷で起動の遅れが揺れて落ちた。契約 11 は `base_resolves` を差し替えて、壁時計から git の起動を外す（仮説に基づく対策。612 は直す前に再現しなかった）。
 **時間を出しても判定が変わらないことは、契約 1〜10 を期待値を変えずに通すことで見る**（11 も rc と「失敗 1」を見る）。
 **契約の 12) も #1040**——回した本が上位の本数より少なく `SKIP` がある回で、見出しの本数と、`SKIP` を上位に入れないことを見る
 （11 だけでは回した本が多く、`SKIP` を 0 秒で足しても上位の外に隠れた）。
@@ -405,6 +406,37 @@ def record_pools(mod) -> list[RecordingPool]:
     return pools
 
 
+def fake_clock(mod, spans: dict[str, float]) -> None:
+    """本体の `time.monotonic` を論理時計に差し替え、`run` が 1 本終わるたびに `spans[名前]` だけ進める（#1526）。
+
+    **所要時間を壁時計で比べる表明は、負荷で起動の遅れが揺れると落ちる**——`check-all.py --no-cache` を 3 本並走させた
+    `--part contract` 30 回で、契約 6 の「後ろの 1 本は前の 1 本の時間を背負わない」が 4/30 で落ちた（par-a は 0.5 秒待つ側、
+    par-b は印を見て即座に通る側なので、起動の遅れの差が 0.5 秒を越すと順位が入れ替わった）。
+    **論理時計にすると、報告される所要時間は「`timed` がどこから測ったか」だけで決まる**——子は本物のまま走らせる
+    （落ちる・通る・作業者の数は変わらない）。直列で順番待ちを含めて測る変異は、前の本の `spans` を背負って長くなる。
+    **`time` の差し替えは `monotonic` だけ**（ほかの属性は本物へ渡す）。"""
+    real_time, real_run = mod.time, mod.run
+    lock = threading.Lock()
+    now = [0.0]
+
+    class Clock:
+        def __getattr__(self, name):
+            return getattr(real_time, name)
+
+        def monotonic(self) -> float:
+            with lock:
+                return now[0]
+
+    def run(name, args, *rest, **kw):
+        res = real_run(name, args, *rest, **kw)
+        with lock:
+            now[0] += spans.get(name, 0.0)
+        return res
+
+    mod.time = Clock()
+    mod.run = run
+
+
 TESTS_HEADER = "=== 回帰テスト ==="
 # **同期が成り立たないとき（本体の形が変わった・作業者が 1 つ）に、待ちを打ち切る秒数。**
 # 打ち切っても本体の出力は変わらない——**順序を壊す変異を捕まえる確かさが、時間の競争に戻るだけ。**
@@ -533,14 +565,16 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     mod.TESTS = []
     pools = record_pools(mod)
     clear_flags(root)
+    fake_clock(mod, {"par-a.py": 10.0, "par-b.py": 1.0})  # 所要時間は論理時計で見る（#1526。負荷で起動の遅れが揺れても動かない）
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "1"])
     got.append(("--jobs 1 で同時に走らない", rc != 0 and "相手が来ない" in out))
     got.append(("--jobs 1 で作業者を 1 つにする", [p.workers for p in pools] == [1]))
     # **順番待ちを測らない**（#1040）——直列では par-a が相手を待って時間切れで落ちてから par-b が起き、par-b は印を見て即座に通る。
     # 投げた時点から測ると、par-b が par-a の時間を背負って長くなる。
+    # **壁時計では比べない**（#1526）——論理時計で、par-a は 10 秒・par-b は 1 秒と進める。背負えば par-b は 11 秒になる。
     t = times(out)
     got.append(("--jobs 1 で後ろの 1 本は前の 1 本の時間を背負わない（#1040）",
-                {"par-a.py", "par-b.py"} <= set(t) and t["par-b.py"] < t["par-a.py"]))
+                {"par-a.py", "par-b.py"} <= set(t) and t["par-a.py"] == 10.0 and t["par-b.py"] == 1.0))
 
     # 7) 既定（--jobs を渡さない）でも同時に走る——既定が直列なら速くならない。
     #    **区間の重なりではなく待ち合わせで見る**——重なりは起動の遅れに負けるが、
@@ -636,6 +670,10 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     # 作業者が 8 本を同時に走らせる数に足りない変異（直列に戻す・cpu の少ない機械での `--jobs を無視する`）は、
     # `record_pools` が置く作業者の数の印で待たない。
     record_pools(mod)
+    # **壁時計から git の起動を外す**（#1526。**仮説に基づく対策で、効いたとは確かめていない**——直す前の版で 612 は今回の負荷では再現しなかった）。
+    # `base_resolves` は本体の `git rev-parse` で、負荷の下で遅れれば壁時計だけを長くし、下の「全体は壁時計で、1 本ごとの合計ではない」の余裕を食いうる。
+    # この契約の base は解決できない参照なので、偽は偽を返す。**`base_resolves` そのものは契約 1 と「base が解決できれば飛ばさない」が見る**。
+    mod.base_resolves = lambda ref: False
     slow = [n for n, *_ in mod.GUARDS if n.startswith("slow-")] + [n for n in mod.TESTS if n.startswith("slow-")]
     fast = [n for n, *_ in mod.GUARDS if n.startswith("ok-")] + [n for n in mod.TESTS if n.startswith("ok-")]
     flags = root / FLAGS
