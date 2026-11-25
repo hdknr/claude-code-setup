@@ -86,13 +86,14 @@ main へのマージ → CI（`plugins.yml`）。`scripts/` はプラグイン�
 
 ```dev-loop-gates
 周の base: a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32
-関門: Verifier 1 6b30b335 反証=2
-関門: /code-review 1 6b30b335 指摘=3
-関門: 2パス目 該当なし
+関門: Verifier 1 6b30b335d32d7b3736efceb1d8e9dfe62fbda483 反証=2
+関門: /code-review 1 6b30b335d32d7b3736efceb1d8e9dfe62fbda483 指摘=3
+関門: 2 パス目 該当なし 6b30b335d32d7b3736efceb1d8e9dfe62fbda483
 関門: 狭いパス 該当なし
 受入基準: 1 満たす
 受入基準: 2 満たす
 受入基準: 3 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
 
 ## 既知の限界・決着済みの論点
