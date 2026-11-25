@@ -15,7 +15,10 @@
 触る:
 
 - `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 「デザインの正本」の節の、参照の出どころを `docs/design/sources.csv` の場合も含む書き方にする（`handoff-issue.md` の「デザインの正本」の 2 点——根か `docs/` の下か・`docs/` の下から読んだ段落は最初の `design/sources.csv` が置き換わる——と食い違わせない）
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・dev-loop の `SKILL.md` 2 本の版の 2 行 — 2.25.0 → 2.25.1（patch）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — dev-loop の版 2.25.0 → 2.25.1（patch）
+- `.claude-plugin/marketplace.json` — 同上
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行だけ
 - `docs/plans/issue-1548.md` — この計画
 
 触らない: spec-loop 側（別の Issue）・`scripts/test-scaffold-screens.py`（突き合わせる印と見出しは変えない）。
