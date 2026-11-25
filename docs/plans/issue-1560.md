@@ -62,6 +62,13 @@ run-serial の枠の中で 1 回ずつ（28 コア。前 12:11Z〜・負荷 2.2�
   陽性対照: 等価変異（`return 1` → `return (1)`）は止める形でも 47/47 を回して「素通り」、本物の 35 件は「捕まえた」。全部回す側の合計 100.0 秒・止める側 59.7 秒
 - `check-all.py`: `3afe8855`で失敗 0（17/105 を回し、残りは CACHED。前の回で落ちたのは計画の件数の行が無かった `check-plan-counts.py` だけで、行を足して直した）
 
+## CI の実測（B2。ジョブ単位）
+
+`check` ジョブの「check-all.py のテスト」のステップ（`plugins.yml`）。前は main の直近 11 run（全部 base 以前の `test-check-all.py`）:
+146・203・153・200・167・202・152・151・195・149・155 秒（ランナーで 2 群に分かれる——145〜167 秒と 195〜203 秒）。
+後は PR #1564 の run 45623831537: **140 秒**（ジョブ全体 277 秒）——前の 11 run のどれよりも短い（最短 146 秒）。
+手元の縮み（`--part mutants` 61.8→38.0 秒）から見込む CI の縮みは十数秒で、速い群の中央値 152 秒からの差 12 秒と合う。**1 run だけなので、ばらつきの中で下がったとは言い切れない**（未証明の行のとおり）。
+
 ## 受入基準
 
 不変条件 × 経路:
@@ -120,6 +127,8 @@ Verifier の差し込み 11 の「承認済みの変更の一覧」は反証に�
 - 関門: /code-review 1 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1560-code-review-1-20261125T125545Z.md`）指摘 6（受入基準を破るもの 0）・Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1560-verifier-1-20261125T130818Z.md`）反証 1（受入基準を破るもの 0）。採否は下の表。Verifier の `git status --porcelain` の 2 回が違ったのは、検証中に親（著者）が計画ファイルを編集したため（成果物ではない）
 - 2 パス目: 該当なし——1 パス目の指摘対応の成果物の差分 0 行（`git diff 750953720e88402f93ef0a9be116ec96aaa5d0b7 -- ':(top)' ':(top,exclude)docs/plans/issue-1560.md'` が空、`git status --porcelain` は計画ファイルだけ）。「直す」の行は 0 件
 - 狭いパス: 該当なし
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` が 3）
+- PR: #1564。PR 側の CI は全部通った（20 pass・deploy は skipping）
 - 割り目（手順 6 の 2 パス目の前）: 2 パス目が無いので無い
 - 差分テストの反証（V1-1）と手順 4 への差し戻し: 差し戻し 0
 - 実験: 打ち切りの前後の時間の比較。手元の値は run-serial の枠の中の 1 回ずつ。CI の比較はジョブ単位（run 全体はランナーの待ちと交絡する——#1553 の計画）
