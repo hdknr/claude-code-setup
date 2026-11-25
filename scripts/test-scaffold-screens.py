@@ -168,9 +168,9 @@ class World:
         folder = self.repo / "build" / "scaffold" / "issues"
         return sorted(p.stem for p in folder.glob("F-*.md")) if folder.is_dir() else []
 
-    def design(self, data: str | bytes | None) -> None:
-        """正本の根の `design/sources.csv`（#1156。版の外）を置く（None なら消す）。"""
-        path = self.repo / "design" / "sources.csv"
+    def design(self, data: str | bytes | None, in_docs: bool = False) -> None:
+        """正本の根の `design/sources.csv`（#1156。版の外）を置く（None なら消す）。`in_docs` なら `docs/design/sources.csv`（#1542。`docs/` の下でも版の外）。"""
+        path = self.repo / ("docs" if in_docs else "") / "design" / "sources.csv"
         if data is None:
             if path.exists():
                 path.unlink()
@@ -498,6 +498,45 @@ def case_design_listed(work: Path, source: str | None) -> str | None:
     return None
 
 
+def case_design_in_docs(work: Path, source: str | None) -> str | None:
+    """`docs/design/sources.csv`（版の外）を置いても、根の直下と同じ本文になる（段落のパスだけ違う）。両方に在れば 1 で何も作らない（#1542）。"""
+    root = World(work / "root", base(), source)
+    root.design(DESIGN)
+    code, out = root.scaffold()
+    if code != 0:
+        return f"根の直下に置いた正本: exit={code}: {out[-600:]}"
+    inside = World(work / "docs", base(), source)
+    inside.design(DESIGN, in_docs=True)
+    code, out = inside.scaffold()
+    if code != 0:
+        return f"docs の下に置いた正本: exit={code}: {out[-600:]}"
+    for fid in DESIGN_LINES:
+        want = root.body(fid).replace(DESIGN_NOTE, DESIGN_NOTE.replace("`design/sources.csv`", "`docs/design/sources.csv`", 1))
+        if want == root.body(fid):
+            return f"{fid}: 根の直下の本文に段落が無い（試料の誤り）"
+        if inside.body(fid) != want:
+            return f"{fid}: docs の下の本文が、根の直下の本文と段落のパスだけ違う形でない:\n{inside.body(fid)}"
+    if inside.snapshot("scaffold") != root.snapshot("scaffold"):
+        return "scaffold/ の契約が、置き場所で変わった"
+    # 両方に在る——どちらを正とするか決められないので 1 で何も作らない（`--dry-run` も）
+    both = World(work / "both", base(), source)
+    both.design(DESIGN)
+    both.design(DESIGN, in_docs=True)
+    for args in ((), ("--dry-run",)):
+        code, out = both.scaffold(*args)
+        if code != 1 or "の両方に在る" not in out:
+            return f"両方に在る（{' '.join(args) or '書く生成'}）: exit={code}: {out[-400:]}"
+        if (both.repo / "scaffold").exists() or (both.repo / "build" / "scaffold").exists():
+            return "両方に在るのに何か書いた"
+    # docs の下のファイルが決まりに反すれば、その場所を名指しして 1
+    bad = World(work / "bad", base(), source)
+    bad.design("対象,参照\n全体,a\n", in_docs=True)
+    code, out = bad.scaffold()
+    if code != 1 or "docs/design/sources.csv: 見出しの行" not in out:
+        return f"docs の下の決まりに反するファイル: exit={code}: {out[-400:]}"
+    return None
+
+
 def case_design_unlinked(work: Path, source: str | None) -> str | None:
     """どの本文にも載らない行は、止めずに知らせる——画面の表が無い正本・機能を挙げない画面の行。"""
     plain = World(work / "plain", no_screens(), source)
@@ -651,6 +690,7 @@ CASES: list[tuple[str, Callable[[Path, str | None], str | None]]] = [
     ("照合: 画面の表だけが違えば一致と言わない", signoff(True)),
     ("照合の陽性対照: 同じ中身なら 0", signoff(False)),
     ("デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない", case_design_listed),
+    ("デザインの正本: docs の下にも置け、両方に在れば 1 で何も作らない", case_design_in_docs),
     ("デザインの正本: どの本文にも載らない行は止めずに知らせる", case_design_unlinked),
     ("デザインの正本: 決まりに反すれば 1 で何も作らない", case_design_bad),
     ("デザインの正本: 前の版の時点では読まない", case_design_previous),
@@ -709,8 +749,14 @@ MUTATIONS = [
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
     ("組の重複を見ない", "        if not bad and (target, ref) in seen:\n", "        if False:\n",
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
-    ("ファイルでないものを無いと読む", "    if not path.is_file():\n        return [f\"{DESIGN_PATH}: ファイルでない", "    if False:\n        return [f\"{DESIGN_PATH}: ファイルでない",
+    ("ファイルでないものを無いと読む", "    if not path.is_file():\n        return [f\"{shown}: ファイルでない", "    if False:\n        return [f\"{shown}: ファイルでない",
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("docs の下を探さない", "    present = [name for name in (DESIGN_PATH_IN_DOCS, DESIGN_PATH) if", "    present = [name for name in (DESIGN_PATH,) if",
+     "デザインの正本: docs の下にも置け、両方に在れば 1 で何も作らない"),
+    ("両方に在っても止めない", "    if len(present) == 2:\n", "    if False:\n",
+     "デザインの正本: docs の下にも置け、両方に在れば 1 で何も作らない"),
+    ("段落のパスを読んだ場所にしない", "REFS_DESIGN.replace(f\"`{DESIGN_PATH}`\", f\"`{loaded.design_path}`\", 1)", "REFS_DESIGN",
+     "デザインの正本: docs の下にも置け、両方に在れば 1 で何も作らない"),
     ("違反でも止めない", "    if problems:\n        return 1, problems + [f\"デザインの正本の参照", "    if False:\n        return 1, problems + [f\"デザインの正本の参照",
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
     ("前の版の時点でも読む", "    if not loaded.current:\n        return 0, []\n", "",
