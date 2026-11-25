@@ -108,11 +108,13 @@
 ## 関門の進捗（再開点）
 
 - 実装: 済（`78e897ee`）。計画の表化（`1645886e`）
+- PR: #1545（先端はマージの直前に `check-gates.py` で照合）
 - 割り目: 訊かない（cruise の周）。割らない（実装後・2 パス目の前とも）。
 - 関門 1 パス目（HEAD `1645886e3435ae03bc820ca4bb1174da6b59dd81` を渡した。base `a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32`）:
   - Verifier（`dev-loop:dev-loop-verifier`・opus。実装は sonnet）: 反証 5 件（R1〜R5）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1542-verifier-1-20261125T022713Z.md`
   - `/code-review`（high）: 指摘 6 件（CR1〜CR6）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1542-code-review-1-20261125T023820Z.md`
   - 1 パス目の指摘対応の起点: `1645886e3435ae03bc820ca4bb1174da6b59dd81`。「直す」の行が 0 件（下の採否の表）なので成果物の差分は 0 行。2 パス目: 該当なし。狭いパス: 該当なし。
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。PR #1545。`external-reviews.py` は 3）
 - 交絡を潰した手順: 実験は MkDocs の `exclude_docs` の実効だけ（対照に `docs/foo/t.txt` が公開されること・`.DS_Store`・`templates/` が出ないことを同じ設定で見た）。それ以外は実験なし。
 
 - この周の起票: 0 件（仕様の穴は推奨で決めて起票の線だが、確認の Issue は親が立てる。周の中では起票しない）
