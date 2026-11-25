@@ -47,16 +47,15 @@
 
 ## 受入基準（不変条件 × 破りうる経路）
 
-1. 2 つのファイルを `docs/` の下に置いた正本で、scaffold が本文にデザインの正本の参照を載せ（段落のパスは `docs/design/sources.csv`）、生成器が描き方を埋め込む。
-   - 経路: scaffold の書く生成・`--dry-run`、生成器の CLI、MkDocs フック経由の生成（`build` を共有）。
-2. 根の直下に置いた既存の正本は何も変わらない（本文・埋め込み・出どころの印が同じバイト）。
-   - 経路: 既存の試料（`test-scaffold-screens.py` の `case_design_listed`、`test-build-mock.py` の `good`）が無変更で緑。
-3. 版のディレクトリの中に置いたものは今までどおり止める（`renderers` は版の中なら 1）。
-   - 経路: `renderers-in-version`・`renderers-in-later-version`（無変更）。
-4. 両方に在れば止める（scaffold は 1・何も作らない／`--dry-run` も 1、生成器は 1・何も書かない）。
-5. 決まりに反する `docs/design/sources.csv` は、その場所を名指しして 1。
-6. `--check`・`--red-check`（本文を作らない）と `--upto` で前の版の時点を見るときは、今までどおり読まない。
-7. 決まりの写し（`references/mock.md` の表と定数）が崩れない。
+| 番号 | 不変条件 | 破りうる経路（入口） |
+| --- | --- | --- |
+| 1 | 2 つのファイルを `docs/` の下に置いた正本で、scaffold が本文にデザインの正本の参照を載せ（段落のパスは `docs/design/sources.csv`）、生成器が描き方を埋め込む | scaffold の書く生成・`--dry-run`、生成器の CLI、MkDocs フック経由の生成（`build` を共有） |
+| 2 | 根の直下に置いた既存の正本は何も変わらない（本文・埋め込み・出どころの印が同じバイト） | 既存の試料（`test-scaffold-screens.py` の `case_design_listed`、`test-build-mock.py` の `good`）が無変更で緑 |
+| 3 | 版のディレクトリの中に置いたものは今までどおり止める（`renderers` は版の中なら 1） | `renderers-in-version`・`renderers-in-later-version`（無変更）・`--upto` で前の版だけ見る形 |
+| 4 | 両方に在れば止める（scaffold は 1・何も作らない／`--dry-run` も 1、生成器は 1・何も書かない） | scaffold の書く生成・`--dry-run`、生成器 |
+| 5 | 決まりに反する `docs/design/sources.csv` は、その場所を名指しして 1 | scaffold の書く生成・`--dry-run` |
+| 6 | `--check`・`--red-check`（本文を作らない）と `--upto` で前の版の時点を見るときは、今までどおり読まない | scaffold の各モード |
+| 7 | 決まりの写し（`references/mock.md` の表と定数）が崩れない | `test-build-mock.py` の写しの突き合わせ |
 
 ### 未証明・BLOCKED
 
