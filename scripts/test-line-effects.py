@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 """`line-effects.py`（委譲文の行の台帳と、最後に効いた周の集計）と `check-prompt-lines.py`（行を外す PR の歯止め）の回帰テスト（#1194）。
 
-    python3 scripts/test-line-effects.py
+    python3 scripts/test-line-effects.py                 # 全件（check-all.py と手元）
+    python3 scripts/test-line-effects.py --shard 2/4     # 変異の観測を 4 つに分けた 2 番目だけ（CI。#1553）
+
+**シャード（#1553）**: `--shard K/N` は変異（`MUTATIONS` の並び）のうち、並びの番号を N で割った余りが K-1 のものだけを観測する。
+読み方と割り当て（`parse_shard`・`select_shard`・`partition_holes`）は `test-autopilot-loop.py`（#1475）を読み込む——写さない。
+**試料・原本との突き合わせ・壊す箇所が本体にちょうど 1 回現れることは、どのシャードでも全件で見る。** シャードのときだけ、割り当てが N=1..変異の数+1 で
+全件をちょうど 1 度ずつ覆うこと（陽性対照: ずらした割り当て・重なる割り当てで落ちる）と、不正な引数が 2 で止まることも見る——引数なしの出力は分ける前と同じに保つ。
+**CI の行が K=1..N を全部回しているかは、ここでは見ない**——`test-check-all.py` の収録漏れの検査（`full_runs`）が見る。
+
+**打ち切り（#1553）**: 変異の観測は、名指しした試料の失敗の説明が 1 件入ったところで試料を打ち切る（`Failures`・`stoppable`）。
+変異は試料の 1 つでも期待から外れれば殺せているので、判定は全部回したときと変わらない——打ち切りは失敗を積んだ後にだけ起き、失敗を積まない変異は全試料を回す。
+**壊さない本体の試料は打ち切らずに全部回し、失敗を全部名指しする。**
 
 **本体は 2 つ**——プラグインの `plugins/dev-loop/skills/dev-loop/scripts/line-effects.py` と、`scripts/check-prompt-lines.py`（`test-find-cycle.py` と同じ形）。
 **試料はすべて一時ディレクトリに書く**（一時の git リポジトリは `HOME`・`GIT_CONFIG_GLOBAL` を差し替える）。実環境・本物の台帳は変えない。
@@ -37,6 +48,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 import io
 import os
 import re
@@ -51,6 +63,43 @@ SKILL_REL = "plugins/dev-loop/skills/dev-loop"
 EFFECTS_SRC = REPO / SKILL_REL / "scripts" / "line-effects.py"
 GUARD_SRC = REPO / "scripts" / "check-prompt-lines.py"
 HEADER = ["ID", "ファイル", "引き", "元の事故", "登録日", "同趣旨", "統合元", "測り方"]
+
+
+class FirstFailure(Exception):
+    """変異の観測で、最初の失敗の説明が入ったところで試料を打ち切るための例外（#1553）。`bad` はそこまでの失敗の説明。"""
+
+    def __init__(self, bad: list[str]):
+        super().__init__(bad[-1])
+        self.bad = bad
+
+
+class Failures(list):
+    """試料の失敗の説明。`stop` なら、最初の 1 件が入ったところで `FirstFailure` を投げて試料を打ち切る（#1553）。
+
+    変異は試料の 1 つでも期待から外れれば殺せているので、残りの試料を回しても判定は変わらない——変異の観測だけが `stop` を使い、
+    壊さない本体の試料（`main` の最初）は打ち切らずに全部回して、失敗を全部名指しする。
+    """
+
+    def __init__(self, stop: bool = False):
+        super().__init__()
+        self.stop = stop
+
+    def append(self, item: str) -> None:
+        super().append(item)
+        if self.stop:
+            raise FirstFailure(list(self))
+
+
+def stoppable(fn):
+    """`stop=True` で呼ばれた試料の関数が `FirstFailure` で打ち切られたら、そこまでの失敗の説明を返す（一時ディレクトリは `with` が片付ける）。"""
+    def wrapper(*args, stop: bool = False, **kwargs) -> list[str]:
+        try:
+            return fn(*args, stop=stop, **kwargs)
+        except FirstFailure as e:
+            return e.bad
+    wrapper.__name__ = fn.__name__
+    wrapper.__doc__ = fn.__doc__
+    return wrapper
 
 PROMPT = """# 試料
 
@@ -115,9 +164,10 @@ class Tree:
         return run([sys.executable, "-I", str(self.skill / "scripts" / "line-effects.py"), *args], env=env)
 
 
-def case_check(effects_text: str | None = None) -> list[str]:
+@stoppable
+def case_check(effects_text: str | None = None, stop: bool = False) -> list[str]:
     """台帳と原文の整合（check）の試料。失敗の説明を返す。"""
-    bad: list[str] = []
+    bad = Failures(stop)
     def expect(label, tree: Tree, rc: int, word: str = "", args=("check",)):
         r = tree.run(*args)
         if r.returncode != rc or (word and word not in r.stdout + r.stderr):
@@ -177,8 +227,9 @@ def rec(*ids: str) -> str:
     return "# 計画\n\n" + "".join(f"- 効いた行: {i}\n" for i in ids) + "\n- この周の起票: 0 件\n"
 
 
-def case_report(effects_text: str | None = None) -> list[str]:
-    bad: list[str] = []
+@stoppable
+def case_report(effects_text: str | None = None, stop: bool = False) -> list[str]:
+    bad = Failures(stop)
     def expect(label, r, rc, *has, absent=()):
         out = r.stdout + r.stderr
         miss = [w for w in has if w not in out]
@@ -290,8 +341,9 @@ def remove_v02(skill: Path):
     (skill / "references" / "line-registry.csv").write_text(registry_text([r for r in ROWS if r[0] != "V-02"]))
 
 
-def case_guard(guard_text: str | None = None, effects_text: str | None = None) -> list[str]:
-    bad: list[str] = []
+@stoppable
+def case_guard(guard_text: str | None = None, effects_text: str | None = None, stop: bool = False) -> list[str]:
+    bad = Failures(stop)
     def scenario(label, rc, word, setup, base_ref="main", pre_base=None, advance=None, commit=True):
         with tempfile.TemporaryDirectory(prefix="line-guard-") as t:
             root, skill, g, env = guard_repo(Path(t), guard_text, effects_text)
@@ -885,8 +937,32 @@ MUTATIONS = [
 ]
 
 
-def main() -> int:
+def load_shard():
+    """シャードの読み方と割り当て（`parse_shard`・`select_shard`・`partition_holes`）は `test-autopilot-loop.py` を読み込む——写さない（#1553）。"""
+    spec = importlib.util.spec_from_file_location("autopilot_loop_shard", REPO / "scripts" / "test-autopilot-loop.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def observe(mutation: tuple, effects: str, guard: str) -> bool:
+    """変異を 1 件当て、名指しした試料が期待から外れたら（殺せたら）True。**最初の失敗で試料を打ち切る**（#1553。`Failures`）。"""
+    name, target, before, after, killer = mutation
+    e = apply(effects, before, after) if target == "effects" else None
+    g = apply(guard, before, after) if target == "guard" else None
+    fn = {"check": lambda: case_check(e, stop=True), "report": lambda: case_report(e, stop=True),
+          "guard": lambda: case_guard(g, e, stop=True)}[killer]
+    return bool(fn())
+
+
+def main(argv: list[str]) -> int:
     sys.dont_write_bytecode = True
+    sh = load_shard()
+    shard = sh.parse_shard(argv)
+    if shard is None:
+        print("使い方: test-line-effects.py [--shard K/N]（1 ≤ K ≤ N。引数なしは全件）", file=sys.stderr)
+        return 2
+    shard_k, shard_n = shard
     bad: list[str] = []
     bad += case_check()
     bad += case_report()
@@ -899,21 +975,47 @@ def main() -> int:
     print("  試料 OK（check・report・guard・原本の突き合わせ）")
     effects = EFFECTS_SRC.read_text()
     guard = GUARD_SRC.read_text()
-    survived = []
+    names = [m[0] for m in MUTATIONS]
+    if len(set(names)) != len(names):
+        print("NG: 変異の名前が重なっている（シャードの割り当ては名前で見る）")
+        return 1
+    selected = set(sh.select_shard(names, shard_k, shard_n))
+    # 壊す箇所が本体にちょうど 1 回現れることは、割り当てに依らず全件で見る（シャードの外の変異の当てる先が消えても、どれかのシャードが黙らない）
     for name, target, before, after, killer in MUTATIONS:
-        e = apply(effects, before, after) if target == "effects" else None
-        g = apply(guard, before, after) if target == "guard" else None
-        fn = {"check": lambda: case_check(e), "report": lambda: case_report(e),
-              "guard": lambda: case_guard(g, e)}[killer]
-        if not fn():
-            survived.append(name)
+        apply(effects if target == "effects" else guard, before, after)
+    survived = [m[0] for m in MUTATIONS if m[0] in selected and not observe(m, effects, guard)]
+    if shard_n > 1:
+        # **シャードのときだけ**出す（引数なしの出力は分ける前と同じに保つ）。CI はどのシャードでもここを回す
+        print(f"  シャード {shard_k}/{shard_n}（#1553）: 観測した変異 {len(selected)} 件（全 {len(MUTATIONS)} 件のうち）")
+        checks = [
+            (f"割り当てが N=1..{len(names) + 1} のどれでも変異の全件をちょうど 1 度ずつ覆う",
+             sh.partition_holes(sh.select_shard, names, len(names) + 1) == []),
+            ("陽性対照: 余りの番号を 1 つずらした割り当て（K-1 でなく K）は漏れで落ちる",
+             sh.partition_holes(lambda ns, k, n: [x for i, x in enumerate(ns) if i % n == k], names, len(names) + 1) != []),
+            ("陽性対照: K 以下の余りを全部取る割り当ては重なりで落ちる",
+             sh.partition_holes(lambda ns, k, n: [x for i, x in enumerate(ns) if i % n <= k - 1], names, len(names) + 1) != []),
+        ]
+        bad_args = (["--shard", "0/4"], ["--shard", "5/4"], ["--shard", "1/0"], ["--shard", "1-4"], ["--shard", "01/4"],
+                    ["--shard"], ["--shard", "1/4", "x"], ["--bogus"])
+        got = [subprocess.run([sys.executable, str(Path(__file__).resolve()), *b], capture_output=True, text=True, timeout=60)
+               for b in bad_args]
+        checks.append((f"不正な --shard（{len(bad_args)} 形）は 2 で止まり、試料を回さない",
+                       all(r.returncode == 2 and "試料 OK" not in r.stdout for r in got)))
+        for label, ok in checks:
+            if not ok:
+                print(f"NG: {label}")
+        if not all(ok for _, ok in checks):
+            return 1
     if survived:
         for s in survived:
             print(f"NG: 変異が素通り: {s}")
         return 1
-    print(f"OK: 変異 {len(MUTATIONS)} 件（すべて赤）")
+    if shard_n > 1:
+        print(f"OK: 変異 {len(selected)} 件（すべて赤。シャード {shard_k}/{shard_n}）")
+    else:
+        print(f"OK: 変異 {len(MUTATIONS)} 件（すべて赤）")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

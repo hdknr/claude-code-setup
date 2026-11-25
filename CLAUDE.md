@@ -410,7 +410,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **走らせた前後で試料が変わらないこと**と、**`references/spec-gap.md` の例の行が本体の正規表現に当たること**（陽性対照つき）も見る
   - `test-line-effects.py` - **委譲文の行の台帳・最後に効いた周の集計・行を外す PR の歯止め**の回帰テスト（#1194。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/line-effects.py` と `scripts/check-prompt-lines.py`**。一時ディレクトリの skill と**一時の git リポジトリ**（周の順はコミットの時刻で、名前順と食い違う試料）に当て、
-    **本物の台帳が通ること・`references/prune.md` の記録の例が本体の正規表現に当たること・「削らない」が「黙って削らない」に置き換わっていること**も見る
+    **本物の台帳が通ること・`references/prune.md` の記録の例が本体の正規表現に当たること・「削らない」が「黙って削らない」に置き換わっていること**も見る。
+    **変異の観測は最初の赤で試料を打ち切り、CI では `--shard K/N` で変異を複数のジョブに分ける**（#1553。割り当ては `test-autopilot-loop.py` を読み込む——写さない。分け方は docstring を正とする）
   - `test-external-reviews.py` - **外部レビュー bot のコメントの取り出し**の回帰テスト（#997。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/external-reviews.py`**（`test-find-cycle.py` と同じ形）。
     **偽の `gh` を `PATH` の先頭に置き、`PATH` の残りは `/usr/bin:/bin` だけにする**——本物の GitHub には届かない。**渡す文面が bot のコメントの中の指示に従わないと書くこと**も見る
