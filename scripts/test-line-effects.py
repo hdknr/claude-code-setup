@@ -754,6 +754,19 @@ def case_guard(guard_text: str | None = None, effects_text: str | None = None) -
             [["V-01", "prompts/verifier.md", "**計画ファイルを書"] + ROWS[0][3:], ["V-02", "prompts/verifier.md", "**計画ファイルを読"] + ROWS[1][3:], ROWS[2]]))
     scenario("G92 頭の書き出しを共有する項どうしで、自分の頭の助詞だけを言い換え、引いた先も言い換えても 0（自分の頭に固有の文面が残る）", 0, "問題 0 件",
              s_particle, pre_base=pre_particle)
+    # #1534（#1453 の D2）: 元の項の頭の書き出し（`AAA`）だけを残し、付け替え先の旧い頭の写しを引用ごと頭に置いて付け替え先を言い換える付け替え（1）。
+    # 引用の行を頭の行に上げる言い換え（G71・G73・G81。0）と違い、書き出しの後ろに元の頭の続き（`ひとつめの行です` の 3 字）を持たない
+    scenario("G93 元の項の頭を、元の頭の書き出しと付け替え先の旧い頭の写しと引用の後ろの文面にし、付け替え先を言い換えて付け替えれば 1（#1534 の形 1）", 1, "付け替えた",
+             copy_head_with_tail("AAA: 「BBB ふたつめの行です」と同じ）", "AAA: 「BBB"), pre_base=pre_quote_bbb)
+    scenario("G94 G93 で、書き出しの後ろに言い換えた頭の続き（`一つめ`）だけを置いても 1（元の頭の続きの 3 字が無い。#1534 の形 2）", 1, "付け替えた",
+             copy_head_with_tail("AAA 一つめ BBB ふたつめの行です」と同じ）", "AAA 一つめ BBB"), pre_base=pre_quote_bbb)
+    scenario("G95 G93 で、書き出しの後ろに括弧つきの前置きを置いても 1（#1534 の形 3）", 1, "付け替えた",
+             copy_head_with_tail("AAA （下の「BBB ふたつめの行です」と同じ）", "AAA （下の"), pre_base=pre_quote_bbb)
+    scenario("G96 G93 で、書き出しの後ろに別の前置きを置いても 1（#1534 の形 4）", 1, "付け替えた",
+             copy_head_with_tail("AAA 参照: 「BBB ふたつめの行です」と同じ）", "AAA 参照: 「BBB"), pre_base=pre_quote_bbb)
+    # 陰性対照: G95 と同じ引用の置き方で、書き出しの後ろに元の頭の続き（`の行です`）を残せば、引用の行を頭の行に上げる言い換え（0）
+    scenario("G97 G95 で、書き出しの後ろに元の頭の続き（`一つめの行です`）を残して引用を上げても 0（G71 の形。付け替え先の頭を言い換える）", 0, "問題 0 件",
+             copy_head_with_tail("AAA 一つめの行です（下の「BBB ふたつめの行です」と同じ）", "AAA 一つめ"), pre_base=pre_quote_bbb)
     return bad
 
 
@@ -853,11 +866,15 @@ MUTATIONS = [
     ("ID の行き先で残る引いた先を、新しい引きの項の頭の行に写しても除外する", "guard", "and (f in new_heads or (flat(f) not in cur_head and not took_head(cur_head, [flat(f)] + [flat(x) for x in followed(f, cur_item[0])], flat(prev or \"\"))) or lifted_quote(flat(f), prev_lines, head_text, flat(prev or \"\")))", "and True", "guard"),
     # #1453
     ("頭の行の引いた頭が引用の前後の文面と続いていても、頭の写しと見る", "guard", ' or lifted_quote(flat(f), prev_lines, head_text, flat(prev or ""))', "", "guard"),
-    ("引用の手前の文面が元の項の頭と関わらなくても、引用を上げた言い換えと見る", "guard", " and shares(head_text[:j], prev_head):", ":", "guard"),
+    ("引用の手前の文面が元の項の頭と関わらなくても、引用を上げた言い換えと見る", "guard", " and shares(head_text[:j], prev_head) and continues(head_text[:j], prev_head):", ":", "guard"),
     ("頭の行の下の折り返しの行を頭に数えない", "guard", 'head_text = flat("\\n".join(head_wrap))', 'head_text = flat(head_wrap[0]) if head_wrap else ""', "guard"),
     ("元の項の頭の書き出しでなく、どこかの 3 字が重なれば言い換えと見る", "guard", "return start is not None and start in text",
      "return any(prev_head[i:i + n] in text for i in range(len(prev_head) - n + 1) if any(c.isalnum() for c in prev_head[i:i + n]))", "guard"),
     ("引用の手前に引いた頭の写しがあっても、引用を上げた言い換えと見る", "guard", " and head not in head_text[:j] and", " and", "guard"),
+    # #1534
+    ("引用の手前に元の頭の続きが無くても、引用を上げた言い換えと見る", "guard", " and continues(head_text[:j], prev_head):", ":", "guard"),
+    ("引用の手前に元の頭の書き出しが無くても、続きの 3 字があれば引用を上げた言い換えと見る", "guard", " and shares(head_text[:j], prev_head) and continues(", " and continues(", "guard"),
+    ("元の頭の続きを 3 字でなく 1 字でも数える", "guard", "def continues(text: str, prev_head: str, n: int = 3) -> bool:", "def continues(text: str, prev_head: str, n: int = 1) -> bool:", "guard"),
     # #1522
     ("ID の行き先で残る引いた先の頭が頭の行に無ければ、頭の行が引いた先の頭に寄せた差し替えでも除外する", "guard",
      ' and not took_head(cur_head, [flat(f)] + [flat(x) for x in followed(f, cur_item[0])], flat(prev or ""))) or lifted_quote(', ") or lifted_quote(", "guard"),
