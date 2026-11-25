@@ -2099,18 +2099,25 @@ def read_pptx(directory: Path) -> dict:
     return found
 
 
-def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = False, worktree: bool = False) -> Result:
+def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = False, worktree: bool = False,
+               shape_checks: list[tuple[str, bool, str]] | None = None) -> Result:
     """作れる状態のリポジトリと古い出力を置いてから、git を起動できない PATH で生成する。
 
     `subdir` なら `--out` を渡さず下位ディレクトリから走らせる——既定の出力先（根の下）の古い出力が消えるか。
     `worktree` なら根を `git worktree add` で作る——根の `.git` が**ファイル**の形（#218 の狭いパス NP-1。#291）。
     これが無いと、`.git` を上へたどる判定を `.is_dir()` にしても緑のまま（試料の `.git` が常にディレクトリなので）。
+    `shape_checks` を渡せば、試料の形の確かめを `check` せずにそこへ足す（#1555）——変異の作業者の中から `check` すると、
+    宣言順に `check` する前の変異の結果より先に失敗の行が並ぶので、呼ぶ側が宣言順の位置で `check` する。
     """
     if worktree:
         main = root.parent / f"{root.name}-main"
         build_repo(main, SIGNED, env)
         run_git(main, env, "worktree", "add", "-q", str(root))
-        check("試料が worktree 型でない（根の .git がファイルでない）", (root / ".git").is_file(), str(root))
+        shape = ("試料が worktree 型でない（根の .git がファイルでない）", (root / ".git").is_file(), str(root))
+        if shape_checks is None:
+            check(*shape)
+        else:
+            shape_checks.append(shape)
     else:
         build_repo(root, SIGNED, env)
     out = root / "build" / "proposal" / "proposal.md"
@@ -2354,11 +2361,13 @@ def main() -> int:
             result = run_previous(mutated, tmp_path / f"mutwork-prev{index}", env)
             return previous_removed(result), result[2][-300:]
 
-        def no_git_job(index: int, text: str, subdir: bool, worktree: bool) -> tuple[bool, str]:
+        def no_git_job(index: int, text: str, subdir: bool, worktree: bool) -> tuple[bool, str, list[tuple[str, bool, str]]]:
+            """試料の形の確かめ（worktree 型）は返して、宣言順の位置で check する（作業者の中で check しない）。"""
             mutated = copy_scripts(tmp_path / f"mut-nogit{index}")
             (mutated / TARGET).write_text(text, encoding="utf-8")
-            result = run_no_git(mutated, tmp_path / f"mutwork-nogit{index}", env, subdir, worktree)
-            return no_git(result), result.output[-300:]
+            shapes: list[tuple[str, bool, str]] = []
+            result = run_no_git(mutated, tmp_path / f"mutwork-nogit{index}", env, subdir, worktree, shapes)
+            return no_git(result), result.output[-300:], shapes
 
         def judged_job(label: str, index: int, target: str, text: str, killer: str) -> tuple[bool, str]:
             mutated = copy_scripts(tmp_path / f"mut{label}{index}")
@@ -2398,7 +2407,9 @@ def main() -> int:
             if k is None:
                 check(message, fixed, detail)
             else:
-                ok, detail = results[k]
+                ok, detail, *shapes = results[k]
+                for shape in (shapes[0] if shapes else ()):  # 試料の形の確かめは、1 つずつ当てたときと同じく変異の判定の前
+                    check(*shape)
                 check(message, not ok, detail)
 
         problems = compose_problems(SCRIPTS)
