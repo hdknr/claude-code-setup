@@ -32,6 +32,10 @@ hook の入る子・`-I` の子・Python でない子・環境を組み直した
 `CACHE_MUTANTS` は本体と hook の両方に当て、**最初に破れた段を出力に名指しする**（狙った段の手前で別の理由で破れていないかを読めるように）。
 **既存の契約 1〜12 は git のリポジトリでない一時ディレクトリで回るので、キャッシュは使われない**（今までと同じ全部回す経路）。
 
+**`MUTANTS` の観測は、最初に破れた表明で止める**（#1560。`contract_steps` が段ごとに表明を出し、`run_mutants` は破れた 1 つを見たら残りの段を回さない）——
+変異は表明の 1 つでも破れれば捕まえているので、判定は全部回したときと変わらない。破れない変異は全部の段を回す。**本体そのままの契約は止めずに全部を回す。**
+`CACHE_MUTANTS` は前から最初に破れた段で止めている（#1151）。
+
 **変異は 3 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
 **このファイルの中の判別**（CI の yaml の読み方）に当てる。**後者は自分自身を壊す。**
 `CACHE_MUTANTS` は `check-all.py` のキャッシュと hook に当てる（上の段落）。
@@ -488,15 +492,16 @@ def hold_head_test(mod, pools: list[RecordingPool], head: str, after: str) -> No
 
 # ------------------------------------------------------------------- 契約
 # **本体を壊したときに、少なくとも 1 つが破れなければならない。**
-def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
-    got: list[tuple[str, bool]] = []
+def contract_steps(target: Path, root: Path, tag: str):
+    """契約を 1 つずつ `(名前, 通ったか)` で出す（#1560）。**段は前から順に回り、出した後に次の段を回す**——
+    変異の観測（`run_mutants`）は最初に破れた表明で止める。本体そのままの契約（`contract`）は全部を回す。"""
 
     # 1) 全部通る。base は解決できない → base を要する 1 本は SKIP。
     mod = load(target, f"{tag}_pass")
     wire(mod, root, bad_guard=False, bad_test=False)
     hold_head_test(mod, record_pools(mod), "ok-t.py", after="ok-b.py")
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
-    got += [
+    yield from [
         ("全部通れば rc=0", rc == 0),
         ("飛ばしたものを数えて出す", "飛ばし 1" in out),
         ("飛ばしたことを黙らない", "飛ばしたものは回していない" in out),
@@ -511,7 +516,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     mod = load(target, f"{tag}_badguard")
     wire(mod, root, bad_guard=True, bad_test=False)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
-    got += [
+    yield from [
         ("歯止めが落ちたら rc=1", rc == 1),
         ("歯止めの失敗を名指しする", "落ちたもの: bad.py" in out),
         ("歯止めが落ちても後続の歯止めを回す", "OK   ok-c.py" in out),
@@ -523,7 +528,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     mod = load(target, f"{tag}_badtest")
     wire(mod, root, bad_guard=False, bad_test=True)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
-    got += [
+    yield from [
         ("回帰テストが落ちたら rc=1", rc == 1),
         ("回帰テストの失敗を名指しする", "落ちたもの: bad-test.py" in out),
         ("回帰テストの失敗の出力を見せる", "BOOM-TEST" in out),
@@ -534,7 +539,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     mod = load(target, f"{tag}_guardsonly")
     wire(mod, root, bad_guard=False, bad_test=False)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--guards-only"])
-    got += [
+    yield from [
         ("--guards-only で回帰テストを回さない", "OK   ok-b.py" not in out),
         ("--guards-only でも飛ばしたことを出す", "飛ばしたものは回していない" in out),
     ]
@@ -547,7 +552,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     record_pools(mod)  # 作業者が 1 つになる変異（直列に戻す）は、待ち合わせを短く切る（#687）
     clear_flags(root)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
-    got.append(("--jobs 2 で同時に走る", rc == 0))
+    yield ("--jobs 2 で同時に走る", rc == 0)
 
     # 6) --jobs 1 なら同時に走らない（待ち合わせる 2 本の先の 1 本が、相手を待って時間切れで落ちる）
     #    **区間の重なりでは見ない**（#431）——**0.1 秒の区間は起動の遅れに負ける。**
@@ -567,14 +572,14 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     clear_flags(root)
     fake_clock(mod, {"par-a.py": 10.0, "par-b.py": 1.0})  # 所要時間は論理時計で見る（#1526。負荷で起動の遅れが揺れても動かない）
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "1"])
-    got.append(("--jobs 1 で同時に走らない", rc != 0 and "相手が来ない" in out))
-    got.append(("--jobs 1 で作業者を 1 つにする", [p.workers for p in pools] == [1]))
+    yield ("--jobs 1 で同時に走らない", rc != 0 and "相手が来ない" in out)
+    yield ("--jobs 1 で作業者を 1 つにする", [p.workers for p in pools] == [1])
     # **順番待ちを測らない**（#1040）——直列では par-a が相手を待って時間切れで落ちてから par-b が起き、par-b は印を見て即座に通る。
     # 投げた時点から測ると、par-b が par-a の時間を背負って長くなる。
     # **壁時計では比べない**（#1526）——論理時計で、par-a は 10 秒・par-b は 1 秒と進める。背負えば par-b は 11 秒になる。
     t = times(out)
-    got.append(("--jobs 1 で後ろの 1 本は前の 1 本の時間を背負わない（#1040）",
-                {"par-a.py", "par-b.py"} <= set(t) and t["par-a.py"] == 10.0 and t["par-b.py"] == 1.0))
+    yield ("--jobs 1 で後ろの 1 本は前の 1 本の時間を背負わない（#1040）",
+           {"par-a.py", "par-b.py"} <= set(t) and t["par-a.py"] == 10.0 and t["par-b.py"] == 1.0)
 
     # 7) 既定（--jobs を渡さない）でも同時に走る——既定が直列なら速くならない。
     #    **区間の重なりではなく待ち合わせで見る**——重なりは起動の遅れに負けるが、
@@ -588,7 +593,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         record_pools(mod)  # 既定を直列にする変異は、待ち合わせを短く切る（#687）
         clear_flags(root)
         rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
-        got.append(("既定で同時に走る", rc == 0))
+        yield ("既定で同時に走る", rc == 0)
 
     # 8) --jobs 0 は回さずに断る（argparse の誤り＝終了コード 2）
     mod = load(target, f"{tag}_zero")
@@ -601,7 +606,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         refused = exc.code == 2
     except Exception:  # noqa: BLE001 — 断らずに別の形で落ちたら、それも失格
         refused = False
-    got.append(("--jobs 0 を断る", refused))
+    yield ("--jobs 0 を断る", refused)
 
     # 9) 入れ子の並列を絞る（#460）——`check-mutation-claims.py` に、親より少ない `--jobs` を渡す。
     #    **実物の `GUARDS` のまま、起動の引数だけを記録する**（`run` を差し替えるので何も走らない）。
@@ -624,19 +629,19 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         return int(args[0][-1])
 
     one, four = inner(nested_args("1")), inner(nested_args("4"))
-    got.append(("--jobs 1 なら入れ子も --jobs 1", one == 1))
-    got.append(("--jobs 4 なら入れ子は 1 以上 4 未満", four is not None and 1 <= four < 4))
+    yield ("--jobs 1 なら入れ子も --jobs 1", one == 1)
+    yield ("--jobs 4 なら入れ子は 1 以上 4 未満", four is not None and 1 <= four < 4)
     nested_tests = ("test-check-unattended-env.py", "test-ledger.py", "test-check-deps-declared.py",
                     "test-check-spec-writeback.py", "test-run-serial.py", "test-parallel-stop.py", "test-outer-loop.py",
                     "test-scaffold.py", "test-build-proposal.py")
-    got.append(("--jobs 1 なら変異を同時に当てる回帰テストにも --jobs 1（#749）",
-                all(inner(nested_args("1", t)) == 1 for t in nested_tests)))
-    got.append(("--jobs 4 なら変異を同時に当てる回帰テストは 1 以上 4 未満（#749）",
-                all(1 <= (inner(nested_args("4", t)) or 0) < 4 for t in nested_tests)))
+    yield ("--jobs 1 なら変異を同時に当てる回帰テストにも --jobs 1（#749）",
+           all(inner(nested_args("1", t)) == 1 for t in nested_tests))
+    yield ("--jobs 4 なら変異を同時に当てる回帰テストは 1 以上 4 未満（#749）",
+           all(1 <= (inner(nested_args("4", t)) or 0) < 4 for t in nested_tests))
     # **`TESTS` から `NESTED` を除いた全部を見る**（#749 の 2 パス目）——1 本だけでは、ほかのテストに渡す変異が素通りする
     others = [t for t in load(target, f"{tag}_tests").TESTS if t not in nested_tests]
-    got.append(("--jobs を受けない回帰テストには何も渡さない（#749）",
-                bool(others) and all(nested_args("1", t) == [[]] for t in others)))
+    yield ("--jobs を受けない回帰テストには何も渡さない（#749）",
+           bool(others) and all(nested_args("1", t) == [[]] for t in others))
 
     # 10) 並列で、遅れて落ちる子とシグナルで止まった子（打ち切り）を、表示と集計の両方で失敗に数える（#509）。
     #     **FAIL の行の数と「失敗 N」が一致する**ことを見る——表示と集計が別の経路で決まると、ここが割れる。
@@ -647,7 +652,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     clear_flags(root)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "4"])
     fail_lines = [l for l in out.splitlines() if l.startswith("  FAIL")]
-    got += [
+    yield from [
         ("打ち切られた子（SIGKILL）を失敗に数える", "  FAIL killed.py" in out),
         ("遅れて落ちた子と打ち切られた子で rc=1", rc == 1),
         ("FAIL の行の数と「失敗 N」が一致する（#509）",
@@ -686,7 +691,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     t = times(out)
     top = top_entries(out)
     wall = WALL_LINE.search(out)
-    got += [
+    yield from [
         # **遅い 4 本が速い 4 本の終わりを見てから眠った**（#1474）——待ちを外すと、負荷が無くてもここで赤になる。
         ("遅い 4 本は速い 4 本が終わってから眠る（#1474）",
          len(slow) == 4 and len(fast) == 4 and saw == sorted(slow)),
@@ -725,13 +730,17 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
     t = times(out)
     top = top_entries(out)
-    got += [
+    yield from [
         ("回した本が TOP より少なければ、見出しはその本数（#1040）", "所要時間の長い順（上位 2 本）:" in out),
         ("上位は回した本だけで、SKIP を入れない（#1040）",
          sorted(n for _, n, _ in top) == ["ok-b.py", "ok-c.py"] and set(t) == {"ok-b.py", "ok-c.py"}),
         ("SKIP があっても判定は変わらない（rc=0・飛ばし 1。#1040）", rc == 0 and "（失敗 0 / 飛ばし 1）" in out),
     ]
-    return got
+
+
+def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
+    """契約を全部回して並べる（本体そのまま——全部通らなければならない）。"""
+    return list(contract_steps(target, root, tag))
 
 
 def contract_with_base(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
@@ -2978,7 +2987,9 @@ def run_mutants(root: Path, only: set[str] | None) -> None:
         d = root / f"mut{i}"
         t = build_fake(d)
         t.write_text(src.replace(old, new))
-        broken = [n for n, ok in contract(t, d, f"m{i}") if not ok]
+        # **最初に破れた表明で止める**（#1560）——変異は表明の 1 つでも破れれば捕まえているので、残りの段を回しても判定は変わらない。
+        # 破れない変異（素通り）は全部の段を回す。本体そのままの契約（`main`）は止めずに全部を回す。
+        broken = next(([n] for n, ok in contract_steps(t, d, f"m{i}") if not ok), [])
         check(f"変異 `{name}` を契約が捕まえる", bool(broken))
         if not broken:
             print("       壊したのに契約が全部通った")
