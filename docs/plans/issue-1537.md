@@ -75,6 +75,7 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - Verifier 2 パス目（`dev-loop:dev-loop-verifier`・opus。報告 `…/gate-1537-verifier-2-20261125T013345Z.md`。成果物 `a402cc72813178fa305c0eade659921cbd9d7607`）: 反証 1 件（V2-1）
 - /code-review 2 パス目（high。報告 `…/gate-1537-code-review-2-20261125T013345Z.md`）: 指摘 3 件（重要 1・nit 2）
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `a402cc72813178fa305c0eade659921cbd9d7607`
+- 狭いパス（`dev-loop:dev-loop-verifier`・opus。報告 `…/gate-1537-narrow-1-20261125T023000Z.md`。`a402cc72`→`6e251f3f`）: 反証 0 件。書き直した文の主張（違う・消えた・リンクが切れた→1／どれでもなければ 0／関門は `--new` を渡せない／`タグ` を上げると比べない／`確かめたタグ`・`--new` で 0）を一時 clone で全部実測して一致。素通りした変異なし。記録だけ: `タグ` を上げた形の終了コードは照合の違反で 1 になりうる（文面は 0 とは言っていない）
 
 ```dev-loop-gates
 周の base: a50e080fb1e3715c0ae3e0aa51ac238ee1c2ec32
@@ -82,6 +83,13 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 関門: /code-review 1 02ae5a89e6bc66fc6af29d7d1f34dd76ae4d4460 指摘=4
 関門: Verifier 2 a402cc72813178fa305c0eade659921cbd9d7607 反証=1
 関門: /code-review 2 a402cc72813178fa305c0eade659921cbd9d7607 指摘=3
+関門: 狭いパス a402cc72813178fa305c0eade659921cbd9d7607 6e251f3f0b7319b9f28d3f79a3a055a67d4318d0 反証=0
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+受入基準: 5 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
 
 ## 既知の限界・決着済みの論点
@@ -122,6 +130,6 @@ main へのマージで、プラグインの配布（`marketplace.json` の版�
 - 効いた行: R-02
 - 効いた行: なし
 
-- 2 パス目の指摘対応: 直す 2 件（V2-1／CR2-1・CR2-2）。同じ 2 行（docstring の「守らないもの」と原本）の書き直しだけ。本体の実行コードは 1 行も変わっていない（docstring を除いた AST が base と一致）。歯止め: `check-plugin-versions.py` 問題なし。`check-all.py` は他の周の順番待ちのため実行中（結果は PR 側の CI と合わせて下に書く）
+- 2 パス目の指摘対応: 直す 2 件（V2-1／CR2-1・CR2-2）。同じ 2 行（docstring の「守らないもの」と原本）の書き直しだけ。本体の実行コードは 1 行も変わっていない（docstring を除いた AST が base と一致）。歯止め: `check-plugin-versions.py` 問題なし。ローカルの `check-all.py` は他の周の順番待ちが 60 分を超えて始まらなかったので、PR 側の CI（`6e251f3f`。全部 pass・deploy は skipping・MERGEABLE）を全部回した結果とする。1 パス目の対応の時点（`7894c505`）では `check-all.py` が `20/105 本を回した（失敗 0 / 飛ばし 0）`・rc=0 だった（`test-check-profile-diff.py` を含む）。2 パス目の対応は docstring と原本の文面だけ
 
 - この周の起票: 0 件（振る舞いを変えない文面と試料の周。起票の候補なし）
