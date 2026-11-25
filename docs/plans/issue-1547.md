@@ -75,9 +75,13 @@
 
 ## 関門の進捗（再開点）
 
-- 実装: 着手（未コミット）
-- PR: 未作成
+- 実装: 済（`cff00b15`）。歯止め: `scripts/check-all.py` を run-serial 越しに回して失敗 0（35/105 本を回し、70 本は入力が前回の緑から変わっていないので CACHED。PR 側の CI は全部回す）
+- PR: 未作成（関門の後に作る）
 - 割り目: 訊かない（cruise の周）。割らない。
+- 関門 1 パス目（HEAD `2841bbacfb9241461648555456d5e8fe30eea6da` を渡す。base `5734eebe3949f081bc7523730ec69c2d07db072f`）:
+  - Verifier（`dev-loop:dev-loop-verifier`・opus。実装は sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1547-verifier-1-20261125T040657Z.md`
+  - `/code-review`（high）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1547-code-review-1-20261125T040657Z.md`
+  - 1 パス目の指摘対応の起点: `2841bbacfb9241461648555456d5e8fe30eea6da`
 - 外部レビュー: 未確認
 - 交絡を潰した手順: 実験なし
 
