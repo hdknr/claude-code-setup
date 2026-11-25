@@ -67,22 +67,47 @@
 
 ## 既知の限界・決着済みの論点
 
-採否の表（関門の指摘。既定の線: 「示せる」かつ「この周の受入基準を破る」行だけ直す）
+採否の表（Verifier と `/code-review` の 1 パス目。既定の線: 「示せる」かつ「この周の受入基準を破る」行だけ直す）
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
-| （1 パス目の前） | — | — | — |
+| V0 Verifier: 反証 0 件。観察 A（CLAUDE.md 207 行ほかに「正本の根の `design/sources.csv`」だけを言う文が残る）・B（実装コミット `cff00b15` の `Verified:` が `Co-Authored-By` と別の段落でトレーラーに読まれない。`検証の関門` は既定 off で影響なし） | A: 示せる（行の読み。手順文ではなく原本・CLAUDE.md の導入文）／B: 示せる（`git log --format='%(trailers:key=Verified)'` が空）が影響なし | 無し（受入基準 4 の対象は spec-loop の手順文） | 残課題 |
+| CR1 `docs/` の下の `design/sources.csv` は `docs/v<n>/design/sources.csv`（版の中）とも読める | 示せない（版の中に置くのは `tree.md` が版の外と決めた形の外。ふつうは作られない読み違い。scaffold 165 行は「版の外」を併記済み） | 無し | 残課題（文言） |
+| CR2 `CLAUDE.md` 207 行の scaffold.py の説明が「正本の根の `design/sources.csv`」のまま（#1542 の残り。spec-loop の手順文ではない） | 示せる（行の読み） | 無し（この周の変更範囲の外。受入基準 4 は手順文） | 残課題（文言。記録だけ） |
+| CR3 計画ファイルの複製数に数え方の注記が無い | 示せない（成果物の誤りではない） | 無し | 残課題（捨てる） |
+
+振り分け（`references/found-lines.md`。PR コメントにも書く）: 直すは 0 件。記録だけは V0 観察 A・B・CR1・CR2（文言。受入基準を破らず、実際の利用でまず起きない）。捨てるは CR3（成果物の誤りではない）。
+
+受入基準の判定: 1〜4 満たす（Verifier が各行を grep と `scaffold.py` の探索の実装との突き合わせで確かめた）。5 満たす（`check-plugin-versions.py`・`check-version-bump.py`・`check-all.py` が通る）。
 
 ## 関門の進捗（再開点）
 
 - 実装: 済（`cff00b15`）。歯止め: `scripts/check-all.py` を run-serial 越しに回して失敗 0（35/105 本を回し、70 本は入力が前回の緑から変わっていないので CACHED。PR 側の CI は全部回す）
-- PR: 未作成（関門の後に作る）
-- 割り目: 訊かない（cruise の周）。割らない。
+- PR: 未作成（main を取り込んで `check-all.py` を回してから作る）
+- 割り目: 訊かない（cruise の周）。割らない（実装後・2 パス目の前とも）。
 - 関門 1 パス目（実装のコミット `cff00b1523ab16499feff9b3881a0c170823fa75` を渡す。以後のコミットは計画ファイルだけ。base `5734eebe3949f081bc7523730ec69c2d07db072f`）:
-  - Verifier（`dev-loop:dev-loop-verifier`・opus。実装は sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1547-verifier-1-20261125T040657Z.md`
-  - `/code-review`（high）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1547-code-review-1-20261125T040657Z.md`
-  - 1 パス目の指摘対応の起点: `cff00b1523ab16499feff9b3881a0c170823fa75`
+  - Verifier（`dev-loop:dev-loop-verifier`・opus。実装は sonnet）: 反証 0 件（観察 A・B）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1547-verifier-1-20261125T040657Z.md`（呼び出しの結果は「報告を届けずに終わった」の形で、報告はファイルから回収した）
+  - `/code-review`（high）: 指摘 3 件（CR1〜CR3）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/6afc4e45-0d5a-49c7-a3a4-03fd099dd38c/scratchpad/gate-1547-code-review-1-20261125T040657Z.md`
+  - 1 パス目の指摘対応の起点: `cff00b1523ab16499feff9b3881a0c170823fa75`。「直す」の行が 0 件なので成果物の差分は 0 行（`git diff cff00b15 -- ':(top)' ':(top,exclude)docs/plans/issue-1547.md'` が空、`git status --porcelain` が空）。
+  - 2 パス目: 該当なし（理由: 1 パス目の指摘対応の差分 0 行。起点 `cff00b1523ab16499feff9b3881a0c170823fa75`。判定の 2 本に計画ファイル以外が出なかった）。
+  - 狭いパス: 該当なし。
 - 外部レビュー: 未確認
 - 交絡を潰した手順: 実験なし
 
 - この周の起票: 0 件（確認の Issue は親が立てる。周の中では起票しない）
+
+## 関門の記録
+
+```dev-loop-gates
+周の base: 5734eebe3949f081bc7523730ec69c2d07db072f
+関門: Verifier 1 cff00b1523ab16499feff9b3881a0c170823fa75 反証=0
+関門: /code-review 1 cff00b1523ab16499feff9b3881a0c170823fa75 指摘=3
+関門: 2 パス目 該当なし cff00b1523ab16499feff9b3881a0c170823fa75
+関門: 狭いパス 該当なし
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+受入基準: 5 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
