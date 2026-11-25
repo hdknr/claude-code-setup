@@ -48,6 +48,20 @@ main へのマージ → GitHub Pages の再ビルド（`CLAUDE.md` と計画の
 
 - 全体: `test-check-all.py` 155.9 秒・`test-scaffold-screens.py` 85.2 秒・`test-scaffold.py` 115.6 秒（同じ回）。`test-scaffold.py` の段の数字は別の回（総 165.7 秒。負荷が違う）
 
+## 打ち切りの前後と判定の一致（B2・B3・B4。手元）
+
+run-serial の枠の中で 1 回ずつ（28 コア。前 12:11Z〜・負荷 2.2→5.1、後 12:30Z〜・負荷 3.8→8.6）。
+
+| 測ったもの | 前（`adc96506`） | 後（`3afe8855`） | 比 |
+| --- | --- | --- | --- |
+| `test-check-all.py --part mutants` | 61.8 秒 | 38.0 秒 | 0.61 |
+| `test-check-all.py`（引数なし） | 155.9 秒 | 128.7 秒 | 0.83 |
+
+- B4: 引数なしと `--part mutants` の出力（370 行・全部）が前と後でバイト一致（`diff` が空）
+- B3: `equiv_cka.py`（scratchpad）で 35 件全部を、全部回す判定（`list(contract_steps)`）と止める判定で比べた——不一致 0。止めた位置は 47 表明のうち 3〜45 番目。
+  陽性対照: 等価変異（`return 1` → `return (1)`）は止める形でも 47/47 を回して「素通り」、本物の 35 件は「捕まえた」。全部回す側の合計 100.0 秒・止める側 59.7 秒
+- `check-all.py`: `3afe8855`で失敗 0（17/105 を回し、残りは CACHED。前の回で落ちたのは計画の件数の行が無かった `check-plan-counts.py` だけで、行を足して直した）
+
 ## 受入基準
 
 不変条件 × 経路:
