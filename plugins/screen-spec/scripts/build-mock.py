@@ -12,6 +12,7 @@ usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--since <�
 - v1〜v<n>（`--upto` を省くと作業中の版 = 番号が最大の版）を重ねた表から、`<docs の親>/build/mock/v<n>/index.html` を書く。
 - 出力は HTML 1 枚。表（許可した列だけ）を JSON にして埋め込み、描き方の JS も埋め込む。外のファイル・CDN を読まない。
 - **描き方の差し替え**: `<docs の親>/screen-spec/renderers/<画面ID>.js`（素の JS。関数の本体として `ctx` を受ける）を埋め込む。
+  **`<docs>/screen-spec/renderers/`（`docs/` の下でも版のディレクトリの外。#1542）を、根の直下より先に探し、両方に在れば何も書かずに止める**。
   **どれかの版のディレクトリの下に `renderers` という名前のディレクトリが在れば、何も書かずに止める**（版の中に置くとサインオフで比べる範囲に入る）。
 - **何で作ったかを書き込む**: 版・表の出どころ（`docs` の git のコミットとそれを指すタグ。未コミットの変更の有無）・生成器の版（screen-spec の
   `plugin.json`）・描き方のファイルのコミット。時刻は書かない（同じ入力から同じバイト）。
@@ -82,7 +83,7 @@ PLUGIN_ROOT = HERE.parent
 # ---- `references/mock.md` の写し
 OUT_DIR = "build/mock"  # リポジトリの直下（`docs` の親）
 OUT_NAME = "index.html"
-RENDERERS = "screen-spec/renderers"  # リポジトリの直下（版の外）
+RENDERERS = "screen-spec/renderers"  # リポジトリの直下（版の外）。`docs/` の下（`<docs>/screen-spec/renderers`。版のディレクトリ `docs/v<n>/` の外）にも置ける（#1542）
 RENDERER_SUFFIX = ".js"
 FORBIDDEN_DIR = "renderers"  # 版のディレクトリの下に在れば止める
 # 埋め込む列（共有の層の列）。ここに無い列（profile の列のうち開発者が決めるもの——パスなど）は埋め込まない
@@ -199,6 +200,16 @@ def generator_version() -> str:
 
 
 # ---- 組み立て
+
+def renderer_dir_of(docs: Path) -> Path:
+    """描き方のファイルのディレクトリ（#1542）。`<docs>/screen-spec/renderers` を `<docs の親>/screen-spec/renderers` より先に探し、片方だけに在ればそれ、
+    どちらにも無ければ根の直下（無いのだから読まれない）。**両方に在れば `Refused`**——どちらかを選ぶと、もう一方が黙って無視される。"""
+    inside, root = docs / RENDERERS, docs.resolve().parent / RENDERERS
+    found = [d for d in (inside, root) if d.exists() or d.is_symlink()]
+    if len(found) == 2:
+        raise Refused(f"描き方のファイルのディレクトリが 2 つある（どちらを正とするか決められない。片方を消す——references/mock.md）:\n  {inside.as_posix()}\n  {root.as_posix()}")
+    return found[0] if found else root
+
 
 def forbidden_renderers(versions) -> list[str]:
     found = []
@@ -461,7 +472,7 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str,
     repo = docs.resolve().parent
     out_dir = repo / OUT_DIR / f"v{number}"
     screens = {row["画面ID"]: row for row in screens_raw.values()}
-    renderer_dir = repo / RENDERERS
+    renderer_dir = renderer_dir_of(docs)
     renderers, used, renderer_warnings = read_renderers(renderer_dir, screens)
     warnings = renderer_warnings + warnings
     provenance = {

@@ -13,6 +13,13 @@ theme:
 hooks:
   - hooks/spec_loop_pages.py
 
+# 版の外の入力を `docs/` の下に置いても、サイトに写さない（MkDocs は `docs/` の下の .md 以外のファイルをそのまま公開する）。
+# デザインの正本の参照（docs/design/sources.csv）と UI モックの描き方の JS（docs/screen-spec/renderers/）は、道具が読む入力で、読み物ではない。
+# パターンは gitignore の書き方で、先頭の `/` は docs/ の直下を指す。
+exclude_docs: |
+  /design/sources.csv
+  /screen-spec/renderers/
+
 markdown_extensions:
   - admonition
   - attr_list

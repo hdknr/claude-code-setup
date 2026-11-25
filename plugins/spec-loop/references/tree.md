@@ -59,7 +59,7 @@ reviews/<YYYY-MM-DD>/        # レビュー会の記録（会ごと。commit す
 ├── mock.html                # 会で見せたモックの写し
 ├── notes.csv                # 会の記録（会で出た指摘と回答のメモ）
 └── triage.json              # 指摘の振り分け（質問の候補か見送り。req-loop が書く）
-design/sources.csv           # デザインの正本の参照（任意。版の外——承認の対象ではない。下の「デザインの正本の参照」）
+design/sources.csv           # デザインの正本の参照（任意。版の外——承認の対象ではない。`docs/design/sources.csv` に置いてもよい。下の「デザインの正本の参照」）
 docs/index.md                # 表紙（下の「ドキュメントのツール」。版の外）
 docs/qa.md                   # Q&A 表の表示用ページ（同上。正本は各版の shared/qa.csv）
 docs/decision-table.md       # 決定表の表示用ページ（同上。正本は各版の shared/decision_table.csv）
@@ -865,9 +865,14 @@ spec/formal/<対象>/
 要求確定と仕様は見た目を確かめる対象にしない（`spec-scope.md` の「見た目」）——その代わりに、デザインの正本がどこにあるかを正本の根の `design/sources.csv` に書き、
 scaffold が Issue の本文に載せ、dev-loop が見た目を確かめる。
 
-- **置き場所は版の外**（正本の根の `design/sources.csv`。`docs/` の外）——**承認の対象ではない**。2 つのサインオフの照合（`signoff-tags.md`）と版の重ね合わせ（`versions.md`）は版のディレクトリの中しか比べないので、
+- **置き場所は版の外**（正本の根の `design/sources.csv`、または `docs/design/sources.csv`。**`docs/` の下でも、版のディレクトリ `docs/v<n>/` の外なら版の外**）——**承認の対象ではない**。2 つのサインオフの照合（`signoff-tags.md`）と版の重ね合わせ（`versions.md`）は版のディレクトリの中しか比べないので、
   デザインの担当が参照（Figma のノード）を差し替えても照合は割れない。描き方の差し替え（screen-spec の `screen-spec/renderers/`）・レビュー会の記録（`reviews/`）と同じく版の外である。
   **版ごとの参照は持たない**——scaffold は今の作業ツリーのファイルを読む。
+  **置き場所の決め方（#1542）**: 探す順は固定で、設定の表にパスを書かない（版の中の設定は版ごとに変わりうる）——**`docs/design/sources.csv` を根の直下の `design/sources.csv` より先に探す**。
+  片方だけに在ればそれを読み、**両方に在れば scaffold は何も作らない（1。どちらを正とするか決められない——片方を消す）**。**根の直下に置いた既存の正本は、何も変えずに今までどおり動く**
+  （本文の段落が出すパスだけが、読んだ場所を指す）。screen-spec の描き方の差し替え（`screen-spec/renderers/`。`docs/screen-spec/renderers/` にも置ける）も同じ探し方である。
+  **MkDocs で `docs/` を公開するなら、この CSV と描き方の JS はサイトに写さない**（MkDocs は `docs/` の下の .md 以外をそのまま公開する）——雛形の `mkdocs.yml` の `exclude_docs` が
+  `/design/sources.csv` と `/screen-spec/renderers/` を外す。**雛形を写した後の正本は `mkdocs.yml` を触らないので、`docs/` の下に置くなら自分で足す**（Figma の URL や案件の JS を公開しない）。
 - **書く人はデザインの担当（か、その指示を受けた開発者）である**——利用者の回答（Q&A 表）でも、spec-loop のスキルが推測で書くものでもない。**任意**——置かなければ何も変わらない。
 - **列**（見出し `対象,参照,メモ`。UTF-8、BOM はあってもよい。1 行 1 参照）:
 

@@ -87,11 +87,12 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **画面の表が無い・どの画面も機能を挙げないなら、契約と本文は #1099 の前と 1 バイトも変わらない**（決まりの正は `references/handoff-issue.md` の「参考資料」と
 `references/tree.md` の「UI モック」）。
 
-**デザインの正本の参照（#1156）**: 正本の根の `design/sources.csv`（版の外。見出し `対象,参照,メモ`）があれば、画面の表がその機能を挙げる画面を持つ機能の本文の `## 参考資料` に、
+**デザインの正本の参照（#1156）**: 正本の根の `design/sources.csv`（版の外。見出し `対象,参照,メモ`）か、`docs/design/sources.csv`（`docs/` の下でも版のディレクトリ `docs/v<n>/` の外なら版の外。#1542）があれば、画面の表がその機能を挙げる画面を持つ機能の本文の `## 参考資料` に、
 印 `**デザインの正本**` で始まる段落と、`全体` の行・その機能を挙げる画面の行（表の並び）を載せる。**本文にだけ載せる**——`scaffold/` の契約・機能のオブジェクト（指紋・v2 以降の変更の判定）には入れない。
 **見出し・列の数・`対象`（`全体` か画面の表の画面ID）・`参照`（空・バッククォート・`\\`・改行）・`メモ`（改行）・組の重複・UTF-8 でないなら 1**——**読むのは本文を作るモード（書く生成・`--dry-run`）で作業中の版の全体を見るときだけ**で、`--check`・`--red-check`（本文を作らない）と、`--upto` で前の版の時点を見るときは読まない。
 行があるのにどの本文にも載らない（画面の表がどの機能も挙げない・どの機能にも挙げられていない画面の行）なら、止めずに知らせる。参照が実在するかは見ない。
-**ファイルが無ければ、契約と本文は #1156 の前と 1 バイトも変わらない**（決まりの正は `references/tree.md` の「デザインの正本の参照」と `references/handoff-issue.md` の「デザインの正本」）。
+**`docs/design/sources.csv` を根の直下より先に探し、両方に在れば 1**（どちらを正とするか決められない。片方だけなら根の直下の正本は #1542 の前と 1 バイトも変わらず、
+本文の段落は読んだ場所のパスを出す）。**ファイルが無ければ、契約と本文は #1156 の前と 1 バイトも変わらない**（決まりの正は `references/tree.md` の「デザインの正本の参照」と `references/handoff-issue.md` の「デザインの正本」）。
 
 **トレースのケース（`trace`。#923）**: ケースに `input`・`expected`・`error` の代わりに `trace` を書くと、形式検査の反例の実行順
 （`calls` の呼び出しと `steps` の段の並び）を実装の口で強制して再現する Red テストを、その機能の Red テストのファイルに足す。
@@ -408,6 +409,8 @@ SCREEN_SEPARATOR = "、"
 # 正本の根の版の外のファイル。画面を持つ機能の本文の `## 参考資料` にだけ載せ、`scaffold/` の契約にも機能のオブジェクトにも入れない。
 # 段落は印 `DESIGN_MARK` で始まり、dev-loop の `references/spec-gap.md` の「デザインの正本」がこの印を見る
 DESIGN_PATH = "design/sources.csv"
+# 同じファイルを `docs/` の下（版のディレクトリ `docs/v<n>/` の外）にも置ける（#1542）——`docs/` の下を根の直下より先に探し、両方に在れば止める
+DESIGN_PATH_IN_DOCS = DOCS + "/" + DESIGN_PATH
 DESIGN_COLUMNS = ("対象", "参照", "メモ")
 DESIGN_WHOLE = "全体"
 DESIGN_MARK = "**デザインの正本**"
@@ -1524,6 +1527,7 @@ class Loaded:
         self.mock: bytes | None = None  # 生成したモック（書く生成は作ったもの、`--check`・`--red-check` は置いてある写し。#1099）
         # デザインの正本の参照（#1156）——`design/sources.csv` の行 [(対象, 参照, メモ)]（表の並び）。本文にだけ載せ、契約にも機能のオブジェクトにも入れない
         self.design: list[tuple[str, str, str]] = []
+        self.design_path = DESIGN_PATH  # 読んだ場所（`docs/design/sources.csv` か根の `design/sources.csv`。本文と知らせる行に出す。#1542）
         self.screen_ids: set[str] = set()  # 重ね合わせた全体の画面の表の画面ID（デザインの正本の `対象` を照らす。#1156）
         self.current = False  # 作業中の版の全体を見ているか（`--upto` が前の版なら False——デザインの正本を読まない。#1156）
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
@@ -1640,11 +1644,24 @@ def check_design(repo: Path, loaded: Loaded) -> tuple[int, list[str]]:
     （版の外のファイルで、前の版の時点の画面の表と照らすと、後で足した画面を「無い」と言う）。"""
     if not loaded.current:
         return 0, []
+    shown, _ = design_source(repo)
+    loaded.design_path = shown or DESIGN_PATH
     problems, loaded.design = read_design(repo, loaded.screen_ids)
     if problems:
-        return 1, problems + [f"デザインの正本の参照（{DESIGN_PATH}。references/tree.md の「デザインの正本の参照」）が決まりに反する。生成しない"]
+        return 1, problems + [f"デザインの正本の参照（{loaded.design_path}。references/tree.md の「デザインの正本の参照」）が決まりに反する。生成しない"]
     loaded.notes += design_notes(loaded)
     return 0, []
+
+
+def design_source(repo: Path) -> tuple[str | None, list[str]]:
+    """デザインの正本の参照を読む場所（#1542）。(正本の根からのパス, 違反の行) を返す。
+
+    **`docs/design/sources.csv`（版のディレクトリ `docs/v<n>/` の外）を、根の直下の `design/sources.csv` より先に探す。** 片方だけに在ればそれ、どちらにも無ければ根の直下の名前
+    （無いのだから読まれない）。**両方に在れば違反**——どちらかを選ぶと、もう一方が黙って無視される（`docs/` に移したのに根に写しが残った形）。"""
+    present = [name for name in (DESIGN_PATH_IN_DOCS, DESIGN_PATH) if (repo / name).exists() or (repo / name).is_symlink()]
+    if len(present) == 2:
+        return None, [f"{DESIGN_PATH_IN_DOCS} と {DESIGN_PATH} の両方に在る——どちらを正とするか決められない（片方を消す。references/tree.md の「デザインの正本の参照」）"]
+    return (present[0] if present else DESIGN_PATH), []
 
 
 def read_design(repo: Path, screens: set[str]) -> tuple[list[str], list[tuple[str, str, str]]]:
@@ -1653,24 +1670,27 @@ def read_design(repo: Path, screens: set[str]) -> tuple[list[str], list[tuple[st
     (違反の行, [(対象, 参照, メモ)]) を返す。**無ければ何も無い**（違反も行も無い——本文は #1156 の前と同じバイト）。
     見出し（`対象,参照,メモ`）・列の数・`対象`（`全体` か、重ね合わせた全体の画面の表の画面ID）・`参照`（空・バッククォート・`\\`・改行）・
     `メモ`（改行）・同じ `対象` と `参照` の組の重複・UTF-8 でない・ファイルでないを違反にする。参照が実在するか・開けるかは見ない。"""
-    path = repo / DESIGN_PATH
+    shown, found_problems = design_source(repo)
+    if found_problems:
+        return found_problems, []
+    path = repo / (shown or DESIGN_PATH)
     if not path.exists() and not path.is_symlink():
         return [], []
     if not path.is_file():
-        return [f"{DESIGN_PATH}: ファイルでない（読めない）"], []
+        return [f"{shown}: ファイルでない（読めない）"], []
     try:
         rows = list(csv.reader(io.StringIO(path.read_bytes().decode("utf-8-sig"), newline="")))
     except (OSError, UnicodeDecodeError, csv.Error) as exc:
-        return [f"{DESIGN_PATH}: 読めない（UTF-8 の CSV でない: {exc}）"], []
+        return [f"{shown}: 読めない（UTF-8 の CSV でない: {exc}）"], []
     if not rows or tuple(cell.strip() for cell in rows[0]) != DESIGN_COLUMNS:
-        return [f"{DESIGN_PATH}: 見出しの行が {','.join(DESIGN_COLUMNS)} でない"], []
+        return [f"{shown}: 見出しの行が {','.join(DESIGN_COLUMNS)} でない"], []
     problems: list[str] = []
     found: list[tuple[str, str, str]] = []
     seen: set[tuple[str, str]] = set()
     for number, fields in enumerate(rows[1:], start=2):
         if not any(cell.strip() for cell in fields):
             continue
-        where = f"{DESIGN_PATH}: {number} 行目"
+        where = f"{shown}: {number} 行目"
         if len(fields) != len(DESIGN_COLUMNS):
             problems.append(f"{where}: 列の数が {len(fields)}（{len(DESIGN_COLUMNS)} のはず）")
             continue
@@ -1721,10 +1741,10 @@ def design_notes(loaded: Loaded) -> list[str]:
     if not loaded.design:
         return []
     if not loaded.screens:
-        return [f"デザインの正本の参照（{DESIGN_PATH}）に行があるが、画面の表がどの機能も挙げない——どの Issue の本文にも載らない"
+        return [f"デザインの正本の参照（{loaded.design_path}）に行があるが、画面の表がどの機能も挙げない——どの Issue の本文にも載らない"
                 "（載るのは画面を持つ機能だけ。references/tree.md の「デザインの正本の参照」）"]
     linked = {screen for found in loaded.screens.values() for screen, _, _ in found}
-    return [f"デザインの正本の参照（{DESIGN_PATH}）の画面 {target} は、画面の表でどの機能にも挙げられていない——この行（{ref}）はどの Issue の本文にも載らない"
+    return [f"デザインの正本の参照（{loaded.design_path}）の画面 {target} は、画面の表でどの機能にも挙げられていない——この行（{ref}）はどの Issue の本文にも載らない"
             for target, ref, _ in loaded.design if target != DESIGN_WHOLE and target not in linked]
 
 
@@ -3252,7 +3272,8 @@ def references(change: Change, loaded: Loaded) -> list[str]:
         lines += ["", f"（`{mock}` は scaffold の書く生成が screen-spec の `{MOCK_SCRIPT}` で作り、commit しない——写しは `{OUT_DIR}/` の契約である。）", ""]
         design = design_rows(loaded, change.feature["id"])
         if design:
-            lines += [REFS_DESIGN, ""]
+            # 根の直下なら #1156 のままの 1 文字も変わらない段落。`docs/` の下ならパスだけ差し替える（#1542）
+            lines += [REFS_DESIGN.replace(f"`{DESIGN_PATH}`", f"`{loaded.design_path}`", 1), ""]
             for target, ref, memo in design:
                 label = DESIGN_WHOLE if target == DESIGN_WHOLE else "画面 `" + target + "`"
                 lines.append(f"- {label}: `{ref}`" + (f"（{memo}）" if memo else ""))

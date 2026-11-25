@@ -214,6 +214,13 @@ CASES: list[tuple[str, dict, object, list[str], int, str | None, str]] = [
     ("no-renderers", with_(base_files(), {"screen-spec/renderers/S-008.js": None, "screen-spec/renderers/S-999.js": None,
                                           "screen-spec/renderers/S-005.js": None,
                                           "screen-spec/renderers/README.txt": None}), "git", [], 0, "build/mock/v2/index.html", "書いた:"),
+    # 描き方のファイルを `docs/` の下（版の外）に置く（#1542）——根の直下に置いたときと同じに埋め込む
+    ("renderers-in-docs", with_(base_files(), {**{f"screen-spec/renderers/{n}": None for n in ("S-008.js", "S-999.js", "S-005.js", "README.txt")},
+                                               "docs/screen-spec/renderers/S-008.js": RENDERER,
+                                               "docs/screen-spec/renderers/S-999.js": "ctx.root.textContent = 'x';\n",
+                                               "docs/screen-spec/renderers/S-005.js": "var broken = ;\n",
+                                               "docs/screen-spec/renderers/README.txt": "メモ\n"}),
+     "git", [], 0, "build/mock/v2/index.html", "書いた:"),
     ("path-column", with_(base_files(), {
         "docs/v1/" + DATA + "screens.csv": "\n".join(line + ("," + (SECRET_PATH if i else "パス") if line else "")
                                                      for i, line in enumerate(V1_SCREENS.split("\n"))),
@@ -253,6 +260,8 @@ CASES: list[tuple[str, dict, object, list[str], int, str | None, str]] = [
      "git", [], 1, None, "描き方のファイルを版の中に置いている"),
     ("renderers-in-later-version", with_(base_files(), {"docs/v2/renderers/S-001.js": "ctx.root.textContent='x';\n"}),
      "git", ["--upto", "1"], 1, None, "描き方のファイルを版の中に置いている"),
+    ("renderers-in-both", with_(base_files(), {"docs/screen-spec/renderers/S-008.js": RENDERER}),
+     "git", [], 1, None, "描き方のファイルのディレクトリが 2 つある"),
     ("tables-missing", with_(base_files(), {"docs/v1/" + DATA + "transitions.csv": None, "docs/v2/" + DATA + "transitions.csv": None,
                                             "docs/v2/removed.csv": None}),
      "git", [], 1, None, "画面の表が揃っていない"),
@@ -608,7 +617,7 @@ def case_problems(case, result: dict) -> list[str]:
         if (how == "dirty") != ("未コミットの変更あり" in meta.get("tables", "")):
             problems.append(f"未コミットの変更の印が違う: {meta.get('tables')!r}")
         if data.get("renderers"):
-            last = git(repo, "log", "-1", "--format=%H", "--", "screen-spec/renderers")
+            last = git(repo, "log", "-1", "--format=%H", "--", "screen-spec/renderers", "docs/screen-spec/renderers")
             if meta.get("renderers") != f"コミット {last}":
                 problems.append(f"描き方のファイルの印が違う: {meta.get('renderers')!r}（期待 コミット {last}）")
         elif meta.get("renderers") != "差し替え無し":
@@ -628,21 +637,24 @@ def case_problems(case, result: dict) -> list[str]:
     if "T-004" in transitions and (branch.get("条件") != "入力に確認の要る値があるとき" or branch.get("根拠") != "F-002"):
         problems.append(f"D- を外した条件・根拠が {branch.get('条件')!r}・{branch.get('根拠')!r}")
     # M11 描き方の差し替え
-    has_renderer = "screen-spec/renderers/S-008.js" in files and upto >= 2
+    def placed(file: str) -> bool:  # 根の直下か `docs/` の下（#1542）に在るか
+        return any(f"{prefix}screen-spec/renderers/{file}" in files for prefix in ("", "docs/"))
+
+    has_renderer = placed("S-008.js") and upto >= 2
     if has_renderer != ('window.screenSpecRenderers["S-008"]' in page):
         problems.append("描き方のファイルの埋め込みが違う")
     if has_renderer and ("<\\/script><\\!-- 閉じない -->" not in page):
         problems.append("描き方のファイルの </script・<!-- を閉じない形にしていない")
     expected_scripts = 3 + len([k for k in data.get("renderers", [])])
-    if data.get("renderers") != sorted(k for k in ("S-005", "S-008") if f"screen-spec/renderers/{k}.js" in files and k in screens):
+    if data.get("renderers") != sorted(k for k in ("S-005", "S-008") if placed(f"{k}.js") and k in screens):
         problems.append(f"埋め込んだ描き方の一覧が違う: {data.get('renderers')}")
     if page.count("</script>") != expected_scripts:
         problems.append(f"</script> が {page.count('</script>')} 回（埋め込みで閉じている）")
     if 'window.screenSpecRenderers["S-999"]' in page:
         problems.append("表に無い画面の描き方を埋め込んだ")
-    if "screen-spec/renderers/S-999.js" in files and "画面 S-999 が表に無いので埋め込まない" not in result["stdout"]:
+    if placed("S-999.js") and "画面 S-999 が表に無いので埋め込まない" not in result["stdout"]:
         problems.append("表に無い画面の描き方の警告が無い")
-    if "screen-spec/renderers/README.txt" in files and "README.txt: 描き方のファイル" not in result["stdout"]:
+    if placed("README.txt") and "README.txt: 描き方のファイル" not in result["stdout"]:
         problems.append(".js でないファイルの警告が無い")
     # M10 散文の節へのリンク（removed.csv で消した仕様書は指さない）
     if name == "removed" and "S-003" in data.get("documents", {}):
@@ -666,6 +678,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("D- を外さない", "        if not self.internal.search(value):\n            return value\n",
      "        return value\n", "good"),
     ("版の中の描き方で止めない", "    if forbidden:\n", "    if False:\n", "renderers-in-version"),
+    ("docs の下を探さない", "    inside, root = docs / RENDERERS, docs.resolve().parent / RENDERERS\n", "    inside, root = docs / 'no-such-dir', docs.resolve().parent / RENDERERS\n",
+     "renderers-in-docs"),
+    ("両方に在っても止めない", "    if len(found) == 2:\n", "    if False:\n", "renderers-in-both"),
     ("--upto より後の版の描き方を見ない", "    forbidden = forbidden_renderers(versions)\n",
      "    forbidden = forbidden_renderers(versions[:number])\n", "renderers-in-later-version"),
     ("許可の外の列も埋め込む", "for column in SHOWN[name] if column in row}", "for column in row}", "path-column"),
