@@ -79,10 +79,10 @@ main へのマージ → GitHub Pages の再ビルド。プラグインの中身
 | 項目 | 書くもの |
 | --- | --- |
 | 旧 | 周の base の SHA `a06a460f5b0a63d917b6311c0672235be01afe84` |
-| 新 | `f4effc21`（成果物の最後のコミット。以後は計画ファイルだけを変える） |
+| 新 | `3b24bbc4`（成果物の最後のコミット。以後は計画ファイルだけを変える）。最初は `f4effc21` で回し、1 パス目の直し `3b24bbc4` の後に新の側を回し直した（旧の木は変わらないので旧の出力は使い回す。2 パス目の V2-1・CR2-1） |
 | 入力の出どころ | 生成（手で選んだ 3 つの形）: S0 = 壊さない木、S1 = テストの写しの末尾で変異の一覧を書き換えた木（プールの 4 群とプールの外の 1 群で、変異を等価にする・壊す箇所を消す）、S2 = 本体 `build-proposal.py` を 1 か所壊した木。旧（base の木）・新の既定・新の `--jobs 1` の 3 通りで、計 9 回 |
 | 正規化した項目 | 一時ディレクトリのパス（`tempfile` が毎回違う名前を振る。比較に関係ない）。`run.py` は完全なパスだけを置き換え、`output[-300:]` で頭の切れたパスの `proposal-test-<8 文字>` を残したので、`compare.py` で `proposal-test-` の後ろ 8 文字だけを置き換えて比べ直した（Verifier 1 パス目の反証 2。外すと 4 組が「差分あり」で、違いはその 8 文字だけ） |
-| 結果 | 6 組（S0・S1・S2 × 新の既定・`--jobs 1`）を旧と比べ、差分 0 組（`compare.py`）。旧の失敗の行は S0 0・S1 7（プールの 4 群・届かない変異・プールの外の LINK）・S2 2。陽性対照: 指摘 CR1-1 の再現（worktree 型の試料の確かめを落とす写し）で、`f4effc21` の新は旧と失敗の行の順が違った（差分を検出）。Verifier は新の写しで宣言順を逆にして順の違いが出ることを独立に確かめた |
+| 結果 | `3b24bbc4` で回し直した 6 組（S0・S1・S2 × 新の既定・`--jobs 1`。`diff2/run_new.py`）を旧と比べ、差分 0 組（`compare.py`）。`f4effc21` の 6 組も差分 0 組。旧の失敗の行は S0 0・S1 7（プールの 4 群・届かない変異・プールの外の LINK）・S2 2。陽性対照: 指摘 CR1-1 の再現（worktree 型の試料の確かめを落とす写し）で、`f4effc21` の新は旧と失敗の行の順が違った（差分を検出）。Verifier は新の写しで宣言順を逆にして順の違いが出ることを独立に確かめた |
 | 回した場所 | リポジトリの外（`git archive` で取り出した木。scratchpad） |
 
 ### 承認済みの変更の一覧
@@ -129,12 +129,27 @@ main へのマージ → GitHub Pages の再ビルド。プラグインの中身
 - 1 パス目の指摘対応の起点: `2b0b0612a172e55ee0cff917269ce77b3501cceb`
 - 関門: Verifier 1 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1555-verifier-1-20261125T095959Z.md`）・/code-review 1 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1555-code-review-1-20261125T095959Z.md`）の結果: Verifier 1 反証 3（受入基準を破ると示したもの 0）・/code-review 1 指摘 6（nit）。採否は下の表。直し `3b24bbc4`（check-all 失敗 0）
 - 割り目（手順 6 の 2 パス目の前）: 割らない（cruise の周）。残りは Verifier 2 パス目と /code-review 2 パス目
-- 関門: Verifier 2 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1555-verifier-2-20261125T110322Z.md`）・/code-review 2 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1555-code-review-2-20261125T110322Z.md`）を起こした（終点 `3b24bbc4`）
+- 関門: Verifier 2 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1555-verifier-2-20261125T110322Z.md`）・/code-review 2 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/e26910d5-e27d-462f-bd16-ccb8bf1b1046/scratchpad/gate-1555-code-review-2-20261125T110322Z.md`）の結果（終点 `e807882f`）: Verifier 2 反証 1（受入基準を破るもの 0）・/code-review 2 指摘 4（nit）。採否は下の表。成果物の直しは無い（差分テストの回し直しと計画だけ）
+- 狭いパス: 該当なし（2 パス目で直した成果物の行が 0 件）
 
 ```dev-loop-gates
 周の base: a06a460f5b0a63d917b6311c0672235be01afe84
 関門: Verifier 1 2b0b0612a172e55ee0cff917269ce77b3501cceb 反証=3
 関門: /code-review 1 2b0b0612a172e55ee0cff917269ce77b3501cceb 指摘=6
+関門: Verifier 2 e807882fe01dd3c0ee91000f2ac34ce8dc58bcf3 反証=1
+関門: /code-review 2 e807882fe01dd3c0ee91000f2ac34ce8dc58bcf3 指摘=4
+関門: 狭いパス 該当なし
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+受入基準: A7 満たす
+受入基準: A8 満たす
+受入基準: A9 満たす
+受入基準: A10 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
 
 ## 既知の限界・決着済みの論点
@@ -158,6 +173,34 @@ main へのマージ → GitHub Pages の再ビルド。プラグインの中身
 | V1-1 | A7 を守る回帰テストがリポジトリに無い | 示せない（CI が緑のままなのは仮定） | 無し | 残課題 |
 | V1-2 | 差分テストの正規化が切れたパスを残す | 示せる（`bg-diff.txt` の 4 組） | A1（確かめ方） | 直す（実験の側。`compare.py`。成果物の差分なし） |
 
+### 2 パス目の指摘の採否（直す線: 既定）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V2-1／CR2-1 | 差分テストの「新」が直す前の `f4effc21` のままで、今の成果物 `3b24bbc4` に当て直していない | 示せる（`git diff f4effc21 -- scripts/` が空でない） | A1（確かめ方） | 直す（実験の側。`3b24bbc4` で新の 6 組を回し直した。成果物の差分なし） |
+| CR2-2 | `plan` の docstring と `jobs`・`run_jobs` の型注釈が、3 つ組を返す `no_git_job` に合っていない | 示せない（将来の書き換えの仮定） | 無し | 残課題 |
+| CR2-3 | `CLAUDE.md`・docstring の「既定と上限 4」は CPU が 4 未満なら事実でない（`min(4, CPU)`） | 示せない（手元は 28 コア。`test-scaffold.py` の既存の行も同じ言い回し） | 無し | 残課題 |
+| CR2-4 | 周のコミットに `Fixes #1555` が無い | 示せる（コミットの本文） | 無し | 残課題（PR 本文が `Fixes #1555` を持つ。squash のときに親が本文に残す） |
+
 ## 経験の還元（手順 8）
 
 - この周の起票: 1 件（仕様の穴の確認の Issue #1561。不在の線 `仕様の穴 = 推奨で決めて起票`）
+
+効いた行（採否の表の指摘 1 件ごと。V1-1・V1-2・V1-3・CR1-1・CR1-2・CR1-3・CR1-4・CR1-5・CR1-6・V2-1・CR2-1・CR2-2・CR2-3・CR2-4 の順）:
+
+- 効いた行: V-11
+- 効いた行: V-11
+- 効いた行: V-02
+- 効いた行: R-02
+- 効いた行: R-01
+- 効いた行: R-01
+- 効いた行: R-04
+- 効いた行: なし
+- 効いた行: なし
+- 効いた行: V-11
+- 効いた行: R-01
+- 効いた行: R-02
+- 効いた行: R-02
+- 効いた行: なし
+
+学び: 焼き戻す学びなし（切り分けの層: 試料（`CASES`）の並列化を Issue の範囲の外にしたので短縮が 2 割にとどまった——親 Issue の書き方で「試料も含める」を分けて書く余地はあるが、仕事の切り方の失敗ではない）
