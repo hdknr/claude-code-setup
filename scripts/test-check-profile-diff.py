@@ -12,6 +12,7 @@
 1. **#1457 の受入基準 1**——2 つのタグの profile と `infra.csv` で、`profile の行` が指す行のうち変わった・消えた・新しい版でリンクの切れた行が、表の行・項目・ID・種類つきで
    候補として名指しされ（1）、指していない行の変化と足した行は名指されない。候補の行に Q&A の番号が無い。走らせた前後で正本と clone が変わらない。
 2. **新しい版の決め方**——`--new`・profile を持つタグのうち版の順（`v10` は `v9` より後ろ）が最も後ろのもの・profile を持たないタグを数えない・`タグ`／`確かめたタグ` と同じなら比べない。
+   `v1.0-lts` の設定に同じ数字の末尾の無い `v1.0` だけが後ろに在る形（#1537）は、`v1.0` を新しい版に数えて 1 を返すことを固定し、外し方（`確かめたタグ`・`--new`）で 0 になることも見る。
    名前の付け方ごとの試料（#1501・#1515）のうち、ほかのタグと混ざると何を数えたかが見えなくなるもの（`v1.0-lts` の系列・`v2.0.0-beta` の系列）は、その系列のタグだけを置いた別の clone で当てる。
 3. **止まり方**——設定の違反は clone を読む前に 1・古い版に無い ID は 1・profile を持つタグが無い・古い版に層が無い・新しい版の層を読めないは 4・新しい版に層が無ければ全部「消えた」・
    設定も値も無ければ 0。`--upto`・`--project`・`--clone` を渡す。
@@ -117,6 +118,13 @@ CASES: list[tuple[str, dict, list[str], int, tuple[str, ...], tuple[str, ...]]] 
     ("区切りが続く版", with_(OK, settings=settings("v1.0-lts2")), [], 0, ("設定のタグ v1.0-lts2 より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
     ("区切りを持たない版", with_(OK, settings=settings("w1")), [], 1, ("タグ w1 → w1.1", "起票の候補 4 件"), ()),
     ("接頭辞は文字どおり", with_(OK, settings=settings("r.e1")), [], 0, ("設定のタグ r.e1 より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
+    # #1537（#1536 の選び (a)）: 綴りがプレリリースか版の線かは見分けないので、v1.0-lts の設定は同じ数字の末尾の無い v1.0 を新しい版に数える。
+    # 外し方は 2 つ——設定の `確かめたタグ` に v1.0 を書く・`--new` で v1.0-lts を名指す
+    ("線の設定と同じ数字のリリース", with_(OK, settings=settings("v1.0-lts")), ["--clone", "{clone_lts_ga}"], 1, ("タグ v1.0-lts → v1.0", "起票の候補 4 件"), ()),
+    ("リリースを確かめたタグで外す", with_(OK, settings=settings("v1.0-lts", extra="確かめたタグ,v1.0\n")), ["--clone", "{clone_lts_ga}"], 0,
+     ("新しい版 v1.0 は設定の確かめたタグと同じ。比べない",), ("起票の候補: ",)),
+    ("リリースを --new で外す", with_(OK, settings=settings("v1.0-lts")), ["--clone", "{clone_lts_ga}", "--new", "v1.0-lts"], 0,
+     ("新しい版 v1.0-lts は設定のタグと同じ。比べない",), ("起票の候補: ",)),
     ("数字を持たないタグ", with_(OK, settings=settings("stable")), [], 0, ("設定のタグ stable より後ろの、名前の形が同じタグが無い。比べない",), ("起票の候補: ",)),
     ("--new で名指す", OK, ["--new", "v2"], 1, ("タグ v1 → v2", "起票の候補 4 件"), ("v10",)),
     ("--new がタグと同じ", OK, ["--new", "v1"], 0, ("新しい版 v1 は設定のタグと同じ。比べない",), ("起票の候補: ",)),
@@ -282,6 +290,8 @@ SERIES_BETA = [("v2.0.0-beta", LAYER_A), ("v2.0.0", LAYER_A), ("v2.1.0", LAYER_B
 # ベータから正式版（同じ数字・末尾の無い v2.0.0 だけが後ろ）と、数字で前の末尾の無い版だけを持つ系列
 SERIES_GA = [("v2.0.0-beta", LAYER_A), ("v2.0.0", LAYER_B)]
 SERIES_OLD = [("v1.9.0", LAYER_B), ("v2.0.0-beta", LAYER_A)]
+# #1537: 版の線（-lts）をリリースから切った付け方——設定のタグ v1.0-lts に、同じ数字の末尾の無い前のリリース v1.0 だけが後ろに在る
+SERIES_LTS_GA = [("v1.0-lts", LAYER_A), ("v1.0", LAYER_B)]
 
 
 def lay_out(plugins: Path, spec_loop: Path, source: str | None = None) -> Path:
@@ -429,9 +439,10 @@ def main() -> int:
         clone_beta = make_series(tmp / "profile-beta", env, SERIES_BETA)
         clone_ga = make_series(tmp / "profile-ga", env, SERIES_GA)
         clone_old = make_series(tmp / "profile-old", env, SERIES_OLD)
-        tokens = {"clone": str(clone), "clone_lts": str(clone_lts), "clone_beta": str(clone_beta), "clone_ga": str(clone_ga), "clone_old": str(clone_old)}
+        clone_lts_ga = make_series(tmp / "profile-lts-ga", env, SERIES_LTS_GA)
+        tokens = {"clone": str(clone), "clone_lts": str(clone_lts), "clone_beta": str(clone_beta), "clone_ga": str(clone_ga), "clone_old": str(clone_old), "clone_lts_ga": str(clone_lts_ga)}
         platform = lay_out(tmp / "plugins", spec_loop)
-        clones = (clone, clone_lts, clone_beta, clone_ga, clone_old)
+        clones = (clone, clone_lts, clone_beta, clone_ga, clone_old, clone_lts_ga)
         before_clone = [tip.clone_state(c, env) for c in clones]
         for index, (name, files, args, _, _, _) in enumerate(CASES):
             result = run_case(platform, tmp / f"case{index}", files, args, tokens, env)
