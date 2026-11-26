@@ -114,7 +114,7 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は mkdocs �
 
 関門（1 パス目）:
 
-- 1 パス目の起点（指摘対応の 0 行判定の起点。先に当てた関門に渡した時点の HEAD）: `fc4763911d971efee21aed2d75e5f1a603361588`
+- 1 パス目の起点（指摘対応の 0 行判定の起点。先に当てた関門に渡した時点の HEAD）: `a719a74842596364108bb494abcffe4844765622`（計画ファイルだけのコミット。成果物は fc476391 と同じ）
 - Verifier 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-verifier-1-20261126T005501Z.md`（起動済み。結果は未着）
 - /code-review 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-code-review-1-20261126T005501Z.md`（起動済み。結果は未着）
 
@@ -131,3 +131,5 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は mkdocs �
 - 間引いた後の全体の時間は受入基準にしない（未証明。上）。
 
 ## 手順 8
+
+- この周の起票: 1 件（#1566——仕様の穴を推奨で決めた確認の Issue）
