@@ -82,6 +82,11 @@ Issue 本文（外部入力。作者は利用者本人）から読んだ要件: 
 - 1 パス目の指摘対応: `2c625402`（`test-check-screens.py` に試料 4・変異 2。`test-check-screens.py` 緑——試料 217・変異 177。新しい 2 変異は、
   直す前の試料では殺せず（両報告の実測）、足した試料でだけ殺せ、影響しない試料では期待どおりに振る舞う（陽性対照を著者が当てた——変異が落ちて殺したことにはなっていない））。
   起点 `16af6c11` からの成果物の差分は 0 行でない → **2 パス目を回す**（手順 5 の当て直しと /code-review 2 パス目の両方が残る）
+- 1 パス目の指摘対応の後に check-all 緑（21 本を回し 85 本はキャッシュ・失敗 0）
+- 割り目（手順 6・2 パス目の前）: `AskUserQuestion` に 300 秒応答なし → 「このまま続ける」で進めた（2026-11-26）
+- 2 パス目を起動（HEAD は下の計画ファイルのコミット。成果物は `2c625402`）——起動済みで結果はまだ:
+  - Verifier 2 パス目（当て直し）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1571/d1c39207-5c62-42b2-b16a-0ef081d94472/scratchpad/gate-1571-verifier-2-20261126T081338Z.md`
+  - /code-review 2 パス目: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1571/d1c39207-5c62-42b2-b16a-0ef081d94472/scratchpad/gate-1571-code-review-2-20261126T081338Z.md`
 - 交絡: 実験なし（変異の陽性対照は上）
 
 ```dev-loop-gates
