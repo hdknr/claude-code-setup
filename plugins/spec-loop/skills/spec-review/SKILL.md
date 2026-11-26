@@ -49,9 +49,10 @@ description: "仕様レビューのループを 1 回分進める。確定した
   `Agent` の `model` 引数を**毎回明示する**——省略すると親と同じモデルを継承し、盲点を共有する。
   判定役の定義は `model` を持たない（呼び出す側が選ぶ）。**要件は「違うティアであること」で、下げることではない。**
   **書き手が Opus なら、判定役を `fable` に上げてもよい（任意）。書き手が Fable なら、判定役は Fable 以外にする**（同じティアは盲点を共有する）。
-  上げて得られるものは測った範囲までしか言えない——Formal Checker で 1 回だけ比べ、見つけた欠陥の数は Sonnet と同じで、
-  違いは定義が求める手続き（陽性対照・図の対応）を省かなかったこと、トークンは 1.8 倍・時間は 4 倍だった
-  （[#1586](https://github.com/hdknr/claude-code-setup/issues/1586)。Red Team・Domain Checker では測っていない）。
+  上げて得られるものは測った範囲までしか言えない——Formal Checker で、欠陥を仕込んだ小さい試料に 1 回だけ比べた。
+  Fable は仕込んだ欠陥の 1 件を Sonnet より深く（両方の順で）挙げ、仕込んでいない曖昧さも 1 件多く挙げ、
+  定義が求める手続き（決定表の陽性対照・図の対応・モデルの全文）を省かなかった。トークンは 1.8 倍・時間は 4 倍だった
+  （[#1586](https://github.com/hdknr/claude-code-setup/issues/1586)。欠陥の無い仕様（反例なしを出す経路）と Red Team・Domain Checker では測っていない）。
 - **`subagent_type` は名前空間つきで指定する**——`spec-loop:red-team`・`spec-loop:domain-checker`・
   `spec-loop:formal-checker`。名前空間を落とすと解決に失敗し、**書き込みツールを持つ汎用の agent に
   黙って落ちることがある**。**起動後、どの agent が動いたかを確かめる。**
