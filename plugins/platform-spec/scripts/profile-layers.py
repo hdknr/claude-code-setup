@@ -9,7 +9,7 @@ usage: python3 profile-layers.py <architecture|dev-loop> <docs ディレクト�
 - **`architecture`**——アーキテクチャの層を、Domain Checker に渡す照合先の一覧（Markdown）にして標準出力に出す（本文の読み方のコマンドに手元の clone のパスが入る）。
 - **`dev-loop`**——開発の進め方の層から、`.claude/dev-loop.md` の雛形と、正本の `CLAUDE.md` に書く `impl_module` の行を標準出力に出す（手元のパスを書かない）。
 - **写さない**——設定の読み方・spec-loop の見つけ方と版の確かめ・spec-loop の重ね方は同じ場所の `check-infra-profile.py` を、
-  タグの読み出し・層の表・リンクの検査は spec-loop の `external-profile.py` の `find_clone`・`resolve_tag`・`read_layer`・`check_links` を読み込む。
+  タグの読み出し・層の表・リンクの検査は spec-loop の `external-profile.py` の `find_clone`・`resolve_tag`・`read_layer`・`check_links`・`list_files`・`_safe_rel` を読み込む。
 - **読むだけ**——ファイルを 1 つも書かない（読み込むスクリプトの `__pycache__` も）。出したものをどこに置くかは利用者が決める。
 - 標準ライブラリと `git` だけを使う。
 
@@ -35,13 +35,15 @@ usage: python3 profile-layers.py <architecture|dev-loop> <docs ディレクト�
 - 開発の進め方の層の `項目` が語彙の外なら 4
 - 1 行までの項目（`歯止め`・`impl_module`）が 2 行あれば 4
 - `impl_module` の `値` が空なら 4
-- 出力に載せる列（どの層のどの列も）が改行を含めば 4
+- 出力に載せる列（どの層のどの列も）が改行（`str.splitlines()` が行を分ける文字の全部）を含めば 4
 - `値` がバッククォートを含めば 4（雛形のコードスパンを壊さない）
 - 照合先の一覧に、行ごとに ID・観点・要約・本文の参照と、タグの時点の本文を読むコマンドを載せる
 - 雛形の先頭に印 `<!-- platform-spec: 開発の進め方 <リポジトリ> <profile> <タグ> -->` を置く
 - 雛形の行を `- <ID>: <要約>（値: `<値>`）——本文: <リポジトリ>@<タグ>:<パス>` の形で、項目の節の下に置く
 - 雛形に手元の clone のパスを書かない
 - 本文の参照のパスは、百分率の符号化を戻した名前がタグの時点に在れば、戻した名前で出す（`check_links` が当てたほうの名前）
+- 本文の参照のパスは `check_links` と同じ `_safe_rel` で正規化して出す（`./`・`//`・`x/../`）
+- 本文の参照の節は、百分率の符号化を戻して出す（パスが素でも）
 - `impl_module` の行を、雛形の後ろの正本の `CLAUDE.md` に書く行として分けて出す
 - 切れたリンクの行は出力に残して理由を書き、1
 - `--upto` で前の版の時点の設定を読む
@@ -144,7 +146,7 @@ class Layers(base.Checker):
     def rows_shape(layer_name: str, rows: dict[str, dict[str, str]], where: str) -> None:
         for rid, row in rows.items():
             for column, value in row.items():
-                if "\n" in value or "\r" in value:
+                if len((value + "x").splitlines()) > 1:  # str.splitlines() が分ける文字の全部（\n・\r・U+0085・U+2028 など）
                     raise Stop(f"{where}: {rid} の {column} が改行を含む")
         if layer_name == ARCH:
             for rid, row in rows.items():
@@ -165,17 +167,22 @@ class Layers(base.Checker):
                 raise Stop(f"{where}: {rid} の 値 が空（{IMPL_MODULE} は値を空にしない）")
 
     @staticmethod
-    def reference(repo: str, tag: str, link: str, files: frozenset = frozenset()) -> str:
+    def reference(repo: str, tag: str, link: str, files: frozenset = frozenset(), safe_rel=None) -> str:
         link = link.strip()
         if not link:
             return "なし"
         if SCHEME_RE.match(link):
             return link
-        path, sharp, anchor = link.partition("#")
-        path = path.lstrip("/")
-        if path not in files and unquote(path) in files:
-            path, anchor = unquote(path), unquote(anchor)  # check_links と同じく、符号化を戻した名前がタグの時点に在ればそれを指す
-        return f"{repo}@{tag}:{path}{sharp}{anchor}"
+        raw, sharp, anchor = link.partition("#")
+        norm = safe_rel or (lambda path: path)
+        path = norm(raw.lstrip("/"))  # check_links と同じく正規化する（`./`・`//`・`x/../`）
+        if path is not None and path not in files:
+            decoded = norm(unquote(raw).lstrip("/"))
+            if decoded in files:
+                path = decoded  # check_links と同じく、符号化を戻した名前がタグの時点に在ればそれを指す
+        if path is None:
+            path = raw.lstrip("/")  # リポジトリの外を指す（check_links が切れたリンクとして名指す）
+        return f"{repo}@{tag}:{path}{sharp}{unquote(anchor)}"  # 節は見出しの id（check_links は戻した形でも照らす）
 
     def run(self, command: str) -> int:
         try:
@@ -212,7 +219,7 @@ class Layers(base.Checker):
                  f"本文は手元の clone のタグの時点を読む: `git -C {shlex.quote(str(clone))} show {commit}:<パス>`（タグ {tag} のコミット）。",
                  "**この一覧には手元のパスが入るので、正本の版の外に置き、commit しない。**", ""]
         for rid, row in layer.rows.items():
-            ref = self.reference(repo, tag, row["リンク"], self.tag_files)
+            ref = self.reference(repo, tag, row["リンク"], self.tag_files, self.ext._safe_rel)
             line = f"- {rid}（{row['観点'].strip()}）: {row['要約'].strip()}——本文: {ref}"
             if rid in broken:
                 line += f"（リンクが切れている: {broken[rid]}）"
@@ -233,7 +240,7 @@ class Layers(base.Checker):
             body = []
             for rid, row in rows:
                 value = row["値"].strip()
-                line = f"- {rid}: {row['要約'].strip()}{f'（値: `{value}`）' if value else ''}——本文: {self.reference(repo, tag, row['リンク'], self.tag_files)}"
+                line = f"- {rid}: {row['要約'].strip()}{f'（値: `{value}`）' if value else ''}——本文: {self.reference(repo, tag, row['リンク'], self.tag_files, self.ext._safe_rel)}"
                 if rid in broken:
                     line += f"（リンクが切れている: {broken[rid]}）"
                 body.append(line)

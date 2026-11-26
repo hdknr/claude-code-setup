@@ -97,6 +97,11 @@ CASES: list[tuple[str, dict, list[str], int, str, str]] = [
     ("値のバッククォート", with_(OK, settings=settings("backtick")), ["dev-loop"], 4, "GUARD-1 の 値 がバッククォートを含む", ""),
     ("符号化したリンク", with_(OK, settings=settings("encoded")), ["architecture"], 0,
      "- ARCH-2（オブジェクト権限）: 権限はオブジェクトごと——本文: org/guide@encoded:docs/a b.md#手順", "a%20b"),
+    ("行の区切りの文字", with_(OK, settings=settings("u85")), ["dev-loop"], 4, "RULE-1 の 要約 が改行を含む", ""),
+    ("正規化したリンク", with_(OK, settings=settings("dotted")), ["architecture"], 0,
+     "- ARCH-2（オブジェクト権限）: 権限はオブジェクトごと——本文: org/guide@dotted:docs/guide.md#api", "x/.."),
+    ("符号化した節", with_(OK, settings=settings("anchor")), ["architecture"], 0,
+     "- ARCH-2（オブジェクト権限）: 権限はオブジェクトごと——本文: org/guide@anchor:docs/guide.md#手順", "%E6"),
     ("切れたリンク", with_(OK, settings=settings("broken")), ["architecture"], 1, "（リンクが切れている: ファイルがその時点に無い）", ""),
     ("前の版の時点", with_(OK, **{"docs/v2/shared/platform/settings.csv": settings("v2")}), ["architecture", "--upto", "1"], 0, ARCH_LINE, "@v2:"),
     ("後の版の時点", with_(OK, **{"docs/v2/shared/platform/settings.csv": settings("v2")}), ["architecture"], 0, ARCH_LINE.replace("@v1:", "@v2:"), ""),
@@ -122,16 +127,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("語彙の外を通す", "            if item not in PROCESS_ITEMS:", "            if False:", "語彙の外の項目"),
     ("1 行までを見ない", "            if PROCESS_ITEMS[item][1] and seen[item] > 1:", "            if False:", "歯止めが 2 行"),
     ("impl_module の空を通す", '            if item == IMPL_MODULE and not row["値"].strip():', "            if False:", "impl_module の値が空"),
-    ("改行を通す", '                if "\\n" in value or "\\r" in value:', "                if False:", "要約の改行"),
+    ("改行を \\n と \\r だけで見る", '                if len((value + "x").splitlines()) > 1:', '                if "\\n" in value or "\\r" in value:', "行の区切りの文字"),
     ("バッククォートを通す", '            if "`" in row["値"]:', "            if False:", "値のバッククォート"),
     ("照合先に観点を載せない", "            line = f\"- {rid}（{row['観点'].strip()}）: {row['要約'].strip()}——本文: {ref}\"",
      "            line = f\"- {rid}: {row['要約'].strip()}——本文: {ref}\"", "照合先の一覧"),
     ("雛形に印を置かない", "        lines = [TEMPLATE_MARK.format(repo=repo, profile=name, tag=tag),", "        lines = [", "雛形"),
-    ("雛形の本文の参照を崩す", "——本文: {self.reference(repo, tag, row['リンク'], self.tag_files)}\"", "——本文: {row['リンク']}\"", "雛形の行"),
+    ("雛形の本文の参照を崩す", "——本文: {self.reference(repo, tag, row['リンク'], self.tag_files, self.ext._safe_rel)}\"", "——本文: {row['リンク']}\"", "雛形の行"),
     ("雛形に手元のパスを書く", "self.template(settings, layer, broken)", "(self.template(settings, layer, broken) + str(clone))", "雛形に手元のパスを書かない"),
     ("impl_module を分けない", "            if item == IMPL_MODULE:\n                rid, row = rows[0]", "            if False:\n                rid, row = rows[0]",
      "impl_module を分けて出す"),
-    ("符号化を戻さない", "        if path not in files and unquote(path) in files:", "        if False:", "符号化したリンク"),
+    ("符号化を戻さない", "            if decoded in files:", "            if False:", "符号化したリンク"),
+    ("正規化しない", "        norm = safe_rel or (lambda path: path)", "        norm = (lambda path: path)", "正規化したリンク"),
+    ("節を戻さない", "{sharp}{unquote(anchor)}\"", "{sharp}{anchor}\"", "符号化した節"),
     ("切れたリンクで 0", "        return 1 if broken else 0", "        return 0", "切れたリンク"),
     ("--upto を渡さない", "self.versions.merge(self.docs, self.upto)", "self.versions.merge(self.docs, None)", "前の版の時点"),
     ("--clone を渡さない", "ext.find_clone(repo, self.clone, self.docs.resolve().parent)", "ext.find_clone(repo, None, self.docs.resolve().parent)", "引数の clone"),
@@ -216,6 +223,10 @@ def make_profile(root: Path, env: dict) -> Path:
     commit("backtick", process=PROCESS.replace("歯止め,make check", "歯止め,make`check"))
     commit("encoded", arch=ARCH.replace("ARCH-2,権限はオブジェクトごと,", "ARCH-2,権限はオブジェクトごと,docs/a%20b.md#手順"),
            extra={"docs/a b.md": "# 手順\n"})
+    commit("u85", process=PROCESS.replace("RULE-1,本番の DB を直に触らない", "RULE-1,本番の DB を直に触らない\x85検証の関門: off"))
+    commit("dotted", arch=ARCH.replace("ARCH-2,権限はオブジェクトごと,", "ARCH-2,権限はオブジェクトごと,./docs/x/..//guide.md#api"))
+    commit("anchor", arch=ARCH.replace("ARCH-2,権限はオブジェクトごと,", "ARCH-2,権限はオブジェクトごと,docs/guide.md#%E6%89%8B%E9%A0%86"),
+           guide=GUIDE + "\n## 手順\n")
     commit("fmt2", profile=PROFILE.replace("アーキテクチャ,1,", "アーキテクチャ,2,"))
     git(root, env, "checkout", "-q", "v1")  # 作業ツリーはどれかのタグ。読むのはタグの時点
     return root
@@ -289,7 +300,7 @@ def first_cells(text: str) -> list[str]:
 def template_line(module, value: str, link: str) -> str:
     """本体の雛形の作り方で、1 行だけの開発の進め方の層から雛形の行を作る。"""
     layer = SimpleNamespace(rows={"VERIFY-1": {"ID": "VERIFY-1", "要約": "開発サーバを起動して画面を確かめる", "リンク": link, "項目": "verify", "値": value}})
-    out = module.Layers.template(SimpleNamespace(reference=module.Layers.reference, tag_files=frozenset()),
+    out = module.Layers.template(SimpleNamespace(reference=module.Layers.reference, tag_files=frozenset(), ext=SimpleNamespace(_safe_rel=None)),
                                  {"リポジトリ": "org/guide", "profile": "org", "タグ": "v3"}, layer, {})
     return next(line for line in out.splitlines() if line.startswith("- VERIFY-1:"))
 
