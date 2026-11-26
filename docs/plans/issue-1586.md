@@ -74,7 +74,9 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
 
 ## 関門の進捗（再開点）
 
-- まだ関門に渡していない。
+- 実装を終えた（`d27184a1`。`check-all.py` はこの木で 0 失敗）。まだ関門に渡していない。次は手順 5（Verifier 1 パス目）。
+- 割り目 1（手順 4 の後）: 利用者の選択は「ここで割る」（2026-11-26）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 1586`、手順 5 の Verifier 1 パス目から。
+  試料と測定の報告は scratchpad（`fixture-1586/`・`report-formal-sonnet.md`・`report-formal-fable.md`）にあり、セッションと一緒に消えうる——結果はこのファイルの「測定」に写してある。
 
 ```dev-loop-gates
 周の base: 89561e1158ff0e49510ce1b4e7558d7e2d599fff
