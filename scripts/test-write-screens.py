@@ -264,6 +264,10 @@ CASES: list[tuple] = [
      (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES, {SD + "settings.csv": EXT_SETTINGS, SD + "data/screens.csv": EXT_S_HEAD}, guide()),
     ("explicit-external-bad-form", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org"], 2, "--external 'org' は")], None, [], {}),
     ("explicit-external-on-unset", {"v1": DIR}, [(["init", "--external", "org/guide org v1"], 4, "重ねる組み込みの profile が無い")], None, [], {}, guide()),
+    # #1571: 既定がその列の語彙に無い画面の層は、init も書く前に 4 で止める（check-screens.py の load_external を共有する）
+    ("explicit-external-default-outside-vocab", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4,
+     "種別 list の列 レイアウト の既定 'wide' が")], None, [], {},
+     {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT.replace("list,standard\n", "list,wide\n")}}}),
     ("base-no-clone", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 読めない（"),
         (["init"], 4, "基盤の profile org/guide の org（タグ v1） を読めない"),
