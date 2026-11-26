@@ -27,7 +27,7 @@
 **契約の 13) は #1556（変異の間引き）**——実物の `TESTS` のまま起動の引数を記録し、既定では間引くテスト（`THINNED`）に `--shard 1/4` だけを渡し、
 `--all-mutants` では何も渡さず、ほかの回帰テストの引数はどちらでも変わらないこと、間引いた回だけが間引いたことを見出しと集計に出すことを見る。
 キャッシュの契約は、間引いた回の記録が `--all-mutants` の回に当たらないこと（キーに `--shard` が入る）を、収録の確かめ（`--part registry`）は、
-間引くテストが収録されていて・CI が全シャードを回し・`--shard` を受けることを見る。
+間引くテストが収録されていて・CI が全シャードを回し・ソースに `--shard` の字句があることを見る（**テストが本当に `--shard` を受けるかは字句でしか見ない**）。
 
 **キャッシュ（#1151）の契約は `--part cache`**——**偽のリポジトリ（`git init` した一時ディレクトリ）に本体と hook を写し、子プロセスとして十数回起こす**
 （既存の契約はこのプロセスの中で本体を回し `sys.stdout` を差し替えるので、並列にできない）。入力の種類ごと（中身・一覧・無いファイル・
@@ -651,10 +651,11 @@ def contract_steps(target: Path, root: Path, tag: str):
            bool(others) and all(nested_args("1", t) == [[]] for t in others))
     # 13) 変異の間引き（#1556）——既定では間引くテストに `--shard 1/4` だけを渡し、`--all-mutants` では何も渡さない。
     #     ほかの回帰テストの引数は `--all-mutants` でも変わらない（入れ子は `--jobs` だけ、ほかは無し）。
-    yield ("既定では間引くテストに --shard 1/4 だけを渡す（#1556）",
-           all(nested_args("1", t) == [["--shard", "1/4"]] for t in thinned_tests))
-    yield ("--all-mutants では間引くテストに何も渡さない（#1556）",
-           all(nested_args("1", t, "--all-mutants") == [[]] for t in thinned_tests))
+    # **`--jobs` の 1 と 2 以上の両方で見る**（#1556 の 2 パス目の /code-review——`--jobs 1` だけでは、並列のときだけ間引かない変異が契約を通った）。
+    yield ("既定では間引くテストに --shard 1/4 だけを渡す（--jobs 1 と 4。#1556）",
+           all(nested_args(j, t) == [["--shard", "1/4"]] for j in ("1", "4") for t in thinned_tests))
+    yield ("--all-mutants では間引くテストに何も渡さない（--jobs 1 と 4。#1556）",
+           all(nested_args(j, t, "--all-mutants") == [[]] for j in ("1", "4") for t in thinned_tests))
     yield ("--all-mutants でも、ほかの回帰テストの引数は変わらない（#1556）",
            all(nested_args("1", t, "--all-mutants") == nested_args("1", t) for t in [*others, *nested_tests]))
     thin_names = ", ".join(t for t in load(target, f"{tag}_thin").TESTS if t in thinned_tests)  # 出すのは `TESTS` の順
@@ -1435,7 +1436,8 @@ def test_ci_runs_every_registered_script() -> None:
               " 起動しないワークフローは PR に検査を出さない。")
     # **変異を間引くテスト**（#1556）——`check-all.py` が手元で `--shard` を渡して変異を間引くテストは、PR 側の CI が全部（全シャード）を回す砦になる。
     # 収録していて・CI が全部に数え（上の `both`——無条件のジョブで、シャードの行が 1..N を覆う——で、起動しないワークフローにだけあるのでもない）・テストのソースに `--shard` の字句があるものだけを入れる。
-    # **テストが本当に `--shard` を受けるかは字句でしか見ない**（#1556 の 1 パス目の /code-review）——受けないテストを入れると、契約 9 の「--jobs を受けない回帰テストには何も渡さない」と、既定の回の引数の誤りで赤になる。
+    # **テストが本当に `--shard` を受けるかは字句でしか見ない**（#1556 の 1 パス目の /code-review）——受けないテストを入れても、ここは緑のままでありうる。
+    # 引数を弾くテストなら既定の回が引数の誤り（2）で落ちるが、引数を読まないテストは `--shard` を黙って無視して全件を回し、集計は間引いたと言う（2 パス目の /code-review）。
     # 実物の CI で 1 本のシャードを外すと、上の「引数なしで回している」と一緒にここも赤になる（上の mutation-claim と同じ当て方）。
     thinned = list(getattr(mod, "THINNED", ()))
     check("変異を間引くテストが 1 本以上ある（空振りしない。#1556）", len(thinned) > 0)
