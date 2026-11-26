@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""歯止めと回帰テストを**全部**回す。1 本ずつ選ばせないための入口。
+"""歯止めと回帰テストを**全部**回す。1 本ずつ選ばせないための入口（変異は一部を間引く——下の「手元では、変異の一部を間引く」。#1556）。
 
     python3 scripts/check-all.py                    # base は origin/main を既定で使う
     python3 scripts/check-all.py --base origin/main # 明示する
     python3 scripts/check-all.py --guards-only      # 回帰テストを飛ばす
     python3 scripts/check-all.py --jobs 1           # 直列に回す（既定は CPU の数だけ並列）
+    python3 scripts/check-all.py --all-mutants      # 変異を間引かずに全部回す（既定は THINNED を間引く。#1556）
 
 なぜ必要か（#117 の 1）: #110 の周で、**直前の編集のあと 7 本のうち 2 本しか回さずに
 コミットし、CI を割った**。**落ちたのは回さなかったほう**で、しかも計画ファイルの
@@ -109,6 +110,21 @@
 - **出力**: 当たったものは `  CACHED <名前>` の行（所要時間を出さず、上位にも入れない）。**`OK` に数えない**——集計の
   「N/M 本を回した」から外し、「キャッシュ: K 本」と別に出す。**`--no-cache` で記録を読まずに全部回す**（緑の記録は書く）。
 
+**手元では、変異の一部を間引く**（#1556）。回帰テストの時間の大半は変異テスト（本体を 1 箇所ずつ壊して赤を見る）で、
+変異の数だけ試料を回し直す（#1517 の計測）。
+
+- **間引くのは `THINNED` の回帰テストだけ**——変異の観測を `--shard K/N` で分けられ、**PR 側の CI が全シャード（`1/N`〜`N/N`）を回している**もの
+  （`test-check-all.py` の収録の確かめが、`THINNED` が `TESTS` にあり、`--shard` を受け、CI の行が全シャードを覆うことを見る）。
+  既定ではそれに `--shard THIN_SHARD`（いまは `1/4`）を渡し、**変異のシャードの 1 つだけ**を当てる。ほかの回帰テストの引数は変えない。
+- **全部は PR 側の CI が当てる**——#831・#1151 と同じく、取りこぼしの砦を CI に置く。**手元の緑は変異の全部ではない**ので、間引いた回は
+  集計に `変異を間引いた:` の行を出す（回帰テストを回さない `--guards-only` と、`--all-mutants` の回は出さない）。
+- **`--all-mutants` で間引かずに全部回す**——`THINNED` にも `--shard` を渡さない。
+- **間引いても変えないもの**: テストの中の「守る」の行数と変異の数の照合は、どのシャードでも全件の数で見る（各テストの docstring）。
+  `check-mutation-claims.py` の主張の red のコマンドは、このスクリプトを通らずにテストを直に起こすので間引かれない。
+- **キャッシュのキーに `--shard` が入る**（引数で渡すので）——間引いた回の緑の記録は、`--all-mutants` の回に当たらない（逆も）。
+- **どの変異を間引くかは固定である**（シャードの 1 番目）——手元では、ほかのシャードの変異は一度も当たらない。回ごとに替えない
+  （替えるとキャッシュが当たらなくなる）。**`--shard` を持たないテストは間引かない**——間引くには、そのテストに `--shard` を足して CI を全シャードにしてから `THINNED` に入れる。
+
 **この検査が守らないもの**——**何を守らないかを書いておかないと、緑であることが
 安心の根拠に化ける**:
 
@@ -116,6 +132,7 @@
 | --- | --- |
 | **`git push` したかどうか** | 手元で緑にしても**PR は赤のまま**でありうる（#117 の 2）。**PR 側は `gh pr checks` で見る**。このスクリプトはネットワークに出ない |
 | **CI が回すもののうち、ここに無いもの** | 収録は下の `GUARDS` / `TESTS` が正。**`scripts/` に検査を足してここへ登録し忘れると落ちる**（`test-check-all.py` がそれを見る）が、**CI のワークフローに直接書かれたステップ**（`mkdocs build` など）は**見ていない** |
+| **間引いた変異の結果**（#1556） | 既定では `THINNED` の変異をシャード 1 つに間引く。**ほかのシャードの変異が素通りしても、手元は緑のまま**——PR 側の CI で初めて赤になる（#110 と同じ形の代償。マージの前に CI が止める）。手元で全部を見たいときは `--all-mutants` |
 | **検査そのものの正しさ** | 各検査の回帰テストが見る。**このスクリプトは「全部回したか」だけを見る** |
 | **出力を落としたファイルが、この 1 回の出力だけであること** | **FAIL の行と集計は同じ分岐で決まる**（`main` の `if not ok` で、表示と `failed` への積み上げが一緒に動く。打ち切られた子——シグナルで止まり終了コードが負——も失敗に数える。`test-check-all.py` の契約 10）。だが**2 つの実行が同じファイルへ `>` で落とすと、互いの行が上書きで混ざる**——#509 の「FAIL の行があるのに『失敗 0』・失敗の中身が無い」は、**片方が FAIL の行を書いたあと残りを書く前に止められ、もう片方と同じファイルに落としている**形で 5 回中 5 回再現した（同じく止めて別々のファイルに落とした対照では 10 本中 0 本、止めずに同じファイルに落とした形では 5 回中 0 回）。**#509 の当時に何が起きたかは確かめていない**——言えるのは、この形で症状が出ることまで。**出力は実行ごとに別のファイル（`mktemp` など）に落とす。** 共有の scratchpad の決まった名前（`checkall.txt`）を使わない |
 | **キャッシュが入力を取りこぼさないこと**（#1151） | **集めるのは Python の audit イベントと子の引数だけである。** OS の読み取りを全部見る手段（`fs_usage`・DTrace）は root が要る。見えない形: **開かずに在るかだけを見る**（`os.stat`・`Path.exists`。イベントが無い）・**相対パスの `os.open`**（`dir_fd` 基準かどうかがイベントに載らないので、`os.chdir` の後に `dir_fd` 無しで開いたものも数えない）・**hook が入ると見えて入らない子**（`PYTHONPATH` と `PYTHONNOUSERSITE` は見るが、`usercustomize` を読まない Python——venv の Python など——は見分けない。テスト自身は上の「読んだ跡」で止める）・**hook の入らない子が、粗い単位の外を読む**（引数に無いプラグインの外のファイルなど）・**hook の入らない子の、さらに子**・**作業ツリーの外**（worktree から回したときのメインの作業ツリーなど）・**回している間に一覧から名前が消えた**（消えた名前には mtime が無い）。**ほかの `usercustomize` を隠す**（`PYTHONPATH` の先頭に置くので）。**テストが作業ツリーの外の状態に依る**（時刻・ネットワーク・`git`・`node` の版・`~/.claude`）——外が変わっても回さない。**取りこぼしの砦は PR 側の CI である**——CI は `check-all.py` を通さず全部回す。疑わしいときは `--no-cache` で回す |
@@ -177,6 +194,19 @@ NESTED = ("check-mutation-claims.py", "test-check-unattended-env.py", "test-ledg
 def nested_jobs(jobs: int) -> int:
     """入れ子に渡す `--jobs`。親の半分で、少なくとも 1（親が 1 なら入れ子も直列）。"""
     return max(1, jobs // 2)
+
+
+# 変異を間引く回帰テスト（#1556）。既定では `--shard THIN_SHARD` を渡し、変異の観測をシャードの 1 つだけにする——
+# 全部は PR 側の CI が全シャード（`--shard 1/N`〜`N/N`）で回す。`--all-mutants` で間引かずに全部回す。
+# **入れるのは `--shard K/N` を受け、CI で全シャードを回しているテストだけ**（`test-check-all.py` の収録の確かめが見る）。
+THINNED = ("test-autopilot-loop.py", "test-line-effects.py")
+THIN_SHARD = "1/4"
+
+
+def test_args_for(name: str, jobs: int, all_mutants: bool) -> list[str]:
+    """回帰テスト 1 本に渡す引数。間引くなら `--shard`、入れ子なら `--jobs`（親の半分）。"""
+    args = ["--shard", THIN_SHARD] if name in THINNED and not all_mutants else []
+    return [*args, "--jobs", str(nested_jobs(jobs))] if name in NESTED else args
 
 
 # 回帰テスト（歯止め自体が何も見ていない状態に退化していないかを見る）
@@ -883,6 +913,11 @@ def main() -> int:
         help="同時に回す本数（既定: CPU の数。1 で直列）",
     )
     parser.add_argument(
+        "--all-mutants",
+        action="store_true",
+        help="変異を間引かない（THINNED のテストにも --shard を渡さず全部回す。#1556）",
+    )
+    parser.add_argument(
         "--no-cache",
         action="store_true",
         help="キャッシュの記録を読まずに回帰テストを全部回す（緑の記録は書く）",
@@ -919,7 +954,8 @@ def main() -> int:
             if name in NESTED:
                 args = [*args, "--jobs", str(nested_jobs(opts.jobs))]
             guard_runs.append((label, pool.submit(timed, name, args)))
-        test_args = {name: ["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else [] for name in TESTS}
+        test_args = {name: test_args_for(name, opts.jobs, opts.all_mutants) for name in TESTS}
+        thinned = [] if opts.guards_only else [name for name in TESTS if "--shard" in test_args[name]]
         hits: set[str] = set()
         ctx: dict = {}
         if store is not None:
@@ -955,6 +991,8 @@ def main() -> int:
             print("=== 回帰テスト ===")
             if store is not None:
                 print(f"キャッシュ: {'記録を読まない（--no-cache）' if opts.no_cache else '使う'}（{store}）")
+            if thinned:
+                print(f"変異を間引く: {', '.join(thinned)} に --shard {THIN_SHARD}（#1556）")
             for name, fut in test_runs:
                 if fut is None:
                     print(f"  CACHED {name}", flush=True)
@@ -992,6 +1030,9 @@ def main() -> int:
     if cached:
         print(f"キャッシュ: {len(cached)} 本は、記録した入力が前回の緑から変わっていないので回していない"
               "（`--no-cache` で全部回す。PR 側の CI は全部回す）")
+    if thinned:
+        print(f"変異を間引いた: {', '.join(thinned)} は変異をシャード {THIN_SHARD} に間引いた（CACHED なら、間引いた回の記録）"
+              "——**手元の緑は変異の全部ではない**（全部は PR 側の CI が全シャードで回す。`--all-mutants` で手元でも全部回す）")
     for name, why in unrecorded:
         print(f"記録しなかった: {name}（{why}）")
     if skipped:

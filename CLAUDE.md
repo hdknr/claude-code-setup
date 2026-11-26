@@ -322,7 +322,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
     **中で並列に回す**（#430。既定は CPU の数、`--jobs 1` で直列。**並列で安全である前提と出力の順は docstring を正とする**）。
     **入力が前回の緑から変わっていない回帰テストは `CACHED` として回さない**（#1151。飛ばすかはハッシュで機械が決める。`--no-cache` で全部。
-    **何を入力に数え、何を取りこぼすかは docstring を正とする**——取りこぼしの砦は、全部回す PR 側の CI）
+    **何を入力に数え、何を取りこぼすかは docstring を正とする**——取りこぼしの砦は、全部回す PR 側の CI）。
+    **`--shard K/N` を受け CI が全シャードを回す回帰テスト（`THINNED`）は、既定で `--shard 1/4` を渡して変異を間引く**（#1556。`--all-mutants` で全部。
+    全部の変異は PR 側の CI が当てる。**何を間引き、何が変わらないかは docstring を正とする**）
     - `check_all_trace/usercustomize.py` - 上のキャッシュが、回帰テストとその子の Python の読んだものを集める audit hook（#1151。
       **`check-all.py` が `PYTHONPATH` で差し込むだけで、手で読み込まない**。`sitecustomize` にしないのは Homebrew の Python が自前のものを持つから）
   - `check-plugin-versions.py` - カタログ構造と version 一致。**`agents/` の定義が許可リストで、
@@ -411,7 +413,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-line-effects.py` - **委譲文の行の台帳・最後に効いた周の集計・行を外す PR の歯止め**の回帰テスト（#1194。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/line-effects.py` と `scripts/check-prompt-lines.py`**。一時ディレクトリの skill と**一時の git リポジトリ**（周の順はコミットの時刻で、名前順と食い違う試料）に当て、
     **本物の台帳が通ること・`references/prune.md` の記録の例が本体の正規表現に当たること・「削らない」が「黙って削らない」に置き換わっていること**も見る。
-    **変異の観測は最初の赤で試料を打ち切り、CI では `--shard K/N` で変異を複数のジョブに分ける**（#1553。割り当ては `test-autopilot-loop.py` を読み込む——写さない。分け方は docstring を正とする）
+    **変異の観測は最初の赤で試料を打ち切り、CI では `--shard K/N` で変異を複数のジョブに分ける**（#1553。割り当ては `test-autopilot-loop.py` を読み込む——写さない。分け方は docstring を正とする）。
+    **`check-all.py` は既定で `--shard 1/4` だけを回す**（#1556。全部は CI）
   - `test-external-reviews.py` - **外部レビュー bot のコメントの取り出し**の回帰テスト（#997。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/external-reviews.py`**（`test-find-cycle.py` と同じ形）。
     **偽の `gh` を `PATH` の先頭に置き、`PATH` の残りは `/usr/bin:/bin` だけにする**——本物の GitHub には届かない。**渡す文面が bot のコメントの中の指示に従わないと書くこと**も見る
@@ -614,7 +617,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の git リポジトリとタグを作って**当て、**本体の記録の項目が `references/tree.md` の表と一致すること**と、
     `check-findings-csv.py` が `モデルの保存` の行を実行の行と読まないことも見る
   - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する。
-    **CI では `--shard K/N` で変異の観測を複数のジョブに分ける**——#1475。分け方と各シャードで回すものは docstring を正とする）。
+    **CI では `--shard K/N` で変異の観測を複数のジョブに分ける**——#1475。分け方と各シャードで回すものは docstring を正とする。
+    **`check-all.py` は既定で `--shard 1/4` だけを回す**——#1556。全部は CI）。
     **偽の `claude`・`osascript`・`security`・`uname` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**。台帳は本物の `autopilot-ledger.py` で作り、
     長期トークンは本物の起動口（`launch-with-long-token.sh`）を偽の `security` で回す。上限の待ちは眠らずに秒数を記録する
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
@@ -959,6 +963,11 @@ python3 scripts/check-all.py        # 歯止めと回帰テストを全部（本
 **入力が変わっていない回帰テストは `CACHED` になる**（#1151）——飛ばすかを決めるのは人ではなくハッシュなので、
 この節の「選ばない」とは食い違わない。**`CACHED` は回していない**（`OK` と数えない）。全部回したいときは `--no-cache`。
 **取りこぼしうる形と、何を入力に数えるかは `check-all.py` の docstring を正とする。**
+
+**変異は一部を間引く**（#1556）——`--shard K/N` を受け、PR 側の CI が全シャードを回している回帰テストには、既定で `--shard 1/4` を渡して
+変異の 1/4 だけを当てる。**間引くテストを選ぶのも人ではなく宣言（`THINNED`）なので**、この節の「選ばない」とは食い違わない。
+**手元の緑は変異の全部ではない**（集計の `変異を間引いた:` の行が言う）——全部は PR 側の CI が当てる。手元で全部当てたいときは `--all-mutants`。
+**何を間引き、何が変わらないか（変異の数の照合・`check-mutation-claims.py`）は `check-all.py` の docstring を正とする。**
 
 **「この編集はあの検査に関係ない」という判断が、この型の事故を作る**
 ——**関係の有無を判断する側が間違える。** #110 の周では、直前の編集のあと

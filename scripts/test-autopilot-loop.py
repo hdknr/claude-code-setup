@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """`autopilot-loop.py`（spec-loop の autopilot の外側のループ。#850）の回帰テスト。
 
-    python3 scripts/test-autopilot-loop.py                 # 全件（check-all.py と手元）
-    python3 scripts/test-autopilot-loop.py --shard 2/4     # 変異の観測を 4 つに分けた 2 番目だけ（CI。#1475）
+    python3 scripts/test-autopilot-loop.py                 # 全件（手元。`check-all.py --all-mutants` もこの形）
+    python3 scripts/test-autopilot-loop.py --shard 2/4     # 変異の観測を 4 つに分けた 2 番目だけ（CI。#1475。`check-all.py` は既定で `--shard 1/4`——#1556）
 
 **シャード（#1475）**: `--shard K/N` は変異（`MUTATIONS` の並び）のうち、並びの番号を N で割った余りが K-1 のものだけを観測する。
 **試料の組・変異以外の検査・陽性対照・当てる先の検査・「守る」の行数と変異の数の照合は、どのシャードでも全部回す**
