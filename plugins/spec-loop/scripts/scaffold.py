@@ -51,8 +51,14 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 （表の見出し・区切りの行・見出しの行を挙げた）なら 1**——どの行がそのケースかは書き起こす側の判断で、機械は原文の照合だけをする。**書く生成と `--dry-run` は、仕様のテストケース（番号の形は
 `check-spec-exit.py` の `case_rows`——条件 1 の重複の検査と同じ）の内訳を出す**: `仕様のテストケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件`。
 Red テスト = ケースの `ref` が番号と一致するもの、受入基準 = `acceptance` の行の先頭のセルの番号（Red テストと重なれば Red テストに数える）。**どちらにも無いケースは番号と `ファイル:行` を全部名指しする**
-（0 件なら `0 件`）。**止めない**（終了コードは変わらない）。`acceptance` を書かない中間表現の本文・`scaffold/` は 1 バイトも変わらない
+（0 件なら `0 件`）。`acceptance` を書かない中間表現の本文・`scaffold/` は 1 バイトも変わらない
 （決まりの正は `references/spec-ir.md` の「Red テストにしない受入基準」と `references/handoff-issue.md` の「Red テストにしない受入基準」）。
+**どちらにも無いケースが 1 件でもあれば、作業中の版の全体を見るどのモード（書く生成・`--dry-run`・`--check`・`--red-check`）も 1 で止まる**（#1562）——
+内訳と名指しを出し、書く生成は何も作らず前の Issue の本文を消す。`--check` は `scaffold/` が新しくても止まる（仕様が中間表現より先に進んだことを CI で赤にする）。
+**`--upto` で作業中の版より前の時点を見るときは止めない**（前の版は凍結していれば直せず、#1562 より前の中間表現は下の `excluded` を知らない）。
+**Red テストにも受入基準にもしないと利用者と決めたケースは、中間表現の最上位の `excluded` に `{"ref": <番号>, "reason": <1 行>}` で挙げたものだけを通す**——内訳に
+`外した x 件` と出る（書かなければ内訳の行は #1301 と同じ形）。形（配列・キー・1 行・重複）に反すれば 1、仕様のケースに無い番号・Red テストか受入基準にもある番号を挙げたら作業中の版で 1。
+機能のオブジェクトの外なので、Issue の本文と機能の指紋は変わらない（決まりの正は `references/spec-ir.md` の「決めて外すケース」）。
 
 **性能の要求（`nfr`。#852）**: 中間表現の機能の `nfr` に、重ね合わせた全体の `shared/nfr.csv` の性能の行の `No` を書く。
 **指した行が無い・2 行ある・性能の行の形（列・指標・上限・単位 `ms`・条件・根拠。`references/nfr.md`）に反するなら 1**——指していない行は見ない。
@@ -226,7 +232,7 @@ profile を使っているとは何か・platform-spec の見つけ方・終了�
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
 - 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・外部の profile の関門が 1（書く生成と `--dry-run`。#1457）・生成したモックの生成器が 1（#1099）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
-  反する（全部を 1 行ずつ出す）・中間表現の機能どうしの依存が循環する（書く生成と `--dry-run`。#1347）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
+  反する（全部を 1 行ずつ出す）・仕様のテストケースのどれかが Red テストにも受入基準にも `excluded` にも無い（作業中の版の全体を見る全モード。#1562）・中間表現の機能どうしの依存が循環する（書く生成と `--dry-run`。#1347）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
 - 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・外部の profile の関門が 2 か 4（`profile の行` が profile を指すのに platform-spec が無いを含む。#1457）・生成したモックを作れない（生成器の 1 のほか。#1099）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
   まとめ方の誤り（上の「まとめた本文」。まとめ方でだけ起きる依存の循環を含む）・`--check`・`--red-check` との組み合わせ、v1 でない `--foundation` を含む）・`docs/` が無い／版が 1 つも無い／
@@ -384,6 +390,10 @@ OUT_OF_SCOPE = "out_of_scope"
 ACCEPTANCE = "acceptance"
 # 本文の `## 受入基準` の中の小見出し（`acceptance` を持つ機能だけ。`references/handoff-issue.md` の「Red テストにしない受入基準」の写し）
 ACCEPTANCE_HEADING = "### Red テストにしない受入基準"
+# Red テストにも受入基準にもしないと決めた仕様のケース（任意。中間表現の最上位。`[{"ref": <番号>, "reason": <1 行>}]`。
+# `references/spec-ir.md` の「決めて外すケース」。#1562）——挙げた番号だけを内訳の「外した」に数え、取りこぼしに数えない
+EXCLUDED = "excluded"
+EXCLUDED_KEYS = {"ref", "reason"}
 # 機能に効く性能の要求の行の `No` の配列（任意。`references/spec-ir.md` の「性能の要求」。#852）
 NFR = "nfr"
 # 機能に関係する参考資料（UI モック・業務フロー・画面遷移の図など）の、重ね合わせた全体の根からのパスの配列（任意。
@@ -885,7 +895,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     problems = surrogates(ir)
     if problems:
         return problems + ["孤立したサロゲートを含む中間表現は、ほかの規則を見ない"]
-    problems = keys_problem("spec_ir.json", ir, {"spec_ir_version", "title", "features"}, {"impl_module"})
+    problems = keys_problem("spec_ir.json", ir, {"spec_ir_version", "title", "features"}, {"impl_module", EXCLUDED})
     if problems and not isinstance(ir, dict):
         return problems
     # `1.0 == True == 1` なので、値ではなく型ごと見る
@@ -895,6 +905,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
         problems.append(f"spec_ir.json: impl_module がモジュール名の形に反する: {ir['impl_module']!r}")
     if "title" in ir and not one_line(ir["title"]):
         problems.append("spec_ir.json: title が空か、1 行でない")
+    if EXCLUDED in ir:
+        problems += check_excluded(ir[EXCLUDED])
     features = ir.get("features")
     if not isinstance(features, list) or not features:
         problems.append("spec_ir.json: features が 1 つ以上の配列でない")
@@ -1287,6 +1299,33 @@ def check_out_of_scope(where: str, picked, whole: Path) -> list[str]:
             f"（表の見出し・区切りの行は挙げない）: {row!r}" for row in picked if row not in present]
 
 
+def check_excluded(listed) -> list[str]:
+    """中間表現の最上位の `excluded`（#1562。`references/spec-ir.md` の「決めて外すケース」）の形——配列で、要素は `ref`（仕様のケースの番号）と
+    `reason`（外す理由）だけを持つオブジェクト、どちらも空でない 1 行、`ref` は重複させない（全角と半角は同じ番号に数える）。
+    **空の配列は許す**——v2 以降の版は `features` 以外のキーを消せず置き換えるだけなので（`references/versions.md`）、前の版の `excluded` を無くすには `[]` を書く。
+    **番号が仕様のケースに在るか・Red テストか受入基準にもあるかは、ここでは見ない**——仕様の原文が要るので内訳（`coverage_lines`）が見て、作業中の版でだけ止める。"""
+    where = f"spec_ir.json.{EXCLUDED}"
+    if not isinstance(listed, list):
+        return [f"{where}: Red テストにも受入基準にもしないと決めたケースの配列でない"]
+    problems, seen = [], set()
+    for i, item in enumerate(listed):
+        at = f"{where}[{i}]"
+        found = keys_problem(at, item, EXCLUDED_KEYS)
+        if found:
+            problems += found
+            continue
+        if not one_line(item["ref"]):
+            problems.append(f"{at}.ref: 仕様のケースの番号が空か、1 行でない")
+        else:
+            number = unicodedata.normalize("NFKC", item["ref"]).strip()
+            if number in seen:
+                problems.append(f"{at}.ref: {number} を 2 度挙げた")
+            seen.add(number)
+        if not one_line(item["reason"]):
+            problems.append(f"{at}.reason: 外す理由が空か、1 行でない（Red テストにも受入基準にもしないと決めた理由を 1 行で書く）")
+    return problems
+
+
 def check_acceptance(where: str, listed, sources, whole: Path) -> list[str]:
     """機能の `acceptance`（#1301。`references/spec-ir.md` の「Red テストにしない受入基準」）。
 
@@ -1521,6 +1560,7 @@ class Loaded:
         # 機能の `source` の仕様の原文（全体の根からのパス → バイト）と、仕様のテストケースの内訳の行（#1301）——`acceptance` の本文と、書く生成・`--dry-run` の報告
         self.spec_texts: dict[str, bytes] = {}
         self.coverage: list[str] = []
+        self.uncovered: list[str] = []  # 内訳が止める理由（#1562）——作業中の版の全体を見るときだけ `run` が止める
         self.refs: dict[str, bytes] = {}  # 機能の `refs` が指すファイル（全体の根からのパス → バイト。#951）と、画面の表から引いたファイル（#1099）
         # 画面の表から引いた参考資料（#1099）——機能の id → [(画面ID, 画面名, [全体の根からのパス])]（画面の表の並び）。機能のオブジェクトには入れない
         self.screens: dict[str, list[tuple[str, str, list[str]]]] = {}
@@ -1623,7 +1663,7 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     loaded.provisional = provisional
     loaded.notes = notes
     loaded.spec_texts = spec_texts(rendered, ir)
-    loaded.coverage = coverage_lines(rendered, ir)
+    loaded.coverage, loaded.uncovered = coverage_lines(rendered, ir)
     loaded.infra = settled
     # 検査（`check_refs`）を通った後なので、指したパスは重ね合わせた全体に在る
     loaded.refs = {rel: rendered[rel] for feature in features_of(ir) for rel in feature.get(REFS, [])}
@@ -3213,11 +3253,14 @@ def spec_case_rows(rendered: dict[str, bytes]) -> list[tuple[str, int, str, str]
     return found
 
 
-def coverage_lines(rendered: dict[str, bytes], ir: dict) -> list[str]:
-    """仕様のテストケースの内訳（#1301）——仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件。
+def coverage_lines(rendered: dict[str, bytes], ir: dict) -> tuple[list[str], list[str]]:
+    """仕様のテストケースの内訳（#1301・#1562）——(内訳の行, 止める理由の行)。
 
     **Red テスト**: 中間表現のケースの `ref` が番号と一致する仕様のケース。**受入基準**: 機能の `acceptance` に挙げた行の先頭のセルの番号（Red テストと重なれば Red テストに数える）。
-    **どちらにも無いケースは、番号と出た場所（`ファイル:行`）を全部名指しする**。止めない（0 を返す側の `run` が出すだけ）。"""
+    **外した**: 中間表現の最上位の `excluded` に理由つきで挙げた番号（#1562。キーを書かなければ内訳の行に出ない——#1301 の行と同じ形。`[]` なら `外した 0 件`）。
+    **どちらにも無いケースは、番号と出た場所（`ファイル:行`）を全部名指しする**。
+    止める理由の行は、どちらにも無いケース・仕様のケースに無い番号を外した・Red テストか受入基準にもある番号を外した、の 3 つ（#1562）——
+    **止めるかは `run` が決める**（作業中の版の全体を見るときだけ。`--upto` で前の版の時点を見るときは止めない）。"""
     rows = spec_case_rows(rendered)
     cases: dict[str, tuple[str, int]] = {}
     by_row: dict[str, set[str]] = {}
@@ -3234,18 +3277,29 @@ def coverage_lines(rendered: dict[str, bytes], ir: dict) -> list[str]:
                 accepted |= by_row[text]
             else:
                 unnumbered += 1
+    listed = ir.get(EXCLUDED)
+    excluded = [unicodedata.normalize("NFKC", item["ref"]).strip() for item in listed] if listed else []
     in_red = [n for n in cases if n in red]
     in_acceptance = [n for n in cases if n not in red and n in accepted]
-    neither = [n for n in cases if n not in red and n not in accepted]
-    lines = [f"仕様のテストケース {len(cases)} 件のうち、Red テスト {len(in_red)} 件・受入基準 {len(in_acceptance)} 件・どちらにも無い {len(neither)} 件"]
+    in_excluded = [n for n in cases if n not in red and n not in accepted and n in excluded]
+    neither = [n for n in cases if n not in red and n not in accepted and n not in excluded]
+    counted = f"受入基準 {len(in_acceptance)} 件・" + (f"外した {len(in_excluded)} 件・" if EXCLUDED in ir else "")
+    lines = [f"仕様のテストケース {len(cases)} 件のうち、Red テスト {len(in_red)} 件・{counted}どちらにも無い {len(neither)} 件"]
     lines += [f"  どちらにも無い: {number}（{cases[number][0]}:{cases[number][1]}）" for number in neither]
     if neither:
         lines.append("  ——どちらにも無いケースは、Red テストにも Issue の受入基準にも現れず、開発に渡らない。"
                      "Red テストにするなら、そのケースの `ref` に番号を書く。Red テストにできないなら、機能の `acceptance` に行を原文のまま並べる"
-                     "（`references/spec-ir.md` の「Red テストにしない受入基準」）")
+                     "（`references/spec-ir.md` の「Red テストにしない受入基準」）。どちらにもしないと利用者と決めたなら、"
+                     f"中間表現の `{EXCLUDED}` に番号と理由を挙げる（同じ文書の「決めて外すケース」）")
     if unnumbered:
         lines.append(f"  番号の無い受入基準の行 {unnumbered} 件（テストケースの表の行でないので、上の数に入らない）")
-    return lines
+    problems = [f"どちらにも無い仕様のケースが {len(neither)} 件ある（中間表現が仕様より古い——書き起こし直す）"] if neither else []
+    for number in excluded:
+        if number not in cases:
+            problems.append(f"spec_ir.json.{EXCLUDED}: {number} は仕様のテストケースに無い（仕様から消したなら外す行も消す）")
+        elif number in red or number in accepted:
+            problems.append(f"spec_ir.json.{EXCLUDED}: {number} は{'Red テスト' if number in red else '受入基準'}にもある（外すか渡すかのどちらかにする）")
+    return lines, problems
 
 
 def references(change: Change, loaded: Loaded) -> list[str]:
@@ -4173,6 +4227,12 @@ def run(repo: Path, args, writing: bool) -> int:
                 "関門（外部の profile。profile-gate.py）を通らない。生成しない"])
         for line in lines:
             print(line, file=sys.stderr)
+
+    if loaded.current and loaded.uncovered:
+        # 仕様のテストケースの取りこぼし（#1562）——作業中の版の全体を見るときは、どのモードでも止める（`--check` は `scaffold/` が新しくても）。
+        # `--upto` で前の版の時点を見るときは止めない——前の版は凍結していれば直せず、#1562 より前の中間表現は `excluded` を知らない
+        return fail(repo, writing, 1, loaded.coverage + loaded.uncovered + [
+            "仕様のテストケースが中間表現に揃っていない。生成しない（`references/spec-ir.md` の「Red テストにしない受入基準」）"])
 
     mock_missing: list[str] = []
     if loaded.screens:

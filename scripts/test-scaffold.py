@@ -22,7 +22,11 @@
    `out_of_scope` が範囲の文書の「範囲の外」の節に原文のまま無い・形が決まりに反するなら作らない）・
    **Red テストにしない受入基準**（#1301。中間表現の `acceptance` に挙げた仕様の行が原文のまま・表の見出しつき・`acceptance` の順で本文の `## 受入基準` の中の小見出しに写り、
    持たない機能と撤去の本文は小見出しを持たず、節は 7 つのまま。原文が機能の `source` に無い・区切りや見出しの行・形が決まりに反するなら作らない。書く生成と `--dry-run` は
-   「仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件」を出し、どちらにも無いケースを番号と場所で名指しする——0 件なら 0 件と出て、止めない）・
+   「仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件」を出し、どちらにも無いケースを番号と場所で名指しする——0 件なら 0 件と出る）・
+   **取りこぼしで止まる**（#1562。取りこぼしがあれば、書く生成（何も作らず前の Issue の本文を消す）・`--dry-run`・`--check`（`scaffold/` が新しくても。
+   生成の後に仕様のテストケースの表に 1 行足した再現の形）・`--red-check`（`--in-progress` も）が 1。`--upto` で前の版の時点を見るときは止めない（陽性対照: 同じ試料の作業中の版は止まる）。
+   中間表現の最上位の `excluded` に理由つきで挙げた番号は止めずに `外した x 件` に数え、空の配列は `外した 0 件`。形（配列・キー・1 行・重複。前の版の中間表現でも）・仕様に無い番号・
+   Red テストか受入基準にもある番号なら作らない。`excluded` の中身を変えても `scaffold/` と Issue の本文は 1 バイトも変わらない）・
    **性能の要求**（#852。中間表現の `nfr` が指す `shared/nfr.csv` の行の数字が性能予算に写り、性能テスト `scaffold/perf/perf_<機能>.py` が作られ、
    本文がその sha256 と回し方を持つ。性能テストは実装が無ければ「未実装」で失敗し、上限を超える遅い実装で失敗し、速い実装で緑（陽性対照）。
    `nfr` の無い機能は「要求なし」で性能テストを作らない。`nfr` を外せば性能テストを消し、`--check` が残りを古いと言う。
@@ -548,11 +552,59 @@ ACC_INTRO = ("下に挙げた仕様のケースは、関数の 1 回の呼び出
 ACC_COPIED = "（中間表現の機能の `acceptance` が挙げた行を、機能の `source` の仕様の原文から、原文のまま写した。）"
 ACC_HEADING = "### Red テストにしない受入基準"
 ACC_COUNT = "仕様のテストケース 4 件のうち、Red テスト {} 件・受入基準 {} 件・どちらにも無い {} 件"
+# #1562: 外したケース（中間表現の最上位の `excluded`）を書いたときの内訳と、止まるときの行
+EXC_COUNT = "仕様のテストケース 4 件のうち、Red テスト {} 件・受入基準 {} 件・外した {} 件・どちらにも無い {} 件"
+EXC_REASON = "試料で外す（利用者と決めた）"
+UNCOVERED_STOP = "仕様のテストケースが中間表現に揃っていない。生成しない"
+# 生成した後に、仕様のテストケースの表に 1 行足す（#1562 の再現の形——中間表現は書き起こし直さない）
+ADDED_ROW = "| F1-5 | 後から足したケース | 返す |"
 
 
-def accepting(refs=(), acceptance=None, f002_ref=None, f002_acceptance=None) -> Callable[[dict], dict]:
-    """F-001 のケースに順に ref を書き、acceptance を書く。F-002 のケースにも ref・acceptance を書ける。"""
+def add_spec_row(repo: Path) -> None:
+    path = repo / V1 / "spec" / "order.md"
+    text = path.read_text(encoding="utf-8")
+    assert text.count(ACC_ROWS[3]) == 1
+    path.write_text(text.replace(ACC_ROWS[3], ACC_ROWS[3] + "\n" + ADDED_ROW), encoding="utf-8")
+
+
+def excluded_inert(repo: Path) -> str | None:
+    """`excluded` の理由と並びを変えて作り直しても、`scaffold/` と Issue の本文が 1 バイトも変わらない（機能のオブジェクトの外。#1562）。"""
+    def snapshot() -> dict[Path, bytes]:
+        return {p: p.read_bytes() for p in sorted(repo.rglob("*")) if p.is_file() and ("scaffold" in p.parts)}
+    before = snapshot()
+    path = repo / IR_FILE
+    ir = json.loads(path.read_text(encoding="utf-8"))
+    ir["excluded"] = [{"ref": item["ref"], "reason": "別の理由に書き換えた"} for item in reversed(ir["excluded"])]
+    path.write_text(json.dumps(ir, ensure_ascii=False), encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / TARGET), "--repo", str(repo)],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        return f"excluded を書き換えた作り直しが通らない: {proc.stdout}{proc.stderr}"
+    return None if snapshot() == before else "excluded を書き換えたら scaffold/ か Issue の本文が変わった"
+
+
+def excluded_empty_inert(repo: Path) -> str | None:
+    """`excluded: []` の生成と、キーを消した生成で `scaffold/` と Issue の本文が同じ（#1562）。"""
+    before = {p: p.read_bytes() for p in sorted(repo.rglob("*")) if p.is_file() and "scaffold" in p.parts}
+    path = repo / IR_FILE
+    ir = json.loads(path.read_text(encoding="utf-8"))
+    del ir["excluded"]
+    path.write_text(json.dumps(ir, ensure_ascii=False), encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / TARGET), "--repo", str(repo)],
+                          capture_output=True, text=True)
+    after = {p: p.read_bytes() for p in sorted(repo.rglob("*")) if p.is_file() and "scaffold" in p.parts}
+    if proc.returncode != 0:
+        return f"excluded を消した生成が通らない: {proc.stdout}{proc.stderr}"
+    return None if before == after else "excluded: [] とキーの無い生成で scaffold/ か Issue の本文が違う"
+
+
+def accepting(refs=(), acceptance=None, f002_ref=None, f002_acceptance=None, excluded=None) -> Callable[[dict], dict]:
+    """F-001 のケースに順に ref を書き、acceptance を書く。F-002 のケースにも ref・acceptance を書ける。
+    excluded（#1562）: 番号の並びなら、最上位の `excluded` にその番号を試料の理由で挙げる（並び以外はそのまま置く——形の試料）。"""
     def apply(ir: dict) -> None:
+        if excluded is not None:
+            ir["excluded"] = ([{"ref": ref, "reason": EXC_REASON} for ref in excluded]
+                              if isinstance(excluded, tuple) else excluded)
         for case, ref in zip(f1(ir)["cases"], refs):
             case["ref"] = ref
         if acceptance is not None:
@@ -4107,8 +4159,9 @@ CASES: list[Case] = [
     Case("v2 で作らないものだけ足す", 0, "modify 1", spec=SCOPE_SPEC,
          extra=v2([{**copy.deepcopy(IR["features"][0]), "out_of_scope": [SCOPE_ROWS[0]]}]), post=not_built_added_in_v2),
     # #1301: Red テストにしない受入基準。仕様のケースの内訳（Red テスト・受入基準・どちらにも無い）を出し、書いた行を本文に写す
-    Case("受入基準: 内訳を出し、どちらにも無いケースを名指しする", 0, ACC_COUNT.format(2, 1, 1) + "\n  どちらにも無い: F1-4（spec/order.md:10）",
-         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=ACC_STRAYS, absent="どちらにも無い: F1-3"),
+    Case("受入基準: 内訳を出し、どちらにも無いケースを名指しする", 1, ACC_COUNT.format(2, 1, 1) + "\n  どちらにも無い: F1-4（spec/order.md:10）",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=ACC_STRAYS, absent="どちらにも無い: F1-3",
+         pre=plant_old_issues, post=nothing_written),
     Case("受入基準: どちらにも無いケースが 0 件", 0, ACC_COUNT.format(2, 2, 0), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]),
          spec=ACC_FILES, extra=ACC_STRAYS, absent="どちらにも無い: F"),
     Case("受入基準: Red テストと重なる行は Red テストに数える", 0, ACC_COUNT.format(2, 2, 0),
@@ -4117,15 +4170,17 @@ CASES: list[Case] = [
          ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], f002_ref="F1-4"), spec=ACC_FILES),
     Case("受入基準: 別の機能の acceptance も数える", 0, ACC_COUNT.format(2, 2, 0),
          ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], f002_acceptance=[ACC_ROWS[3]]), spec=ACC_FILES),
-    Case("受入基準: 何も書かなければ全部がどちらにも無い（Issue の本文は変わらない）", 0,
+    Case("受入基準: 何も書かなければ全部がどちらにも無い", 1,
          ACC_COUNT.format(0, 0, 4) + "\n  どちらにも無い: F1-1（spec/order.md:7）\n  どちらにも無い: F1-2（spec/order.md:8）",
-         spec=ACC_FILES, extra=ACC_STRAYS, post=acceptance_absent),
-    Case("受入基準: --dry-run も内訳を出す", 0, ACC_COUNT.format(2, 1, 1), args=("--dry-run",),
-         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES),
-    Case("受入基準: 行を原文のまま本文に写す", 0, "作った", ir=accepting((), [ACC_ROWS[3], ACC_ROWS[2], ACC_FREE]), spec=ACC_FILES,
-         post=acceptance_copied),
+         spec=ACC_FILES, extra=ACC_STRAYS, post=nothing_written),
+    Case("受入基準: 全部を外せば Issue の本文に小見出しは出ない", 0, EXC_COUNT.format(0, 0, 4, 0),
+         ir=accepting(excluded=("F1-1", "F1-2", "F1-3", "F1-4")), spec=ACC_FILES, extra=ACC_STRAYS, post=acceptance_absent),
+    Case("受入基準: --dry-run も内訳を出す", 0, ACC_COUNT.format(2, 2, 0), args=("--dry-run",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES),
+    Case("受入基準: 行を原文のまま本文に写す", 0, "作った", ir=accepting((), [ACC_ROWS[3], ACC_ROWS[2], ACC_FREE], excluded=("F1-1", "F1-2")),
+         spec=ACC_FILES, post=acceptance_copied),
     Case("受入基準: 番号の無い行は数に入れず、行数を知らせる", 0, "番号の無い受入基準の行 1 件（テストケースの表の行でないので、上の数に入らない）",
-         ir=accepting((), [ACC_FREE]), spec=ACC_FILES, post=acceptance_unnumbered),
+         ir=accepting((), [ACC_FREE], excluded=("F1-1", "F1-2", "F1-3", "F1-4")), spec=ACC_FILES, post=acceptance_unnumbered),
     Case("受入基準: 仕様に無い行", 1, "F-001.acceptance: 機能の source の仕様の原文に、この行が原文のまま無い"
          "（表の見出し・区切りの行・見出しの行は挙げない）: '| F1-5 | 仕様に無い | 作らない |'",
          ir=accepting((), ["| F1-5 | 仕様に無い | 作らない |"]), spec=ACC_FILES, pre=plant_old_issues, post=nothing_written),
@@ -4135,17 +4190,19 @@ CASES: list[Case] = [
          ir=accepting((), ["| --- | --- | --- |"]), spec=ACC_FILES),
     Case("受入基準: 表の見出しの行", 1, "この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: '| テストケース | 内容 | 期待 |'",
          ir=accepting((), ["| テストケース | 内容 | 期待 |"]), spec=ACC_FILES),
-    Case("受入基準: 仕様のケースの数に spec/ の外の .md を入れない", 0, ACC_COUNT.format(2, 1, 1), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]),
+    Case("受入基準: 仕様のケースの数に spec/ の外の .md を入れない", 1, ACC_COUNT.format(2, 1, 1), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]),
          spec=ACC_FILES, extra={str(V1 / "requirements" / "x.md"): ACC_HEADER + "\n| F1-6 | 数えない |\n"}),
-    Case("受入基準: ref の全角も半角と同じ番号に数える", 0, ACC_COUNT.format(1, 0, 3), ir=accepting(("Ｆ1-1",)),
+    Case("受入基準: ref の全角も半角と同じ番号に数える", 1, ACC_COUNT.format(1, 0, 3), ir=accepting(("Ｆ1-1",)),
          spec={"order.md": ACC_SPEC + "\nＦ1-1 を参照\n"}, absent="どちらにも無い: F1-1"),
     Case("受入基準: 見出しの行", 1, "この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: '## 別の表'",
          ir=accepting((), ["## 別の表"]), spec=ACC_FILES),
-    Case("受入基準: source が ./ を含む綴りでも表の見出しが付く", 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/./order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]))),
+    Case("受入基準: source が ./ を含む綴りでも表の見出しが付く", 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/./order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]),
+                                                                                   ir.update(excluded=[{"ref": n, "reason": EXC_REASON} for n in ("F1-1", "F1-2", "F1-4")]))),
          spec=ACC_FILES, post=acceptance_dot_source),
     # 大文字小文字だけ違う綴り（#1317）。区別しないファイルシステムでは `check_source` が通すので、原文に届いて表の見出しが付く。
     # 区別するファイルシステムでは `check_source` が止める——期待は `FOLDING_CASES` が差し替える
-    Case(FOLDED_SOURCE_CASE, 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/Order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]))),
+    Case(FOLDED_SOURCE_CASE, 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/Order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]),
+                                                          ir.update(excluded=[{"ref": n, "reason": EXC_REASON} for n in ("F1-1", "F1-2", "F1-4")]))),
          spec=ACC_FILES, post=acceptance_folded_source),
     Case("受入基準: 空の配列", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
          ir=accepting((), []), spec=ACC_FILES),
@@ -4158,10 +4215,63 @@ CASES: list[Case] = [
          ir=accepting((), [ACC_ROWS[2] + "\n" + ACC_ROWS[3]]), spec=ACC_FILES),
     Case("受入基準: 文字列でない", 1, "F-001.acceptance: 前後に空白の無い 1 行の文字列でない行がある",
          ir=accepting((), [1]), spec=ACC_FILES),
-    Case("v2 で受入基準だけ足す", 0, "modify 1", spec=ACC_FILES,
-         extra=v2([{**copy.deepcopy(IR["features"][0]), "acceptance": [ACC_ROWS[2]]}]), post=acceptance_added_in_v2),
-    Case("受入基準: 消した機能の本文には小見出しを付けない", 0, "作った", ir=accepting((), None, f002_acceptance=[ACC_ROWS[2]]), spec=ACC_FILES,
-         extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=acceptance_not_in_removal),
+    Case("v2 で受入基準だけ足す", 0, "modify 1", spec=ACC_FILES, ir=accepting(excluded=("F1-1", "F1-2", "F1-3", "F1-4")),
+         extra=v2([{**copy.deepcopy(IR["features"][0]), "acceptance": [ACC_ROWS[2]]}],
+                  top={"excluded": [{"ref": n, "reason": EXC_REASON} for n in ("F1-1", "F1-2", "F1-4")]}), post=acceptance_added_in_v2),
+    Case("受入基準: 消した機能の本文には小見出しを付けない", 0, "作った",
+         ir=accepting((), None, f002_acceptance=[ACC_ROWS[2]], excluded=("F1-1", "F1-2", "F1-4")), spec=ACC_FILES,
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n",
+                  top={"excluded": [{"ref": n, "reason": EXC_REASON} for n in ("F1-1", "F1-2", "F1-3", "F1-4")]}), post=acceptance_not_in_removal),
+    # #1562: 取りこぼしで止まる——どのモードでも（作業中の版の全体）。`--upto` で前の版の時点を見るときは止めない
+    Case("取りこぼし: --dry-run も止まり「作れる」と言わない", 1, ACC_COUNT.format(2, 1, 1) + "\n  どちらにも無い: F1-4（spec/order.md:10）",
+         args=("--dry-run",), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, absent="作れる（", pre=plant_old_issues, post=old_issues_kept),
+    Case("取りこぼし: 生成の後に仕様へ足した行で --check が止まる", 1, "どちらにも無い: F1-5（spec/order.md:11）", args=("--check",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row, absent="は新しい"),
+    Case("取りこぼし: 足す前は --check が新しいと言う", 0, "は新しい", args=("--check",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, absent="どちらにも無い"),
+    Case("取りこぼし: 生成の後に仕様へ足した行で書く生成が止まる", 1, "どちらにも無い: F1-5（spec/order.md:11）",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row, post=nothing_written_issues),
+    Case("取りこぼし: 生成の後に仕様へ足した行で --red-check が止まる", 1, "どちらにも無い: F1-5（spec/order.md:11）", args=("--red-check",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row),
+    Case("取りこぼし: 生成の後に仕様へ足した行で --red-check --in-progress が止まる", 1, "どちらにも無い: F1-5（spec/order.md:11）",
+         args=("--red-check", "--in-progress"), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row),
+    Case("取りこぼし: 止まる行が理由を言う", 1, UNCOVERED_STOP, ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES),
+    Case("取りこぼし: --upto で前の版の時点を見るときは止めない", 0, "作れる（", args=("--dry-run", "--upto", "1"),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=v2([])),
+    Case("取りこぼし: 同じ試料の作業中の版は止まる", 1, "どちらにも無い: F1-4（spec/order.md:10）", args=("--dry-run",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=v2([])),
+    # #1562: 決めて外すケース（中間表現の最上位の `excluded`）
+    Case("外す: 理由つきで挙げた番号は止めずに外したに数える", 0, EXC_COUNT.format(2, 1, 1, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=("F1-4",)), spec=ACC_FILES, absent="どちらにも無い: F", post=excluded_inert),
+    Case("外す: 空の配列は外した 0 件", 0, EXC_COUNT.format(2, 2, 0, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]], excluded=[]), spec=ACC_FILES, post=excluded_empty_inert),
+    Case("外す: 外した番号の全角も半角と同じ番号に数える", 0, EXC_COUNT.format(2, 1, 1, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=("Ｆ1-4",)), spec=ACC_FILES),
+    Case("外す: 理由が空", 1, "spec_ir.json.excluded[0].reason: 外す理由が空か、1 行でない",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=[{"ref": "F1-4", "reason": " "}]), spec=ACC_FILES, pre=plant_old_issues, post=nothing_written),
+    Case("外す: 理由が複数行", 1, "spec_ir.json.excluded[0].reason: 外す理由が空か、1 行でない",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=[{"ref": "F1-4", "reason": "1 行目\n2 行目"}]), spec=ACC_FILES),
+    Case("外す: 番号が空", 1, "spec_ir.json.excluded[0].ref: 仕様のケースの番号が空か、1 行でない",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=[{"ref": "", "reason": EXC_REASON}]), spec=ACC_FILES),
+    Case("外す: 決まりに無いキー", 1, "spec_ir.json.excluded[0]: 決まりに無いキー `why`",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=[{"ref": "F1-4", "reason": EXC_REASON, "why": "x"}]), spec=ACC_FILES),
+    Case("外す: 理由が無い", 1, "spec_ir.json.excluded[0]: `reason` が無い",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=[{"ref": "F1-4"}]), spec=ACC_FILES),
+    Case("外す: 要素がオブジェクトでない", 1, "spec_ir.json.excluded[0]: オブジェクトでない",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=["F1-4"]), spec=ACC_FILES),
+    Case("外す: 配列でない", 1, "spec_ir.json.excluded: Red テストにも受入基準にもしないと決めたケースの配列でない",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded={"ref": "F1-4", "reason": EXC_REASON}), spec=ACC_FILES),
+    Case("外す: 番号の重複（全角も同じ番号）", 1, "spec_ir.json.excluded[1].ref: F1-4 を 2 度挙げた",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=("F1-4", "Ｆ1-4")), spec=ACC_FILES),
+    Case("外す: 仕様のテストケースに無い番号", 1, "spec_ir.json.excluded: F1-9 は仕様のテストケースに無い",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]], excluded=("F1-9",)), spec=ACC_FILES),
+    Case("外す: Red テストにもある番号", 1, "spec_ir.json.excluded: F1-1 はRed テストにもある",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]], excluded=("F1-1",)), spec=ACC_FILES),
+    Case("外す: 受入基準にもある番号", 1, "spec_ir.json.excluded: F1-3 は受入基準にもある",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]], excluded=("F1-3",)), spec=ACC_FILES),
+    Case("外す: 前の版の中間表現の形も見る", 1, "excluded[0].reason: 外す理由が空か、1 行でない",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], excluded=[{"ref": "F1-4", "reason": ""}]), spec=ACC_FILES,
+         extra=v2([], top={"excluded": [{"ref": "F1-4", "reason": EXC_REASON}]})),
     # #855: 課題一覧（案）。案は入口の機能ごと・未決定事項・受入基準の雛形・作らないもの
     Case("課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの", 0, "課題一覧（案）: build/scaffold/issues/proposals.md（案 2 件・未決定事項 4 件）",
          ir=BRANCHES_IR, spec=BRANCH_SPECS, post=proposals_written),
@@ -5154,7 +5264,34 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
     ("仕様のケースの数に形式検査のモデルを入れる", " or versions.is_formal(rel):\n            continue\n        try:\n            text = rendered[rel]",
      ":\n            continue\n        try:\n            text = rendered[rel]", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
-    ("内訳を読み込まない", "    loaded.coverage = coverage_lines(rendered, ir)", "    loaded.coverage = []", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("内訳を読み込まない", "    loaded.coverage, loaded.uncovered = coverage_lines(rendered, ir)", "    loaded.coverage, loaded.uncovered = [], []",
+     "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    # #1562: 取りこぼしで止まる・決めて外すケース
+    ("取りこぼしで止めない", "    if loaded.current and loaded.uncovered:\n", "    if False:\n", "取りこぼし: --dry-run も止まり「作れる」と言わない"),
+    ("取りこぼしを --upto の前の版でも止める", "    if loaded.current and loaded.uncovered:\n", "    if loaded.uncovered:\n",
+     "取りこぼし: --upto で前の版の時点を見るときは止めない"),
+    ("どちらにも無いを止める理由にしない", '    problems = [f"どちらにも無い仕様のケースが {len(neither)} 件ある（中間表現が仕様より古い——書き起こし直す）"] if neither else []',
+     "    problems = []", "取りこぼし: 生成の後に仕様へ足した行で --check が止まる"),
+    ("外した番号を取りこぼしから除かない", "    neither = [n for n in cases if n not in red and n not in accepted and n not in excluded]",
+     "    neither = [n for n in cases if n not in red and n not in accepted]", "外す: 理由つきで挙げた番号は止めずに外したに数える"),
+    ("外した番号を全角のまま比べる", '    excluded = [unicodedata.normalize("NFKC", item["ref"]).strip() for item in listed] if listed else []',
+     '    excluded = [item["ref"].strip() for item in listed] if listed else []', "外す: 外した番号の全角も半角と同じ番号に数える"),
+    ("外したを内訳に出さない", '(f"外した {len(in_excluded)} 件・" if EXCLUDED in ir else "")', '("")', "外す: 理由つきで挙げた番号は止めずに外したに数える"),
+    ("空の外すで外した 0 件を出さない", '(f"外した {len(in_excluded)} 件・" if EXCLUDED in ir else "")', '(f"外した {len(in_excluded)} 件・" if listed else "")',
+     "外す: 空の配列は外した 0 件"),
+    ("excluded のキーを許さない", '{"impl_module", EXCLUDED}', '{"impl_module"}', "外す: 理由つきで挙げた番号は止めずに外したに数える"),
+    ("excluded の形を見ない", "    if EXCLUDED in ir:\n        problems += check_excluded(ir[EXCLUDED])\n", "", "外す: 理由が空"),
+    ("excluded の配列でないを許す", "    if not isinstance(listed, list):\n        return [", "    if False:\n        return [", "外す: 配列でない"),
+    ("excluded の要素のキーを見ない", "        found = keys_problem(at, item, EXCLUDED_KEYS)\n", "        found = []\n", "外す: 決まりに無いキー"),
+    ("excluded の番号の 1 行を見ない", "        if not one_line(item[\"ref\"]):\n", "        if False:\n", "外す: 番号が空"),
+    ("excluded の番号の重複を見ない", "            if number in seen:\n", "            if False:\n", "外す: 番号の重複（全角も同じ番号）"),
+    ("excluded の重複を全角のまま比べる", '            number = unicodedata.normalize("NFKC", item["ref"]).strip()\n            if number in seen:',
+     '            number = item["ref"].strip()\n            if number in seen:', "外す: 番号の重複（全角も同じ番号）"),
+    ("excluded の理由の 1 行を見ない", "        if not one_line(item[\"reason\"]):\n", "        if False:\n", "外す: 理由が複数行"),
+    ("仕様に無い番号を外しても止めない", "        if number not in cases:\n            problems.append(", "        if False:\n            problems.append(",
+     "外す: 仕様のテストケースに無い番号"),
+    ("Red テストにもある番号を外しても止めない", "        elif number in red or number in accepted:\n", "        elif number in accepted:\n", "外す: Red テストにもある番号"),
+    ("受入基準にもある番号を外しても止めない", "        elif number in red or number in accepted:\n", "        elif number in red:\n", "外す: 受入基準にもある番号"),
     ("内訳を出力しない", "    for line in loaded.coverage:\n        # 仕様のテストケースの内訳（#1301）——止めずに知らせる\n        print(line)\n",
      "", "受入基準: --dry-run も内訳を出す"),
     # #855: 呼ぶ側の分岐と課題一覧（案）
