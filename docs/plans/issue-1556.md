@@ -112,7 +112,11 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は mkdocs �
 
 割り目（手順 4）: 割らない（cruise の周）。
 
-関門: まだ。
+関門（1 パス目）:
+
+- 1 パス目の起点（指摘対応の 0 行判定の起点。先に当てた関門に渡した時点の HEAD）: `fc4763911d971efee21aed2d75e5f1a603361588`
+- Verifier 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-verifier-1-20261126T005501Z.md`（起動済み。結果は未着）
+- /code-review 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-code-review-1-20261126T005501Z.md`（起動済み。結果は未着）
 
 交絡を潰した手順: （実機確認のあとに書く）
 
