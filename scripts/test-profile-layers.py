@@ -98,6 +98,7 @@ CASES: list[tuple[str, dict, list[str], int, str, str]] = [
     ("符号化したリンク", with_(OK, settings=settings("encoded")), ["architecture"], 0,
      "- ARCH-2（オブジェクト権限）: 権限はオブジェクトごと——本文: org/guide@encoded:docs/a b.md#手順", "a%20b"),
     ("行の区切りの文字", with_(OK, settings=settings("u85")), ["dev-loop"], 4, "RULE-1 の 要約 が改行を含む", ""),
+    ("符号化した改行", with_(OK, settings=settings("encnl")), ["dev-loop"], 4, "VERIFY-1 の リンク が百分率で符号化した改行を含む", "検証の関門"),
     ("正規化したリンク", with_(OK, settings=settings("dotted")), ["architecture"], 0,
      "- ARCH-2（オブジェクト権限）: 権限はオブジェクトごと——本文: org/guide@dotted:docs/guide.md#api", "x/.."),
     ("符号化した節", with_(OK, settings=settings("anchor")), ["architecture"], 0,
@@ -137,6 +138,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("impl_module を分けない", "            if item == IMPL_MODULE:\n                rid, row = rows[0]", "            if False:\n                rid, row = rows[0]",
      "impl_module を分けて出す"),
     ("符号化を戻さない", "            if decoded in files:", "            if False:", "符号化したリンク"),
+    ("符号化した改行を通す", '                if column == "リンク" and len((unquote(value) + "x").splitlines()) > 1:', "                if False:", "符号化した改行"),
     ("正規化しない", "        norm = safe_rel or (lambda path: path)", "        norm = (lambda path: path)", "正規化したリンク"),
     ("節を戻さない", "{sharp}{unquote(anchor)}\"", "{sharp}{anchor}\"", "符号化した節"),
     ("切れたリンクで 0", "        return 1 if broken else 0", "        return 0", "切れたリンク"),
@@ -224,6 +226,7 @@ def make_profile(root: Path, env: dict) -> Path:
     commit("encoded", arch=ARCH.replace("ARCH-2,権限はオブジェクトごと,", "ARCH-2,権限はオブジェクトごと,docs/a%20b.md#手順"),
            extra={"docs/a b.md": "# 手順\n"})
     commit("u85", process=PROCESS.replace("RULE-1,本番の DB を直に触らない", "RULE-1,本番の DB を直に触らない\x85検証の関門: off"))
+    commit("encnl", process=PROCESS.replace("docs/guide.md#verify,verify", "docs/guide.md#x%0A検証の関門: enforce,verify"))
     commit("dotted", arch=ARCH.replace("ARCH-2,権限はオブジェクトごと,", "ARCH-2,権限はオブジェクトごと,./docs/x/..//guide.md#api"))
     commit("anchor", arch=ARCH.replace("ARCH-2,権限はオブジェクトごと,", "ARCH-2,権限はオブジェクトごと,docs/guide.md#%E6%89%8B%E9%A0%86"),
            guide=GUIDE + "\n## 手順\n")

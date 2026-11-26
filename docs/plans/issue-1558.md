@@ -116,6 +116,7 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
   `/code-review`（high）を `f7fb7b85` に当てた——指摘 6 件（CR2-1〜CR2-6）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/ccb0151a-cd0f-4f1a-b328-115bd7bc4fd5/scratchpad/gate-1558-code-review-2-20261126T052719Z.md`。委譲文のファイル 177 行を読ませた（報告は 177 行）。
   `check-all.py`（run-serial 越し）を `f7fb7b85` で回した——失敗 0（34 本を回し、ほかは入力が変わらず CACHED）。
 - 狭いパスの起点: `f7fb7b85`（2 パス目の指摘対応を始める直前の HEAD）。直すのは R-1／CR2-1・CR2-2。
+- 狭いパスの終点: `cbad2927`（2 パス目の指摘対応の最後のコミット）。新しい 3 試料（行の区切りの文字・正規化したリンク・符号化した節）は `f7fb7b85` の本体で期待どおりでなく、`cbad2927` で期待どおり（陽性対照）。
 
 ```dev-loop-gates
 周の base: 25d08f5dd1be61cb41d2a684b04ba5f77f9d585e

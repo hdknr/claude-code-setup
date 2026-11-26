@@ -36,6 +36,7 @@ usage: python3 profile-layers.py <architecture|dev-loop> <docs ディレクト�
 - 1 行までの項目（`歯止め`・`impl_module`）が 2 行あれば 4
 - `impl_module` の `値` が空なら 4
 - 出力に載せる列（どの層のどの列も）が改行（`str.splitlines()` が行を分ける文字の全部）を含めば 4
+- `リンク` が百分率で符号化した改行（`%0A`・`%E2%80%A8` など）を含めば 4（参照は符号化を戻して出すので）
 - `値` がバッククォートを含めば 4（雛形のコードスパンを壊さない）
 - 照合先の一覧に、行ごとに ID・観点・要約・本文の参照と、タグの時点の本文を読むコマンドを載せる
 - 雛形の先頭に印 `<!-- platform-spec: 開発の進め方 <リポジトリ> <profile> <タグ> -->` を置く
@@ -148,6 +149,8 @@ class Layers(base.Checker):
             for column, value in row.items():
                 if len((value + "x").splitlines()) > 1:  # str.splitlines() が分ける文字の全部（\n・\r・U+0085・U+2028 など）
                     raise Stop(f"{where}: {rid} の {column} が改行を含む")
+                if column == "リンク" and len((unquote(value) + "x").splitlines()) > 1:  # 参照は符号化を戻して出すので、戻した形でも見る
+                    raise Stop(f"{where}: {rid} の {column} が百分率で符号化した改行を含む")
         if layer_name == ARCH:
             for rid, row in rows.items():
                 if not row["観点"].strip():
