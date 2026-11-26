@@ -23,7 +23,9 @@ spec-loop のスクリプトを読み込むので、一時ディレクトリに 
    `profile` と外部の profile をそれにして足す列を見出し行に入れ、直後の検査が 0（A1）。名指しが無い・基盤の profile が無いなら今と同じ（A2）。
    明示の引数が勝つ（A3）。初期値を決められなければ 4 で何も書かない（A4）。profile のリポジトリは試料ごとに一時の git リポジトリで作る。
    **名指した画面の層の行が決まりに合わない（#1571・#1581 の形）とき、`hint` と引数なしの `init` は、同じ外部の profile を明示しても止まることと、
-   外部の profile を直してタグを付け設定のタグをそれにするか `--profile web-spa --external なし` を渡す案内を出し、案内どおりに渡せば書けて検査が 0（#1582）**。読めないときは今までどおり「読めない」。
+   外部の profile を直してタグを付け設定のタグをそれにするか `--profile web-spa --external なし` を渡す案内を出し、案内どおりに渡せば書けて検査が 0（#1582）**。
+   **タグを変える道には、`shared/` の変更なので承認を取り直すことと、`shared/` を触らずに直したタグを `--external` で明示する道も添え、
+   直したタグを明示すれば書けて検査が 0（陽性対照。#1590）**。読めないときは今までどおり「読めない」。
    この言い分けは `check-screens.py` の `LayerRule` に乗るので、`check-screens.py` を壊す変異（`CHECK_MUTATIONS`）も当てる。
 9. **platform-spec を読み込まない（#1460 の A5）**——試料の置き方に platform-spec は無く、プラグインの隣に**読み込まれたら印を書く偽の platform-spec**を置いて、
    どの試料の後にも印が無いことを見る。写した設定の置き場所・見出し・項目名が platform-spec の `check-infra-profile.py` の定数と一致すること（崩すと落ちることも）。
@@ -134,7 +136,10 @@ BASE_INITIAL = "init の初期値（--profile と --external を省いたとき�
 # 画面の層の行が決まりに合わない基盤の profile（#1582）——#1571（既定が語彙の外）と #1581（ステータスの語彙が決まった値と重ならない）の形
 GUIDE_WIDE = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT.replace("list,standard\n", "list,wide\n")}}}
 GUIDE_STATUS = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT + "S-1,完了だけ,,語彙,screens.csv,ステータス,,完了\n"}}}
-LAYER_ADVICE = "外部の profile を直してタグを付け、shared/platform/settings.csv の タグ をそれにするか、--profile web-spa --external なし を渡す"
+LAYER_ADVICE = ("外部の profile を直してタグを付け、shared/platform/settings.csv の タグ をそれにする"
+                "（shared/ の変更なので 2 つの承認を取り直し、基盤の層もそのタグの時点で読むことになる）か、"
+                "shared/ を触らずに直したタグを --profile web-spa --external \"org/guide org <新しいタグ>\" で明示するか、"
+                "--profile web-spa --external なし を渡す")
 LAYER_HINT = f"——init の引数を省いても、同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）"
 LAYER_INIT = f"——同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）——書いていない"
 
@@ -286,6 +291,14 @@ CASES: list[tuple] = [
         (["init", "--profile", "web-spa", "--external", "なし"], 0, "profile: web-spa）"),
     ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES,
      {SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"), SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n")}, GUIDE_WIDE),
+    # #1590: 案内の 2 つ目の道——shared/ を触らずに、直したタグを --external で明示すれば書ける（陽性対照。設定のタグは壊れた v1 のまま、直した v2 を名指す）
+    ("base-layer-fixed-tag-explicit", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, LAYER_HINT),
+        (["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4, "種別 list の列 レイアウト の既定 'wide' が"),
+        (["init", "--profile", "web-spa", "--external", "org/guide org v2"], 0, "外部の profile: org/guide org v2"),
+    ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES,
+     {SD + "settings.csv": EXT_SETTINGS.replace("org/guide org v1", "org/guide org v2"), SD + "data/screens.csv": EXT_S_HEAD},
+     {"guide": {**GUIDE_WIDE["guide"], "v2": guide()["guide"]["v1"]}}),
     ("base-layer-status-vocab-disjoint", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 画面の層が決まりに合わない（外部の profile org/guide の org（タグ v1） の行 S-1: 列 ステータス の語彙（完了）が決まった値"),
         (["hint"], 0, LAYER_HINT),
@@ -812,6 +825,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("層の行の決まりを LayerBroken にしない", "    except checks.LayerRule as e:  # 読めたが", "    except ValueError as e:  # 読めたが", "base-layer-status-vocab-disjoint"),
     ("読めないのも層の行の決まりと案内する", "    except checks.LayerRule as e:  # 読めたが", "    except checks.Stop as e:  # 読めたが", "base-screen-layer-version-out-of-range"),
     ("案内に --profile を入れない", "--profile {profile} --external {EXTERNAL_NONE}", "--external {EXTERNAL_NONE}", "base-layer-default-outside-vocab"),
+    # #1590: タグを変える道に、承認の取り直しと、直したタグを --external で明示する道を添える
+    ("案内に承認の取り直しを入れない", 'f"（shared/ の変更なので 2 つの承認を取り直し、基盤の層もそのタグの時点で読むことになる）か、"', 'f"か、"',
+     "base-layer-default-outside-vocab"),
+    ("案内に直したタグを明示する道を入れない", 'f"shared/ を触らずに直したタグを --profile {profile} --external \\"{repo} {name} <新しいタグ>\\" で明示するか、"', 'f""',
+     "base-layer-fixed-tag-explicit"),
+    ("明示する道のリポジトリを基盤の profile の設定から取らない", '--external \\"{repo} {name} <新しいタグ>\\"', '--external \\"<リポジトリ> <名前> <新しいタグ>\\"',
+     "base-layer-status-vocab-disjoint"),
     ("引数なしの init の止めた理由に案内を入れない", "        super().__init__(f\"{reason}——同じ外部の profile",
      "        super().__init__(reason)\n        (f\"{reason}——同じ外部の profile", "base-layer-status-vocab-disjoint"),
     ("platform-spec を読み込む", "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n",
