@@ -127,7 +127,7 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は mkdocs �
 - マージの直前の取り込み（親の依頼 2026-11-26T03:33:14Z）: 取り込む前の先端 `b4fb89e9`、取り込んだ main `14888e7b`（#1567）、merge `3a4cbca6`。衝突なし。
   正味の差分（`git diff origin/main`）はこの周の 6 ファイルだけ。版は上げない（`plugins/` を触らない）。
   名前のぶつかり: main が足した名前（scaffold の `excluded`・spec-ir.md/tree.md の節）とこの周の名前（`THINNED`・`THIN_SHARD`・`--all-mutants`・`test_args_for`）は重ならない（`git diff 4d9370bf 14888e7b` に後者は 0 件、この周の差分に `excluded` は 0 件）。
-  CLAUDE.md の決まり（#831）どおり `check-plugin-versions.py`（0）と `skill-metrics.py --check`（0）だけを回した。周の base は取り込み後も `4d9370bf`（main の祖先のまま）。
+  CLAUDE.md の決まり（#831）どおり `check-plugin-versions.py`（0）と `skill-metrics.py --check`（0）だけを回した。関門の記録の周の base は関門に渡した `4d9370bf` のまま（取り込み後の式の値は `14888e7b`。取り込み後に関門は回していない）。
 - 2 パス目の指摘対応: コミット `602cedbf`（起点 `62bd5695` → 終点 `602cedbfe141457a4b5286e35dc1c3114e38c8ad`）
 - 狭いパス（sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-narrow-1-20261126T023916Z.md`。**反証 1 件**（N1。下の採否の表——人間が決める。推奨は PR コメント）。CR2-1〜3 の直しは一致。素通りした変異 3 本（下の N1）
 
