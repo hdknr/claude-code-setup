@@ -121,7 +121,8 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
   振り分けと推奨は下の「狭いパスの指摘の振り分け」。F-1 は受入基準 2 を破るので、cruise の線 `マージ前の判断 = 推奨で決めて起票（後退・未達を含む）` のとおり推奨を決める前に直した（`d0af3031`）。
   陽性対照: 新しい試料「符号化した改行」は `cbad2927` の本体で exit 1・標準出力に行頭の `検証の関門` の行があり、`d0af3031` で期待どおり（exit 4・その行なし）。
 - 当て直し: Verifier（sonnet）を `cbad2927`→`d0af3031` に 1 回だけ当てた——反証 0 件（受入基準を破るもの 0。テストの網羅の弱さ 1 件——`%0A` 以外の符号化を試料が判別しない。本体は正しい）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/ccb0151a-cd0f-4f1a-b328-115bd7bc4fd5/scratchpad/gate-1558-redo-1-20261126T054910Z.md`。当て直しの後に直しを足していない。
-- 外部レビュー: PR を作った後に `external-reviews.py` で見る（このリポジトリの `.claude/dev-loop.md` に `外部レビュー:` の宣言は無い——該当なしの見込み）。
+- PR #1570 を作った（先端 `4760eddc`）。PR 側の CI は全部緑（deploy は PR では skipping）・`MERGEABLE`。
+- 外部レビュー: 該当なし（`external-reviews.py 1570` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。
 
 ```dev-loop-gates
 周の base: 25d08f5dd1be61cb41d2a684b04ba5f77f9d585e
