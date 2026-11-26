@@ -294,7 +294,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-screens.py` - 画面の表と散文の仕様書を、**spec-loop の重ね方（`merge-versions.py` の `merge`）で重ねた全体**に当てる検査（#1092。
       表どうし・入口から辿れること・遷移の無いボタン・Q&A の根拠・成果物の表への参照・未決定の印・散文の節）。**spec-loop の決まりは写さずに読み込み**（Q&A の番号の形・未決定の印・成果物の表の置き場所も）、
       **検査の前に spec-loop の版が対応の範囲かを確かめて、外なら 4 で止まる**。**ファイルを書かず、Q&A の番号を振らない**（起票の候補を出すだけ）。
-      **`settings.csv` が外部の profile を名指したときだけ、spec-loop の `external-profile.py` を読み込んで画面の層を `web-spa` などの上に重ね、語彙・種別の既定・足す列を見る——読めない・`重ねる先` が食い違えば 4**（#1458。決まりの原本は `references/profiles.md` の「外部の profile」）。
+      **`settings.csv` が外部の profile を名指したときだけ、spec-loop の `external-profile.py` を読み込んで画面の層を `web-spa` などの上に重ね、語彙・種別の既定・足す列を見る——読めない・`重ねる先` が食い違う・既定がその列に書けない値（同じ列の語彙・core の決まった値の外。#1571）なら 4**（#1458。決まりの原本は `references/profiles.md` の「外部の profile」）。
       **画面の層の種類 `答え` の行（既定の答え）は、`web-spa` の「誰が決めるか」で共有（推奨とリンクつき）・内部の起票の候補に分けて出す——番号を振らず、Q&A 表の `質問` に行の ID があれば出さない**（#1459）。
       守る／守らないは docstring を正とする。テストは `scripts/test-check-screens.py`）
     - `scripts/build-mock.py` - 画面の表から **UI モック（HTML 1 枚）を生成する**（#1095。`check-screens.py` を読み込み、同じ重ね方の表から `<docs の親>/build/mock/v<n>/index.html` を書く——commit しない）。
