@@ -50,6 +50,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - 外部の profile を読めない（spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・画面の層が無い・形式の版が範囲の外）なら、検査の前に 4 で止める——外部の profile を外して検査を続けない
 - 画面の層の `重ねる先` が `settings.csv` の `profile`（`未設定` を含む）と違えば、検査の前に 4 で止める
 - 画面の層の行が決まりに合わない（後ろの列・`種類`・表・空の列・既に在る列を足す・語彙と既定の空の値・`screens.csv` でない既定・決まった種別でない既定・同じ列と種別の既定が 2 行・どこにも無い列の語彙と既定）なら 4
+- 既定の値が、その列に書けない値なら 4（#1571）——同じ列の外部の profile の語彙（在れば）に無い・core の決まった値の列（`種別`・`ステータス`）の決まった値に無い・`種別` の列の既定がその行の種別と違う。
+  語彙も決まった値も無い列の既定は照らさない。語彙の行と既定の行の順に依らない
 - 外部の profile が足す列を、core と profile の列の後ろに宣言の順で見出し行に求める
 - 語彙のある列で、語彙の外の値を違反にする（印のあるセル・空のセル・`N/A。実現方式が未定` のセルは当てない）
 - 種別の既定と違う値で、その画面の行の `根拠` に Q&A の番号が無いものを違反にする（番号があれば通す）
@@ -75,7 +77,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 | **ワイヤーフレーム（drawio）と画面遷移図** | 図の鮮度は spec-loop の `render-diagrams.py --check` |
 | **本物のプラグインのキャッシュの形が変わったとき**（`installed_plugins.json` の形） | 1 つの実測（`plugins` の下に `<名前>@<マーケットプレイス>` → 入れた先の一覧）に合わせて読む。読めなければ見つからないとして 4 |
 | **外部の profile のリンクが切れているか・本文の中身** | spec-loop の `external-profile.py check` が見る。ここは ID・値だけを使い、本文を読まない（`references/profiles.md` の「外部の profile」） |
-| **語彙のセルを `、` で区切ること・既定の値が語彙の中にあるか** | セルの値をそのまま比べる。既定と語彙の食い違いは外部の profile の側の判断 |
+| **語彙のセルを `、` で区切ること** | セルの値をそのまま比べる |
+| **既定の値が、組み込みの profile の列の形（`web-spa` の `パス` が `/` で始まる）に合うか・外部の語彙が core の決まった値の外の値を持つか** | 照らすのは語彙と決まった値への在る無しだけ（#1571）。形の規則は語彙ではなく、語彙の外れは語彙の中の決まった値を書けば通る（どの値も違反になる形ではない） |
 | **既定の答えをいつ起票したか・起票した Q&A の行の回答と状態** | 候補を消すのは、その表の `質問` に行の ID の文字列があるかだけで決める（ID が別の意味で書かれていても消える。`references/profiles.md` の「既定の答え」） |
 | **外部の profile のタグを付け直したとき・後の版で外部の profile を変えたとき** | 足す列が変われば見出し行の違反（1）になる。どのタグで表を置いたかは覚えない（`references/profiles.md` の「外部の profile」） |
 """
@@ -130,6 +133,7 @@ CHILD_KINDS = ("tab", "dialog")  # 親画面を持つ種別
 REACHED_WITH_PARENT = ("tab",)  # 親の画面が辿れれば辿れる種別
 STATUSES = ("下書き", "記入中")
 ITEM_KINDS = ("表示", "入力", "ボタン", "一覧", "一覧の列")
+SCREEN_FIXED = {"種別": SCREEN_KINDS, "ステータス": STATUSES}  # 画面の表の決まった値の列（外部の profile の既定を照らす。#1571）
 BUTTON = "ボタン"
 INPUT = "入力"
 LIST_COLUMN = "一覧の列"
@@ -649,6 +653,17 @@ class Checker:
         for target, column, rid in uses:
             if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:
                 raise Stop(f"{label} の行 {rid}: 列 {column} は {target.rsplit('/', 1)[1]} に無い（core・profile {self.profile}・足した列のどれでもない）")
+        # 既定の値が、その列に書ける値でなければ止める（#1571）——書けない既定を持つ種別の画面は、どの値を書いても違反になる
+        for (column, screen_kind), (value, rid) in external.defaults.items():
+            where = f"{label} の行 {rid}"
+            vocab = external.vocab.get(SCREENS, {}).get(column)
+            if vocab is not None and value not in vocab:
+                raise Stop(f"{where}: 種別 {screen_kind} の列 {column} の既定 {value!r} が {label} の語彙（{'・'.join(vocab)}）に無い")
+            fixed = SCREEN_FIXED.get(column)
+            if fixed is not None and value not in fixed:
+                raise Stop(f"{where}: 種別 {screen_kind} の列 {column} の既定 {value!r} が決まった値（{'・'.join(fixed)}）に無い")
+            if column == "種別" and value != screen_kind:
+                raise Stop(f"{where}: 種別 {screen_kind} の列 種別 の既定 {value!r} が種別と違う（種別 {screen_kind} の画面の種別は {screen_kind} だけ）")
         return external
 
     def read_answer(self, external: External, rid: str, row: dict[str, str], where: str) -> None:
