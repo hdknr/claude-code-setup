@@ -86,6 +86,7 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 - 2 パス目の指摘対応の終点: `30cdc05c`（CR2-1。`profiles.md` の 1 句。check-all 緑——23 本を回し失敗 0）
 - 狭いパス（`4a19f7d8` → `30cdc05c`）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/60512778-ba8a-4b9c-afb8-fadbe195ec94/scratchpad/gate-1581-narrow-1-20261126T093453Z.md`
 - 狭いパスを通した（`4a19f7d8` → `30cdc05c`）——**反証 0 件**・観察 1 件（NP-1。振り分けは下の表）。報告のファイルに終わりの印つき・260 行を読んだ・`git status --porcelain` は前後同じ。直した文の 2 つの主張を外の試料で走らせて確かめた。著者の変異: なし（文書 1 句）
+- PR #1584（head `2b9ee249` で PR 側の CI 20 本 pass・deploy は skipping）。マージは親がする
 - 交絡: 実験なし（試料の赤→緑は、直す前の本体と直した本体で同じ試料を走らせた陽性対照）
 
 ```dev-loop-gates
@@ -147,7 +148,7 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 | `CLAUDE.md` の `check-screens.py` の項に #1581 の 1 句が無い（コミットが分類器に拒まれて外した） | #1581 実装 | 示せる（項が #1571 までを列挙） | 記録だけ（偽ではなく不足。足すかは人間に渡す） |
 
 - 直すの行: 0 件（起票の候補・`要確認` の Issue なし）
-- 外部レビュー: PR を作った後に `external-reviews.py` で見る
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py 1584` が 3）
 - 効いた行: R-05（CR1-3。順に依る変異を外で当て、既存の陰性対照で殺せないと示した）
 - 効いた行: R-02（CR2-1。原本の文を check_reach と照らした）
 - 効いた行: R-02（CR1-1）
