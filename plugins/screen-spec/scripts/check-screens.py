@@ -52,6 +52,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - 画面の層の行が決まりに合わない（後ろの列・`種類`・表・空の列・既に在る列を足す・語彙と既定の空の値・`screens.csv` でない既定・決まった種別でない既定・同じ列と種別の既定が 2 行・どこにも無い列の語彙と既定）なら 4
 - 既定の値が、その列に書けない値なら 4（#1571）——同じ列の外部の profile の語彙（在れば）に無い・core の決まった値の列（`種別`・`ステータス`）の決まった値に無い・`種別` の列の既定がその行の種別と違う。
   語彙も決まった値も無い列の既定は照らさない。語彙の行と既定の行の順に依らない
+- 画面の表の決まった値の列（`種別`・`ステータス`）の外部の profile の語彙が、決まった値と 1 つも重ならなければ 4（#1581）——その列にはどの値も書けない
+  （語彙の外も決まった値の外も違反で、Q&A の根拠でも通らない）。止めた理由に列・語彙・決まった値・語彙の行の ID を名指す。語彙の無い列・1 つでも重なる列は止めない。語彙の行の順に依らない
 - 外部の profile が足す列を、core と profile の列の後ろに宣言の順で見出し行に求める
 - 語彙のある列で、語彙の外の値を違反にする（印のあるセル・空のセル・`N/A。実現方式が未定` のセルは当てない）
 - 種別の既定と違う値で、その画面の行の `根拠` に Q&A の番号が無いものを違反にする（番号があれば通す）
@@ -78,7 +80,9 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 | **本物のプラグインのキャッシュの形が変わったとき**（`installed_plugins.json` の形） | 1 つの実測（`plugins` の下に `<名前>@<マーケットプレイス>` → 入れた先の一覧）に合わせて読む。読めなければ見つからないとして 4 |
 | **外部の profile のリンクが切れているか・本文の中身** | spec-loop の `external-profile.py check` が見る。ここは ID・値だけを使い、本文を読まない（`references/profiles.md` の「外部の profile」） |
 | **語彙のセルを `、` で区切ること** | セルの値をそのまま比べる |
-| **既定の値が、組み込みの profile の列の形（`web-spa` の `パス` が `/` で始まる）に合うか・外部の語彙が core の決まった値の外の値を持つか** | 照らすのは語彙と決まった値への在る無しだけ（#1571）。形の規則は語彙ではなく、語彙の外れは語彙の中の決まった値を書けば通る（どの値も違反になる形ではない） |
+| **既定の値が、組み込みの profile の列の形（`web-spa` の `パス` が `/` で始まる）に合うか** | 照らすのは語彙と決まった値への在る無しだけ（#1571）。形の規則は語彙ではない |
+| **外部の語彙が、決まった値と重なりつつ決まった値の外の値も持つか・重なりが入口の種別 `top` を欠くか** | 重なる値を書けば列の違反は消える（#1581 で止めるのは重なりが空のときだけ）。入口が無いのは入口の検査が違反にする |
+| **`screen-items.csv`・`transitions.csv` の決まった値の列（`種類`・`必須` など、`web-spa` の遷移の `種類`）の語彙が、決まった値と重なるか** | 照らすのは画面の表の `種別`・`ステータス` だけ（#1581 の範囲）。ほかの表の決まった値の列は、重ならない語彙でも検査の前には止めない |
 | **既定の答えをいつ起票したか・起票した Q&A の行の回答と状態** | 候補を消すのは、その表の `質問` に行の ID の文字列があるかだけで決める（ID が別の意味で書かれていても消える。`references/profiles.md` の「既定の答え」） |
 | **外部の profile のタグを付け直したとき・後の版で外部の profile を変えたとき** | 足す列が変われば見出し行の違反（1）になる。どのタグで表を置いたかは覚えない（`references/profiles.md` の「外部の profile」） |
 """
@@ -653,6 +657,15 @@ class Checker:
         for target, column, rid in uses:
             if column not in COLUMNS[target] + builtin.get(target, []) + external.columns[target]:
                 raise Stop(f"{label} の行 {rid}: 列 {column} は {target.rsplit('/', 1)[1]} に無い（core・profile {self.profile}・足した列のどれでもない）")
+        # 決まった値の列の語彙が決まった値と 1 つも重ならなければ止める（#1581）——語彙の外の値も決まった値の外の値も違反で、
+        # Q&A の根拠でも通らないので、その列にはどの値も書けない
+        for column, fixed in SCREEN_FIXED.items():
+            values = external.vocab.get(SCREENS, {}).get(column)
+            if values is not None and not set(values) & set(fixed):
+                ids = "・".join(r for r, row in layer.rows.items() if row["種類"].strip() == EXTERNAL_VOCAB
+                                and tables.get(row["表"].strip()) == SCREENS and row["列"].strip() == column)
+                raise Stop(f"{label} の行 {ids}: 列 {column} の語彙（{'・'.join(values)}）が決まった値（{'・'.join(fixed)}）と 1 つも重ならない"
+                           "（その列にはどの値も書けない）")
         # 既定の値が、その列に書ける値でなければ止める（#1571）——書けない既定を持つ種別の画面は、どの値を書いても違反になる
         for (column, screen_kind), (value, rid) in external.defaults.items():
             where = f"{label} の行 {rid}"
