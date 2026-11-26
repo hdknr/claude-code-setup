@@ -567,6 +567,13 @@ def add_spec_row(repo: Path) -> None:
     path.write_text(text.replace(ACC_ROWS[3], ACC_ROWS[3] + "\n" + ADDED_ROW), encoding="utf-8")
 
 
+def add_row_and_break(repo: Path) -> None:
+    """仕様に 1 行足し、置いてある `scaffold/` も手で壊す——`--check` が取りこぼしと古さを両方出すか（#1562 の CR2-2）。"""
+    add_spec_row(repo)
+    path = repo / "scaffold" / "openapi.json"
+    path.write_text(path.read_text(encoding="utf-8") + " ", encoding="utf-8")
+
+
 def excluded_inert(repo: Path) -> str | None:
     """`excluded` の理由と並びを変えて作り直しても、`scaffold/` と Issue の本文が 1 バイトも変わらない（機能のオブジェクトの外。#1562）。"""
     def snapshot() -> dict[Path, bytes]:
@@ -4229,6 +4236,14 @@ CASES: list[Case] = [
          ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row, absent="は新しい"),
     Case("取りこぼし: 足す前は --check が新しいと言う", 0, "は新しい", args=("--check",),
          ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, absent="どちらにも無い"),
+    Case("取りこぼし: --check は取りこぼしで止まるときも古さを併せて出す", 1, "scaffold/openapi.json: 今の入力から作るものと違う", args=("--check",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_row_and_break),
+    Case("取りこぼし: --check は古くなくても取りこぼしで止まる行を出す", 1, UNCOVERED_STOP, args=("--check",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row, absent="が古い（"),
+    # v2 を作った後の `--check --upto 1` は前の版の時点を見るので、v1 の取りこぼしでは止めない（CR2-3。`scaffold/` を v1 の機能で作れば新しい）
+    Case("取りこぼし: v2 を作った後の --check --upto 1 は止めない", 0, "は新しい", args=("--check", "--upto", "1"),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, extra=v2([]), generate_first=True, pre=add_spec_row,
+         absent="どちらにも無い"),
     Case("取りこぼし: 生成の後に仕様へ足した行で書く生成が止まる", 1, "どちらにも無い: F1-5（spec/order.md:11）",
          ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row, post=nothing_written_issues),
     Case("取りこぼし: 生成の後に仕様へ足した行で --red-check が止まる", 1, "どちらにも無い: F1-5（spec/order.md:11）", args=("--red-check",),
@@ -5272,9 +5287,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内訳を読み込まない", "    loaded.coverage, loaded.uncovered = coverage_lines(rendered, ir)", "    loaded.coverage, loaded.uncovered = [], []",
      "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
     # #1562: 取りこぼしで止まる・決めて外すケース
-    ("取りこぼしで止めない", "    if loaded.current and loaded.uncovered:\n", "    if False:\n", "取りこぼし: --dry-run も止まり「作れる」と言わない"),
-    ("取りこぼしを --upto の前の版でも止める", "    if loaded.current and loaded.uncovered:\n", "    if loaded.uncovered:\n",
+    ("取りこぼしで止めない", "    if uncovered and not args.check:\n", "    if False:\n", "取りこぼし: --dry-run も止まり「作れる」と言わない"),
+    ("取りこぼしを --upto の前の版でも止める", "    uncovered = loaded.uncovered if loaded.current else []\n", "    uncovered = loaded.uncovered\n",
      "取りこぼし: --upto で前の版の時点を見るときは止めない"),
+    ("--check の取りこぼしを --upto の前の版でも止める", "    uncovered = loaded.uncovered if loaded.current else []\n",
+     "    uncovered = loaded.uncovered if loaded.current or args.check else []\n", "取りこぼし: v2 を作った後の --check --upto 1 は止めない"),
+    ("--check で取りこぼしを見ない", "        if problems or uncovered:\n            return 1\n", "        if problems:\n            return 1\n",
+     "取りこぼし: 生成の後に仕様へ足した行で --check が止まる"),
+    ("--check の取りこぼしで古さを出さない", "    if uncovered and not args.check:\n", "    if uncovered:\n",
+     "取りこぼし: --check は取りこぼしで止まるときも古さを併せて出す"),
+    ("--check の取りこぼしの止まる行を出さない", "        if uncovered:\n            print(UNCOVERED_STOP, file=sys.stderr)\n", "",
+     "取りこぼし: --check は古くなくても取りこぼしで止まる行を出す"),
     ("どちらにも無いを止める理由にしない", '    problems = [f"どちらにも無い仕様のケースが {len(neither)} 件ある（中間表現が仕様より古い——書き起こし直す）"] if neither else []',
      "    problems = []", "取りこぼし: 生成の後に仕様へ足した行で --check が止まる"),
     ("外した番号を取りこぼしから除かない", "    neither = [n for n in cases if n not in red and n not in accepted and n not in excluded]",

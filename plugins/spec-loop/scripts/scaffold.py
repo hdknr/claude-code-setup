@@ -55,7 +55,8 @@ Red テスト = ケースの `ref` が番号と一致するもの、受入基準
 （決まりの正は `references/spec-ir.md` の「Red テストにしない受入基準」と `references/handoff-issue.md` の「Red テストにしない受入基準」）。
 **どちらにも無いケースが 1 件でもあれば、作業中の版の全体を見るどのモード（書く生成・`--dry-run`・`--check`・`--red-check`）も 1 で止まる**（#1562）——
 内訳と名指しを出し、書く生成は何も作らず前の Issue の本文を消す。`--check` は `scaffold/` が新しくても止まる（仕様が中間表現より先に進んだことを CI で赤にする）。
-**`--upto` で作業中の版（いま在る最も新しい版）より前の時点を見るときは止めない**（内訳と名指しは出す。前の版は凍結していれば直せず、#1562 より前の中間表現は下の `excluded` を知らない）。
+**`--upto` で作業中の版（いま在る最も新しい版）より前の時点を見るときは止めない**（前の版は凍結していれば直せず、#1562 より前の中間表現は下の `excluded` を知らない。
+`--dry-run --upto` は内訳と名指しを出し、`--check --upto` は出さない）。**`--check` は取りこぼしで止まるときも `scaffold/` の古さを併せて出す**（取りこぼしだけで止まったのかを出力で見分けられる）。
 `docs/v<n>/` を作る前の `--upto <n-1>` は作業中の版を見るので止まる（`references/spec-ir.md` の「0.136.0 より前に作った中間表現の移行」の 4）。
 **Red テストにも受入基準にもしないと利用者と決めたケースは、中間表現の最上位の `excluded` に `{"ref": <番号>, "reason": <1 行>}` で挙げたものだけを通す**——内訳に
 `外した x 件` と出る（書かなければ内訳の行は #1301 と同じ形）。形（配列・キー・1 行・重複）に反すれば 1、仕様のケースに無い番号・Red テストか受入基準にもある番号を挙げたら作業中の版で 1。
@@ -233,7 +234,8 @@ profile を使っているとは何か・platform-spec の見つけ方・終了�
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
 - 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・外部の profile の関門が 1（書く生成と `--dry-run`。#1457）・生成したモックの生成器が 1（#1099）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
-  反する（全部を 1 行ずつ出す）・仕様のテストケースのどれかが Red テストにも受入基準にも `excluded` にも無い（作業中の版の全体を見る全モード。#1562）・中間表現の機能どうしの依存が循環する（書く生成と `--dry-run`。#1347）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
+  反する（全部を 1 行ずつ出す）・仕様のテストケースのどれかが Red テストにも受入基準にも `excluded` にも無い、または `excluded` が仕様に無い番号・Red テストか受入基準にもある番号を挙げた（作業中の版の全体を見る全モード。#1562。
+  `--bundle` のまとめ方の誤り（2）より先に判定する——取りこぼしのある正本では、まとめ方の誤りも 1 で返る）・中間表現の機能どうしの依存が循環する（書く生成と `--dry-run`。#1347）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
 - 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・外部の profile の関門が 2 か 4（`profile の行` が profile を指すのに platform-spec が無いを含む。#1457）・生成したモックを作れない（生成器の 1 のほか。#1099）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
   まとめ方の誤り（上の「まとめた本文」。まとめ方でだけ起きる依存の循環を含む）・`--check`・`--red-check` との組み合わせ、v1 でない `--foundation` を含む）・`docs/` が無い／版が 1 つも無い／
@@ -395,6 +397,8 @@ ACCEPTANCE_HEADING = "### Red テストにしない受入基準"
 # `references/spec-ir.md` の「決めて外すケース」。#1562）——挙げた番号だけを内訳の「外した」に数え、取りこぼしに数えない
 EXCLUDED = "excluded"
 EXCLUDED_KEYS = {"ref", "reason"}
+# 取りこぼしで止まるときの最後の行（#1562）
+UNCOVERED_STOP = "仕様のテストケースが中間表現に揃っていない。生成しない（`references/spec-ir.md` の「Red テストにしない受入基準」）"
 # 機能に効く性能の要求の行の `No` の配列（任意。`references/spec-ir.md` の「性能の要求」。#852）
 NFR = "nfr"
 # 機能に関係する参考資料（UI モック・業務フロー・画面遷移の図など）の、重ね合わせた全体の根からのパスの配列（任意。
@@ -4229,11 +4233,12 @@ def run(repo: Path, args, writing: bool) -> int:
         for line in lines:
             print(line, file=sys.stderr)
 
-    if loaded.current and loaded.uncovered:
-        # 仕様のテストケースの取りこぼし（#1562）——作業中の版の全体を見るときは、どのモードでも止める（`--check` は `scaffold/` が新しくても）。
-        # `--upto` で前の版の時点を見るときは止めない——前の版は凍結していれば直せず、#1562 より前の中間表現は `excluded` を知らない
-        return fail(repo, writing, 1, loaded.coverage + loaded.uncovered + [
-            "仕様のテストケースが中間表現に揃っていない。生成しない（`references/spec-ir.md` の「Red テストにしない受入基準」）"])
+    # 仕様のテストケースの取りこぼし（#1562）——作業中の版の全体を見るときは、どのモードでも止める（`--check` は `scaffold/` が新しくても）。
+    # `--upto` で前の版の時点を見るときは止めない——前の版は凍結していれば直せず、#1562 より前の中間表現は `excluded` を知らない。
+    # `--check` は下の枝で `scaffold/` の古さも併せて出してから止める（取りこぼしだけで止まったのかを、出力から見分けられるように）
+    uncovered = loaded.uncovered if loaded.current else []
+    if uncovered and not args.check:
+        return fail(repo, writing, 1, loaded.coverage + uncovered + [UNCOVERED_STOP])
 
     mock_missing: list[str] = []
     if loaded.screens:
@@ -4252,10 +4257,13 @@ def run(repo: Path, args, writing: bool) -> int:
     cases = sum(len(f["cases"]) for f in loaded.ir["features"])
     if args.check:
         problems = mock_missing + stale(repo / OUT_DIR, contract)
-        for line in problems:
+        for line in (loaded.coverage + uncovered if uncovered else []) + problems:
             print(line, file=sys.stderr)
         if problems:
             print(f"{OUT_DIR}/ が古い（{len(problems)} 件）。scaffold.py で作り直す", file=sys.stderr)
+        if uncovered:
+            print(UNCOVERED_STOP, file=sys.stderr)
+        if problems or uncovered:
             return 1
         print(f"{OUT_DIR}/ は新しい（v{loaded.number} まで・機能 {features} 件・ケース {cases} 件）")
         return 0
