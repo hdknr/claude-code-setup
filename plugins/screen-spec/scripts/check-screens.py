@@ -49,7 +49,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - 外部の profile は spec-loop の `external-profile.py` で読む（探し方・タグの時点の読み出し・形式の版の範囲を写さない）。案件の根（`CLAUDE.md` を探す場所）は `docs` の親
 - 外部の profile を読めない（spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・画面の層が無い・形式の版が範囲の外）なら、検査の前に 4 で止める——外部の profile を外して検査を続けない
 - 画面の層の `重ねる先` が `settings.csv` の `profile`（`未設定` を含む）と違えば、検査の前に 4 で止める
-- 画面の層の行が決まりに合わない（後ろの列・`種類`・表・空の列・既に在る列を足す・語彙と既定の空の値・`screens.csv` でない既定・決まった種別でない既定・同じ列と種別の既定が 2 行・どこにも無い列の語彙と既定）なら 4
+- 画面の層の行が決まりに合わない（後ろの列・`種類`・表・空の列・既に在る列を足す・語彙と既定の空の値・`screens.csv` でない既定・決まった種別でない既定・同じ列と種別の既定が 2 行・どこにも無い列の語彙と既定）なら 4。
+  行の決まりで止めたもの（この項と下の 2 項・既定の答えの行の決まり）は `LayerRule`（`Stop` の下位。終了コードと文言は同じ）で、読めないのと分けて名指す（#1582）
 - 既定の値が、その列に書けない値なら 4（#1571）——同じ列の外部の profile の語彙（在れば）に無い・core の決まった値の列（`種別`・`ステータス`）の決まった値に無い・`種別` の列の既定がその行の種別と違う。
   語彙も決まった値も無い列の既定は照らさない。語彙の行と既定の行の順に依らない
 - 画面の表の決まった値の列（`種別`・`ステータス`）の外部の profile の語彙が、決まった値と 1 つも重ならなければ 4（#1581）——その列にはどの値も書けない
@@ -245,6 +246,13 @@ def undecided_profile(text: str) -> bool:
 
 class Stop(Exception):
     """検査の前に止める（4）。"""
+
+
+class LayerRule(Stop):
+    """外部の profile の画面の層を読めたが、行が決まりに合わない（4）——読めないのとは分ける（#1582）。
+
+    同じ外部の profile を名指し直しても止まるので、`write-screens.py` の `hint` と引数を省いた `init` が案内を言い分けるのに使う。終了コードと文言は `Stop` と同じ。
+    """
 
 
 class Unreadable(Exception):
@@ -616,6 +624,13 @@ class Checker:
         if layer.base != self.profile:
             raise Stop(f"{label} の層 {EXTERNAL_LAYER} の 重ねる先 {layer.base!r} が {SETTINGS} の {PROFILE_KEY} {self.profile!r} と食い違う")
         external = External(repo, name, tag, source)
+        try:
+            return self.check_layer(ext, layer, label, external)
+        except Stop as e:  # 行の決まり（#1582）——読めないのと分けて名指す
+            raise LayerRule(str(e)) from None
+
+    def check_layer(self, ext, layer, label: str, external: External) -> External:
+        """読めた画面の層の行を決まりに照らし、足す列・語彙・既定・答えを `external` に持つ。決まりに合わなければ Stop（`load_external` が LayerRule にする）。"""
         tables = {path.rsplit("/", 1)[1]: path for path in TABLES}
         builtin = PROFILES[self.profile]["columns"] if self.profile in PROFILES else {}
         uses: list[tuple[str, str, str]] = []  # (表, 列, 行の ID)——足した列を全部読んでから在るかを見る

@@ -22,6 +22,9 @@ spec-loop のスクリプトを読み込むので、一時ディレクトリに 
 8. **基盤の profile から引く初期値（#1460）**——基盤の profile（`shared/platform/settings.csv`）の画面の層の `重ねる先` があれば、引数を省いた `init` が
    `profile` と外部の profile をそれにして足す列を見出し行に入れ、直後の検査が 0（A1）。名指しが無い・基盤の profile が無いなら今と同じ（A2）。
    明示の引数が勝つ（A3）。初期値を決められなければ 4 で何も書かない（A4）。profile のリポジトリは試料ごとに一時の git リポジトリで作る。
+   **名指した画面の層の行が決まりに合わない（#1571・#1581 の形）とき、`hint` と引数なしの `init` は、同じ外部の profile を明示しても止まることと、
+   外部の profile を直すか `--profile web-spa --external なし` を渡す案内を出し、案内どおりに渡せば書けて検査が 0（#1582）**。読めないときは今までどおり「読めない」。
+   この言い分けは `check-screens.py` の `LayerRule` に乗るので、`check-screens.py` を壊す変異（`CHECK_MUTATIONS`）も当てる。
 9. **platform-spec を読み込まない（#1460 の A5）**——試料の置き方に platform-spec は無く、プラグインの隣に**読み込まれたら印を書く偽の platform-spec**を置いて、
    どの試料の後にも印が無いことを見る。写した設定の置き場所・見出し・項目名が platform-spec の `check-infra-profile.py` の定数と一致すること（崩すと落ちることも）。
 
@@ -128,6 +131,12 @@ EXT_SETTINGS = "項目,値\n画面IDの接頭辞,S-\nprofile,web-spa\n外部の 
 EXT_S_HEAD = S_HEAD.replace(",根拠\n", ",根拠,パス,レイアウト\n")
 EXT_T_HEAD = T_HEAD.replace(",根拠\n", ",根拠,種類,備考\n")
 BASE_INITIAL = "init の初期値（--profile と --external を省いたとき）: profile web-spa、外部の profile org/guide org v1"
+# 画面の層の行が決まりに合わない基盤の profile（#1582）——#1571（既定が語彙の外）と #1581（ステータスの語彙が決まった値と重ならない）の形
+GUIDE_WIDE = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT.replace("list,standard\n", "list,wide\n")}}}
+GUIDE_STATUS = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT + "S-1,完了だけ,,語彙,screens.csv,ステータス,,完了\n"}}}
+LAYER_ADVICE = "外部の profile を直すか、--profile web-spa --external なし を渡す"
+LAYER_HINT = f"——init の引数を省いても、同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）"
+LAYER_INIT = f"——同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）——書いていない"
 
 # (名前, 正本のファイル, 手順 [(write-screens の引数, 終了コード, 出力に在る文字列)], 検査（check-screens の終了コード, 出力に在る文字列）か None,
 #  書いてよいファイル（全手順の後に変わったファイルの全部。None なら見ない）, 中身 {パス: 在る文字列}[, 基盤の profile のリポジトリ（guide()）])
@@ -266,12 +275,25 @@ CASES: list[tuple] = [
     ("explicit-external-on-unset", {"v1": DIR}, [(["init", "--external", "org/guide org v1"], 4, "重ねる組み込みの profile が無い")], None, [], {}, guide()),
     # #1571: 既定がその列の語彙に無い画面の層は、init も書く前に 4 で止める（check-screens.py の load_external を共有する）
     ("explicit-external-default-outside-vocab", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4,
-     "種別 list の列 レイアウト の既定 'wide' が")], None, [], {},
-     {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT.replace("list,standard\n", "list,wide\n")}}}),
+     "種別 list の列 レイアウト の既定 'wide' が")], None, [], {}, GUIDE_WIDE),
+    # #1582: 基盤の profile が名指す画面の層が行の決まりに合わないと、hint と引数なしの init は「明示して渡す」だけの行き止まりを案内しない。
+    # Issue の再現の 4 手順（hint → 引数なしの init → 同じ外部の profile を明示した init は 4）と、案内どおり --external なし を渡せば書けて検査が 0（陽性対照）
+    ("base-layer-default-outside-vocab", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "基盤の profile: 画面の層が決まりに合わない（外部の profile org/guide の org（タグ v1） の行 L-LIST: 種別 list の列 レイアウト の既定 'wide' が"),
+        (["hint"], 0, LAYER_HINT),
+        (["init"], 4, LAYER_INIT),
+        (["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4, "種別 list の列 レイアウト の既定 'wide' が"),
+        (["init", "--profile", "web-spa", "--external", "なし"], 0, "profile: web-spa）"),
+    ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES,
+     {SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"), SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n")}, GUIDE_WIDE),
+    ("base-layer-status-vocab-disjoint", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "基盤の profile: 画面の層が決まりに合わない（外部の profile org/guide の org（タグ v1） の行 S-1: 列 ステータス の語彙（完了）が決まった値"),
+        (["hint"], 0, LAYER_HINT),
+        (["init"], 4, LAYER_INIT),
+    ], None, [], {}, GUIDE_STATUS),
     # #1581: ステータスの語彙が決まった値（下書き・記入中）と 1 つも重ならない画面の層も、init は書く前に 4 で止める（同じ load_external）
     ("explicit-external-status-vocab-disjoint", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4,
-     "列 ステータス の語彙（完了）が決まった値（下書き・記入中）と 1 つも重ならない")], None, [], {},
-     {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT + "S-1,完了だけ,,語彙,screens.csv,ステータス,,完了\n"}}}),
+     "列 ステータス の語彙（完了）が決まった値（下書き・記入中）と 1 つも重ならない")], None, [], {}, GUIDE_STATUS),
     ("base-no-clone", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 読めない（"),
         (["init"], 4, "基盤の profile org/guide の org（タグ v1） を読めない"),
@@ -784,17 +806,33 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "base-no-screen-name-with-space"),
     ("profile の空白を見ない", "    if not checks.EXTERNAL_REPO.fullmatch(repo) or any(len(value.split()) != 1 for value in (name, tag)):",
      "    if not checks.EXTERNAL_REPO.fullmatch(repo):", "base-name-with-space"),
-    ("名指した画面の層を確かめずに初期値にする", "    checker.load_external(repo, name, tag)\n    return row.base", "    return row.base", "base-screen-layer-version-out-of-range"),
+    ("名指した画面の層を確かめずに初期値にする", "        checker.load_external(repo, name, tag)\n", "        pass\n", "base-screen-layer-version-out-of-range"),
+    # #1582: 層の行の決まりで止まったときの案内の言い分け
+    ("層の行の決まりを読めないと同じに案内する", "    except LayerBroken as e:\n        print(", "    except ValueError as e:\n        print(", "base-layer-default-outside-vocab"),
+    ("層の行の決まりを LayerBroken にしない", "    except checks.LayerRule as e:  # 読めたが", "    except ValueError as e:  # 読めたが", "base-layer-status-vocab-disjoint"),
+    ("読めないのも層の行の決まりと案内する", "    except checks.LayerRule as e:  # 読めたが", "    except checks.Stop as e:  # 読めたが", "base-screen-layer-version-out-of-range"),
+    ("案内に --profile を入れない", "--profile {profile} --external {EXTERNAL_NONE}", "--external {EXTERNAL_NONE}", "base-layer-default-outside-vocab"),
+    ("引数なしの init の止めた理由に案内を入れない", "        super().__init__(f\"{reason}——同じ外部の profile",
+     "        super().__init__(reason)\n        (f\"{reason}——同じ外部の profile", "base-layer-status-vocab-disjoint"),
     ("platform-spec を読み込む", "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n",
      "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n    _load(\"trap\", PLUGIN_ROOT.parent / \"platform-spec\" / \"scripts\" / \"check-infra-profile.py\")\n",
      "base-names-screen"),
 ]
 
 
+# `check-screens.py`（write-screens.py が読み込む検査）を壊す変異（#1582）——層の行の決まりと読めないのを分ける `LayerRule` は向こうに在る
+CHECK_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("層の行の決まりを LayerRule にしない", "        except Stop as e:  # 行の決まり（#1582）——読めないのと分けて名指す\n            raise LayerRule(str(e)) from None",
+     "        except Stop as e:  # 行の決まり（#1582）——読めないのと分けて名指す\n            raise", "base-layer-default-outside-vocab"),
+    ("読めないのも LayerRule にする", "        except (ext.Undetermined, ext.LayerMissing) as e:\n            raise Stop(",
+     "        except (ext.Undetermined, ext.LayerMissing) as e:\n            raise LayerRule(", "base-screen-layer-version-out-of-range"),
+]
+
+
 def main() -> int:
     names = [case[0] for case in CASES]
     assert len(names) == len(set(names)), "試料の名前が重複している"
-    killers = {killer for *_, killer in MUTATIONS}
+    killers = {killer for *_, killer in MUTATIONS + CHECK_MUTATIONS}
     assert killers <= set(names), f"変異の殺す試料が無い: {killers - set(names)}"
     with tempfile.TemporaryDirectory(prefix="write-screens-test-") as tmp:
         tmp_path = Path(tmp)
@@ -882,12 +920,25 @@ def main() -> int:
             ok, detail = run_cases(mutated, tmp_path / f"mutwork{index}", only=killer)[killer]
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok or mutated_marker.exists(), detail)
 
+        check_source = (PLUGIN / "scripts" / CHECK).read_text(encoding="utf-8")
+        for index, (name, before, after, killer) in enumerate(CHECK_MUTATIONS):
+            count = check_source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {CHECK}: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            root = tmp_path / f"cmut{index}" / "plugins"
+            mutated = copy_plugin(root / "screen-spec")
+            copy_spec_loop(root / "spec-loop")
+            (mutated / "scripts" / CHECK).write_text(check_source.replace(before, after), encoding="utf-8")
+            ok, detail = run_cases(mutated, tmp_path / f"cmutwork{index}", only=killer)[killer]
+            check(f"変異が生き残った: {CHECK}: {name}（{killer} で殺せるはず）", not ok, detail)
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・雛形の崩し {len(TEMPLATE_MUTATIONS) + len(PROFILE_TEMPLATE_MUTATIONS)} 件・"
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件（{CHECK} を壊す {len(CHECK_MUTATIONS)} 件は別）・雛形の崩し {len(TEMPLATE_MUTATIONS) + len(PROFILE_TEMPLATE_MUTATIONS)} 件・"
           f"references の崩し {len(REFERENCE_MUTATIONS) + len(BASE_REFERENCE_MUTATIONS)} 件・platform-spec の写しの崩し {len(PLATFORM_MUTATIONS)} 件")
     return 0
 
