@@ -122,6 +122,8 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は mkdocs �
 - 2 パス目の指摘対応の起点（狭いパスの起点。2 パス目の関門に渡す時点の HEAD）: `62bd5695e1d3fdcbb123c2f0ff984bde6056b73c`
 - Verifier 2 パス目（sonnet。終点 `62bd5695`）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-verifier-2-20261126T020549Z.md`。**反証 0 件**
 - /code-review 2 パス目（high。終点 `62bd5695`）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-code-review-2-20261126T020549Z.md`。**指摘 5 件**（全部 nit）。直す 3 件（CR2-1〜3）・残課題 1 件（CR2-4）・証明の記録 1 件（CR2-5）
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` が 3）
+- PR: #1568
 - 2 パス目の指摘対応: コミット `602cedbf`（起点 `62bd5695` → 終点 `602cedbfe141457a4b5286e35dc1c3114e38c8ad`）
 - 狭いパス（sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1556-narrow-1-20261126T023916Z.md`。**反証 1 件**（N1。下の採否の表——人間が決める。推奨は PR コメント）。CR2-1〜3 の直しは一致。素通りした変異 3 本（下の N1）
 
@@ -138,6 +140,10 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は mkdocs �
 - 主張が偽でも同じ出力が出ないか: `--shard` が無視されれば件数は全件になる（引数なしの行と同じ）。shard の回は件数が少ないので、引数が届いている。
 - 観測窓: 各 1 回。壁時計は枠を取ってからの時間（`/usr/bin/time` は枠の中のコマンドだけを測る）で、同じ時間帯に別の周（#1562）の検査が枠の外で走っていた可能性は除いていない——壁時計は受入基準でなく参考。
 - `check-all.py`（既定・間引いた回。狭いパスの終点 `602cedbf` の木）: **105/105 本を回した（失敗 0 / 飛ばし 0）**。集計に `変異を間引いた: test-line-effects.py, test-autopilot-loop.py …` の行。全体 1271.4 秒（参考）。
+- `check-all.py --all-mutants`（`602cedbf` の木）: 18/105 本を回し（87 本は CACHED——間引かないテストのキーは既定の回と同じ）、`test-line-effects.py`（全件。1409.4 秒）と `test-autopilot-loop.py`（全件。368.8 秒）は OK、間引いた行は出なかった。
+  **落ちたのは `test-intake-code.py` の「このリポジトリの作業ツリーを変えていない」の 1 本**——回している間（12:00:17 に枠を取った）に、著者が計画ファイルを 12:00:41 にコミットした（`874193c3`）ので HEAD が動いた。
+  交絡の確かめ: 作業ツリーを触らずに順番待ち越しで回し直して緑（「試料 37 件・変異 46 件」、終了 0）。不安定なテストではない（原因は著者の同時のコミット）。
+- PR 側の CI（#1568）: 全部 pass（`deploy` は PR では skipping）。
 - `check-all.py`（既定・間引いた回。`9c3dff92` より前の木）: 105/105 本を回し、落ちたのは `check-plan-counts.py`（件数の行が無い）の 1 本だけ。集計に `変異を間引いた: test-line-effects.py, test-autopilot-loop.py …` の行が出た。件数の行は `9c3dff92` で足した。全体 1334.4 秒（別の周と重なっていたので参考）。
 
 ```dev-loop-gates
@@ -147,6 +153,16 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は mkdocs �
 関門: Verifier 2 62bd5695e1d3fdcbb123c2f0ff984bde6056b73c 反証=0
 関門: /code-review 2 62bd5695e1d3fdcbb123c2f0ff984bde6056b73c 指摘=5
 関門: 狭いパス 62bd5695e1d3fdcbb123c2f0ff984bde6056b73c 602cedbfe141457a4b5286e35dc1c3114e38c8ad 反証=1
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+受入基準: 5 満たす
+受入基準: 6 満たす
+受入基準: 7 満たす
+受入基準: 8 満たす
+受入基準: 9 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
 
 ## 既知の限界・決着済みの論点
