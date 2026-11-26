@@ -71,11 +71,23 @@ Issue 本文（外部入力。作者は利用者本人）から読んだ要件: 
 - 実装: `16af6c11`（check-all 緑）。手順 5 から再開できる（この worktree で `/clear` → `/dev-loop:dev-loop 1571`）
 - 1 パス目の指摘対応の起点（1 パス目の関門に渡した HEAD）: `16af6c11`
 - 割り目（手順 4）: 「ここで割る」を選んだ（2026-11-26）
-- 関門: まだ（次は手順 5: Verifier 1 パス目と /code-review 1 パス目。どちらも base 366a3c7e を渡す）
-- 交絡: 実験なし
+- 関門: 1 パス目を通した（2026-11-26・HEAD `a90a7eb4`。`16af6c11` からの差は計画ファイルだけ）——**Verifier 反証 1 件・/code-review 指摘 5 件**（採否は下の表。直す 3・残課題 3）
+  - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1571/d1c39207-5c62-42b2-b16a-0ef081d94472/scratchpad/gate-1571-verifier-1-20261126T074931Z.md`
+  - /code-review 1 パス目: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1571/d1c39207-5c62-42b2-b16a-0ef081d94472/scratchpad/gate-1571-code-review-1-20261126T074931Z.md`
+  - **上の 2 体は欠票**（どちらも API の 401——OAuth の期限切れで、報告のファイルを書かずに終わった）。利用者が `/login` した後に新しいパスで起こし直した:
+    - Verifier 1 パス目（再）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1571/d1c39207-5c62-42b2-b16a-0ef081d94472/scratchpad/gate-1571-verifier-1-20261126T075541Z.md`
+    - /code-review 1 パス目（再）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1571/d1c39207-5c62-42b2-b16a-0ef081d94472/scratchpad/gate-1571-code-review-1-20261126T075541Z.md`
+  - Verifier（再）の報告はファイルに書けず（ヒアドキュメントがガードに拒まれた）、返事（SubagentHandback）で届いた。テンプレート 260 行を読んだと報告（`wc -l` と一致）。`git status --porcelain` は前後同じ
+  - /code-review（再）の報告はファイルに終わりの印つき。`git status --porcelain` は前後同じ
+- 1 パス目の指摘対応: `2c625402`（`test-check-screens.py` に試料 4・変異 2。`test-check-screens.py` 緑——試料 217・変異 177。新しい 2 変異は、
+  直す前の試料では殺せず（両報告の実測）、足した試料でだけ殺せ、影響しない試料では期待どおりに振る舞う（陽性対照を著者が当てた——変異が落ちて殺したことにはなっていない））。
+  起点 `16af6c11` からの成果物の差分は 0 行でない → **2 パス目を回す**（手順 5 の当て直しと /code-review 2 パス目の両方が残る）
+- 交絡: 実験なし（変異の陽性対照は上）
 
 ```dev-loop-gates
 周の base: 366a3c7eca1c629a04b5f4dd9742f037dbf7bf39
+関門: Verifier 1 a90a7eb4 反証=1
+関門: /code-review 1 a90a7eb4 指摘=5
 ```
 
 ## 既知の限界・決着済みの論点
@@ -84,6 +96,17 @@ Issue 本文（外部入力。作者は利用者本人）から読んだ要件: 
 | --- | --- | --- |
 | `パス` の形に既定が合うか | 見ない（採らなかった） | 形の規則は語彙ではない。Issue の範囲は「語彙のある列」 |
 | 外部の語彙が core の決まった値の外の値を持つとき | 見ない | 既定の食い違いと違い、全部の値が違反になる形ではない（語彙の中の決まった値を書けば通る） |
+
+### 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1: 語彙と決まった値が同じ列に在るとき、決まった値の照合を語彙の無い列だけにする変異（`vocab is None and`）が全試料で生き残る | 示せる——Verifier が 213 試料に当てて殺す試料 0（`mutant killed by: []`）、陽性対照で振る舞いは変わる | 3・10 | 直す（`2c625402`。試料 `ext-default-status-vocab-outside-fixed`・変異を足した） |
+| CR1: 語彙が既定より後ろの試料が通る方向だけで、既定を読んだ時点の語彙で照らす実装でも緑 | 示せる——/code-review が順に依存する変異を当てて既存の試料 0/0、足した試料で 4/1 | 5・10 | 直す（`2c625402`。試料 `ext-vocab-after-default-outside`・変異を足した） |
+| CR2: docstring のコメントと `profiles.md` の止める理由「どの値を書いても違反」は言い過ぎ（Q&A の根拠があれば通る・足した列は空でよい） | 示せる（/code-review の読みと check_external の根拠の扱い） | 無し（9 は止め方を書くことで、理由の文言ではない） | 残課題 |
+| CR3: `base_initial` 経由の `hint`・引数なしの `init` に試料が無く、`hint` の案内（明示して渡す）が誤った向きを指す | 示せない（読んで追った推論。走らせていない） | 無し | 残課題 |
+| CR4: `profiles.md` の「その列に書ける値でなければならない」が一般の規則に読め、`親画面`・`画面ID` などを照らさないことが読めない | 示せる（`親画面` の既定を置いても 4 にならない） | 無し | 残課題 |
+| CR5: 試料が Issue の再現の値（L-001〜L-008・L-080・L-009）でなく合成の値 | 示せる（試料に L-080 が無い。計画の表 # 1 は L-080 の経路を挙げる。利用者の CLAUDE.md の「正確な ID を使う」） | 1（証明の「Issue の再現」） | 直す（`2c625402`。試料 `ext-issue-default-L080`・`ext-issue-vocab-L009`） |
 
 ## 経験の還元（手順 8）
 
