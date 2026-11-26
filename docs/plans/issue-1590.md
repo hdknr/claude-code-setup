@@ -89,6 +89,7 @@ Issue 本文（外部入力。作者は利用者本人。#1588 の確認の結�
 - **2 パス目: 該当なし**——理由: 1 パス目の指摘対応の差分 0 行（直す線は既定で、採否の表に「直す」の行が 0 件）。起点 `67bb352b`。判定の 2 本（`git diff 67bb352b -- ':(top)' ':(top,exclude)docs/plans/issue-1590.md'` が空・`git status --porcelain` は計画ファイルだけ）。
 - **狭いパス: 該当なし**（2 パス目が無い）。
 - 割り目（手順 6）: 2 パス目が無いので置かない。
+- PR #1591。外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。関門の結果と振り分けは PR コメントに書いた。
 交絡を潰した手順: 実験なし（試料の赤／緑は、直す前の本体で赤・直した本体で緑を同じ試料で見た——`base-layer-default-outside-vocab`・`base-layer-fixed-tag-explicit`・`base-layer-status-vocab-disjoint` は 6cd20a35 の本体で `hint` の案内が期待と違って赤）
 
 ```dev-loop-gates
