@@ -435,6 +435,8 @@ ISSUE_L_COL = "F-COL,レイアウトの列,,列,screens.csv,レイアウト,,\n"
 ISSUE_L_VOCAB = "".join(f"V-{n},レイアウト {n},,語彙,screens.csv,レイアウト,,{v}\n" for n, v in enumerate(ISSUE_L_VALUES, 1))
 ISSUE_L_FORM = "F-FORM,入力は L-008,,既定,screens.csv,レイアウト,form,L-008\n"
 EXT_LABEL = "外部の profile org/guide の org（タグ v1）"
+# Issue #1581 の再現の行（ステータスの語彙が 完了 だけ——決まった値（下書き・記入中）と共通の値が無い）
+ISSUE_S_DONE = "S-1,完了だけ,,語彙,screens.csv,ステータス,,完了\n"
 
 
 def guide(profile: str = GUIDE_PROFILE, rows: str = L_ROWS, head: str = L_HEAD, md: str = GUIDE_MD) -> dict[str, str]:
@@ -561,6 +563,19 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     ("ext-default-kind-mismatch", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,種別,detail,list\n")}), [], 4,
      "行 X-1: 種別 detail の列 種別 の既定 'list' が種別と違う", "違反"),
     ("ext-default-kind-same", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,詳細は詳細,,既定,screens.csv,種別,detail,detail\n")}), [], 0, "違反 0 件", "止めた"),
+    # ---- 決まった値の列の外部の語彙と決まった値の共通部分が空なら止める（#1581）。Issue の再現の行（S-1 完了だけ）そのまま、表の値が 記入中 でも 完了 でも
+    ("ext-status-vocab-disjoint", ext(), prof({"v1": guide(rows=L_ROWS + ISSUE_S_DONE)}), [], 4,
+     f"{EXT_LABEL} の行 S-1: 列 ステータス の語彙（完了）が決まった値（下書き・記入中）と 1 つも重ならない", "違反"),
+    ("ext-status-vocab-disjoint-done", ext(S=SE_HEAD + ES1.replace(",記入中,", ",完了,") + ES2.replace(",記入中,", ",完了,")),
+     prof({"v1": guide(rows=L_ROWS + ISSUE_S_DONE)}), [], 4, "列 ステータス の語彙（完了）が決まった値（下書き・記入中）と 1 つも重ならない", "違反"),
+    # 語彙の行が 2 つでも、どちらも決まった値の外なら止まり、行の ID を全部名指す。語彙の行が層の先頭にあっても同じ（全部を読んでから照らす）
+    ("ext-status-vocab-disjoint-two", ext(), prof({"v1": guide(rows=ISSUE_S_DONE + "S-2,確定だけ,,語彙,screens.csv,ステータス,,確定\n" + L_ROWS)}), [], 4,
+     f"{EXT_LABEL} の行 S-1・S-2: 列 ステータス の語彙（完了・確定）が決まった値（下書き・記入中）と 1 つも重ならない", "違反"),
+    ("ext-kind-vocab-disjoint", ext(), prof({"v1": guide(rows=L_ROWS + "K-1,格子だけ,,語彙,screens.csv,種別,,grid\n")}), [], 4,
+     f"{EXT_LABEL} の行 K-1: 列 種別 の語彙（grid）が決まった値（top・", "違反"),
+    # 共通部分が 1 つでもあれば止めない——共通の値（下書き）を書けば通る（陰性対照）
+    ("ext-status-vocab-overlap", ext(S=SE_HEAD + ES1.replace(",記入中,", ",下書き,") + ES2.replace(",記入中,", ",下書き,")),
+     prof({"v1": guide(rows=L_ROWS + "S-1,下書き,,語彙,screens.csv,ステータス,,下書き\n" + ISSUE_S_DONE.replace("S-1,", "S-2,"))}), [], 0, "違反 0 件", "止めた"),
     # ---- B7 足した列は宣言の順（層のファイルの名前の順・ファイルの中の行の順）に見出し行に入る
     ("ext-two-columns-order", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
      prof({"v1": {**guide(), f"{GUIDE_DIR}/screens/zz.csv": L_HEAD + "A-COL2,サイズの列,,列,screens.csv,サイズ,,\n"}}), [], 0, "違反 0 件", "見出し行"),
@@ -907,6 +922,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            vocab = [r[\"値\"].strip() for k, r in layer.rows.items() if list(layer.rows).index(k) < list(layer.rows).index(rid)"
      " and r[\"種類\"].strip() == EXTERNAL_VOCAB and r[\"表\"].strip() == \"screens.csv\" and r[\"列\"].strip() == column] or None\n",
      "ext-vocab-after-default-outside"),
+    # ---- 決まった値の列の語彙と決まった値の共通部分が空（#1581）
+    ("語彙と決まった値の共通部分を見ない", "if values is not None and not set(values) & set(fixed):", "if False:", "ext-status-vocab-disjoint"),
+    ("語彙の全部が決まった値に在ることを求める", "if values is not None and not set(values) & set(fixed):",
+     "if values is not None and not set(values) <= set(fixed):", "ext-status-vocab-overlap"),
+    ("語彙の無い決まった値の列も止める", "if values is not None and not set(values) & set(fixed):", "if not set(values or ()) & set(fixed):", "ext-good"),
+    ("種別の列の語彙を照らさない", "        for column, fixed in SCREEN_FIXED.items():\n", "        for column, fixed in [(\"ステータス\", STATUSES)]:\n", "ext-kind-vocab-disjoint"),
+    ("語彙の行の ID を 1 つだけ名指す", " and tables.get(row[\"表\"].strip()) == SCREENS and row[\"列\"].strip() == column)",
+     " and tables.get(row[\"表\"].strip()) == SCREENS and row[\"列\"].strip() == column and r == \"S-1\")", "ext-status-vocab-disjoint-two"),
     ("種別の列の既定を種別と比べない", "if column == \"種別\" and value != screen_kind:", "if False:", "ext-default-kind-mismatch"),
     ("種別の列の既定が種別と同じでも止める", "if column == \"種別\" and value != screen_kind:", "if column == \"種別\":", "ext-default-kind-same"),
     ("決まりに無い種類を通す", "raise Stop(f\"{where}: 種類 {kind!r}", "None and (f\"{where}: 種類 {kind!r}", "ext-bad-kind"),
