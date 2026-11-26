@@ -68,6 +68,15 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1581-vocab-disjoint-fixed`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1581`・起点 `8ed2f8fe`・base 参照 `origin/main` → `8ed2f8fe646def5a9e494707f780ea809637c27b`
+- 実装: `431a0962`（check-all 緑——失敗 0。Issue の再現の試料は直す前の本体で rc=1・直した後で rc=4）
+- 割り目（手順 4）: 割らない（cruise の周）——訊かずに「このまま続ける」
+- 1 パス目の指摘対応の起点（1 パス目の関門に渡した HEAD）: `431a0962`
+- 関門 1 パス目（2026-11-26T09:09Z に起こした）:
+  - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/60512778-ba8a-4b9c-afb8-fadbe195ec94/scratchpad/gate-1581-verifier-1-20261126T090908Z.md`
+  - /code-review 1 パス目: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/60512778-ba8a-4b9c-afb8-fadbe195ec94/scratchpad/gate-1581-code-review-1-20261126T090908Z.md`
+- 関門 1 パス目を通した（HEAD `431a0962`）——**Verifier 反証 0 件・/code-review 指摘 3 件**（採否は下の表。直す 1・残課題 2）。どちらも報告のファイルに終わりの印つき。`git status --porcelain` は両方とも前後同じ。Verifier は verifier.md 260 行を読んだと報告（`wc -l` と一致）。/code-review は直す前の本体で新しい試料が rc=1 になることを独立に当てた
+- 1 パス目の指摘対応: CR1-3 に試料 `ext-status-vocab-overlap-disjoint-first` と変異「語彙の行を読むたびに共通部分を照らす」を足した（変異の本体で試料が rc=4・直した本体で rc=0——陽性対照を著者が当てた）
+- 交絡: 実験なし（試料の赤→緑は、直す前の本体と直した本体で同じ試料を走らせた陽性対照）
 
 ## 既知の限界・決着済みの論点
 
@@ -75,6 +84,15 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 | --- | --- | --- |
 | `screen-items.csv`・`transitions.csv` の決まった値の列（`種類`・`必須`・`種類`（web-spa）など）の語彙の共通部分 | 照らさない（採らなかった） | Issue の範囲は画面の表の `種別`・`ステータス`（#1571 の `SCREEN_FIXED`）。守らないものに名指す |
 | 共通部分は空でないが、入口の種別 `top` を欠く `種別` の語彙 | 照らさない | 共通の値を書けば列の違反は消える（入口が無い違反は別の検査が出す）。守らないものに名指す |
+
+
+### 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1: 守らないものの「入口の種別 `top` を欠く `種別` の語彙」の理由が足りない——共通部分が空でなくても `top` を欠けば、どの表も入口の違反で rc=1（#1581 と同じ形が残る） | 示せる（/code-review の読み。check_reach は top が無ければ違反） | 無し（受入基準は共通部分が空の列。理由の文言は偽ではない——列の違反は消え、入口の違反は入口の検査が出す） | 残課題 |
+| CR1-2: 版を patch で上げたが、同じ型の #1571 は minor | 示せる（#1571 の計画の版の上げ方） | 無し | 残課題（計画に「不具合の修正」として patch の理由を書いてある） |
+| CR1-3: 不変条件 5（順に依らない）の陰性対照が、重ならない行が先に来る順を持たず、順に依る変異をメッセージの ID でたまたま殺すだけ | 示せる——/code-review が変異を当てて overlap 試料で殺せないと実測 | 5・9 | 直す（試料と変異を足した） |
 
 ## 経験の還元（手順 8）
 

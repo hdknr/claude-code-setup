@@ -576,6 +576,9 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     # 共通部分が 1 つでもあれば止めない——共通の値（下書き）を書けば通る（陰性対照）
     ("ext-status-vocab-overlap", ext(S=SE_HEAD + ES1.replace(",記入中,", ",下書き,") + ES2.replace(",記入中,", ",下書き,")),
      prof({"v1": guide(rows=L_ROWS + "S-1,下書き,,語彙,screens.csv,ステータス,,下書き\n" + ISSUE_S_DONE.replace("S-1,", "S-2,"))}), [], 0, "違反 0 件", "止めた"),
+    # 重ならない語彙の行が重なる行より先にあっても止めない（語彙の行を読むたびに照らす形を判別する。/code-review 1 パス目の CR1-3）
+    ("ext-status-vocab-overlap-disjoint-first", ext(S=SE_HEAD + ES1.replace(",記入中,", ",下書き,") + ES2.replace(",記入中,", ",下書き,")),
+     prof({"v1": guide(rows=ISSUE_S_DONE + "S-2,下書き,,語彙,screens.csv,ステータス,,下書き\n" + L_ROWS)}), [], 0, "違反 0 件", "止めた"),
     # ---- B7 足した列は宣言の順（層のファイルの名前の順・ファイルの中の行の順）に見出し行に入る
     ("ext-two-columns-order", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
      prof({"v1": {**guide(), f"{GUIDE_DIR}/screens/zz.csv": L_HEAD + "A-COL2,サイズの列,,列,screens.csv,サイズ,,\n"}}), [], 0, "違反 0 件", "見出し行"),
@@ -927,6 +930,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("語彙の全部が決まった値に在ることを求める", "if values is not None and not set(values) & set(fixed):",
      "if values is not None and not set(values) <= set(fixed):", "ext-status-vocab-overlap"),
     ("語彙の無い決まった値の列も止める", "if values is not None and not set(values) & set(fixed):", "if not set(values or ()) & set(fixed):", "ext-good"),
+    ("語彙の行を読むたびに共通部分を照らす", "external.vocab.setdefault(target, {}).setdefault(column, []).append(value)\n",
+     "external.vocab.setdefault(target, {}).setdefault(column, []).append(value)\n"
+     "                if target == SCREENS and column in SCREEN_FIXED and not set(external.vocab[target][column]) & set(SCREEN_FIXED[column]):\n"
+     "                    raise Stop(\"早すぎる照合\")\n", "ext-status-vocab-overlap-disjoint-first"),
     ("種別の列の語彙を照らさない", "        for column, fixed in SCREEN_FIXED.items():\n", "        for column, fixed in [(\"ステータス\", STATUSES)]:\n", "ext-kind-vocab-disjoint"),
     ("語彙の行の ID を 1 つだけ名指す", " and tables.get(row[\"表\"].strip()) == SCREENS and row[\"列\"].strip() == column)",
      " and tables.get(row[\"表\"].strip()) == SCREENS and row[\"列\"].strip() == column and r == \"S-1\")", "ext-status-vocab-disjoint-two"),
