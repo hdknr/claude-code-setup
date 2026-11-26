@@ -52,7 +52,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/write-screens
   **profile と外部の profile は表を置く最初の版で決まり、後の版で変えられない**（表の見出し行に profile の列と外部の profile が足す列が入る。`../../references/profiles.md` の「選び方」）ことも添えて訊く。
   方式がまだ決まっていなくても、使う見込みの profile を選べる——列と節に `N/A。実現方式が未定` と書いておける。
   **`基盤の profile: 読めない（…）` の行が出たら**、理由（clone が手元に無いなど）を利用者に見せ、直してから `hint` を走らせ直すか、値を決めて手順 3 で明示で渡す。
-  **`基盤の profile: 画面の層が決まりに合わない（…）` の行が出たら**、同じ外部の profile は明示しても止まる——理由を利用者に見せ、外部の profile を直してから `hint` を走らせ直すか、
+  **`基盤の profile: 画面の層が決まりに合わない（…）` の行が出たら**、同じ外部の profile は明示しても止まる——理由を利用者に見せ、外部の profile を直してタグを付け、基盤の profile の設定のタグをそれにしてから `hint` を走らせ直すか、
   行の案内のとおり外部の profile を `なし` にする（`--profile` は行が名指す profile）かを `AskUserQuestion` で訊く（`../../references/profiles.md` の「基盤の profile から引く初期値」。#1582）。
 - **画面IDの接頭辞**: 既定は `S-`。案件ですでに使っている画面ID の形があれば、それに合わせるかを `AskUserQuestion` で訊く。
   形は英大文字で始まり英大文字と数字が続き `-` で終わる（`../../references/tables.md` の「案件ごとの設定」）。

@@ -23,7 +23,7 @@ spec-loop のスクリプトを読み込むので、一時ディレクトリに 
    `profile` と外部の profile をそれにして足す列を見出し行に入れ、直後の検査が 0（A1）。名指しが無い・基盤の profile が無いなら今と同じ（A2）。
    明示の引数が勝つ（A3）。初期値を決められなければ 4 で何も書かない（A4）。profile のリポジトリは試料ごとに一時の git リポジトリで作る。
    **名指した画面の層の行が決まりに合わない（#1571・#1581 の形）とき、`hint` と引数なしの `init` は、同じ外部の profile を明示しても止まることと、
-   外部の profile を直すか `--profile web-spa --external なし` を渡す案内を出し、案内どおりに渡せば書けて検査が 0（#1582）**。読めないときは今までどおり「読めない」。
+   外部の profile を直してタグを付け設定のタグをそれにするか `--profile web-spa --external なし` を渡す案内を出し、案内どおりに渡せば書けて検査が 0（#1582）**。読めないときは今までどおり「読めない」。
    この言い分けは `check-screens.py` の `LayerRule` に乗るので、`check-screens.py` を壊す変異（`CHECK_MUTATIONS`）も当てる。
 9. **platform-spec を読み込まない（#1460 の A5）**——試料の置き方に platform-spec は無く、プラグインの隣に**読み込まれたら印を書く偽の platform-spec**を置いて、
    どの試料の後にも印が無いことを見る。写した設定の置き場所・見出し・項目名が platform-spec の `check-infra-profile.py` の定数と一致すること（崩すと落ちることも）。
@@ -134,7 +134,7 @@ BASE_INITIAL = "init の初期値（--profile と --external を省いたとき�
 # 画面の層の行が決まりに合わない基盤の profile（#1582）——#1571（既定が語彙の外）と #1581（ステータスの語彙が決まった値と重ならない）の形
 GUIDE_WIDE = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT.replace("list,standard\n", "list,wide\n")}}}
 GUIDE_STATUS = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT + "S-1,完了だけ,,語彙,screens.csv,ステータス,,完了\n"}}}
-LAYER_ADVICE = "外部の profile を直すか、--profile web-spa --external なし を渡す"
+LAYER_ADVICE = "外部の profile を直してタグを付け、shared/platform/settings.csv の タグ をそれにするか、--profile web-spa --external なし を渡す"
 LAYER_HINT = f"——init の引数を省いても、同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）"
 LAYER_INIT = f"——同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）——書いていない"
 

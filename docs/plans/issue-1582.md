@@ -76,6 +76,15 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1582-hint-layer-rule-advice`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1582`・起点 `fe7bf5c6`・base 参照 `origin/main` → `fe7bf5c69973428ce6a3929672723c706655e44a`
+- 実装: `6b97315d`（check-all 緑——失敗 0。新しい試料 2 件は直す前の本体（base の写しに新しいテストを当てた）で赤——hint が「読めない（…）——明示して渡す」を出す——、直した本体で緑。変異 65 件＋check-screens.py の変異 2 件はすべて殺した）
+- 割り目（手順 4）: 割らない（cruise の周）——訊かずに「このまま続ける」
+- 1 パス目の指摘対応の起点（1 パス目の関門に渡した HEAD）: `6b97315d`
+- 関門 1 パス目（2026-11-26T10:08Z に起こした）:
+  - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/60512778-ba8a-4b9c-afb8-fadbe195ec94/scratchpad/gate-1582-verifier-1-20261126T100816Z.md`
+  - /code-review 1 パス目: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/60512778-ba8a-4b9c-afb8-fadbe195ec94/scratchpad/gate-1582-code-review-1-20261126T100816Z.md`
+- 関門 1 パス目を通した（HEAD `6b97315d`）——**Verifier 反証 0 件・/code-review 指摘 5 件**（採否は下の表。直す 2・残課題 3）。どちらも報告のファイルに終わりの印つき。`git status --porcelain` は両方とも前後同じ。Verifier は verifier.md 260 行・依頼 60 行を読んだと報告（`wc -l` と一致）。/code-review は base の写しで新しい試料が赤になることを独立に当てた
+- 1 パス目の指摘対応: CR1-1（案内に「タグを付け、設定のタグをそれにする」を足す——write-screens.py・profiles.md・init の SKILL.md・テストの期待）・CR1-2（profiles.md の自分の文の「上の」→「下の」）
+- 交絡: 実験なし（試料の赤→緑は、直す前の本体と直した本体で同じ試料を走らせた陽性対照）
 
 ## 既知の限界・決着済みの論点
 
@@ -83,6 +92,16 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 | --- | --- | --- |
 | 読めないとき（clone が無い・タグが無い・形式の版が範囲の外）も、同じ外部の profile を明示すれば止まる | 言い分けない（採らなかった） | Issue の範囲は層の行の決まり。読めないときの原因は手元（clone・タグ・profile の版）で、出力が原因を名指し、`init` の SKILL.md が「直してから hint を走らせ直すか、値を決めて明示で渡す」と読む（`--external なし` も明示の値） |
 | 明示の `init --external` が層の行の決まりで止まるとき案内を足さない | 足さない | 明示の `init` は「明示して渡す」の案内を出していない（行き止まりを指していない）。Issue の提案の範囲の外 |
+
+### 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1: 案内の「外部の profile を直す」は、外部の profile をタグの時点で読むので、設定のタグを変えなければ直しても止まったまま（案内の片方の枝が行き止まり） | 示せる（`load_external`・`base_initial` は設定のタグで `resolve_tag` する——コード。/code-review の読み） | 1（「行き止まりでない」案内）・9（SKILL.md の「直してから hint を走らせ直す」） | 直す |
+| CR1-2: profiles.md の新しい文が「上の『読めないとき』」と指すが節は下 | 示せる（profiles.md の 130 行と 142 行） | 9（新しく足した文の指し先が偽） | 直す（自分の文だけ。同じ段落の既存の 129 行の同じ誤りは触らない） |
+| CR1-3: init の SKILL.md の新しい分岐が、`なし` は後の版で取り戻せないことを結びつけていない | 示せる（文の欠け） | 無し（同じ手順 2 の上の段落が「後の版で変えられない」を添えて訊くと書いている） | 残課題 |
+| CR1-4: `load_external` の `except Exception` の読めない枝を LayerRule にする変異と試料が無い | 示せる（試料が無い——/code-review がコードで確かめた。いまは動く） | 無し（8 は差分が足した分岐。その枝はこの周で変えていない） | 残課題 |
+| CR1-5: init の SKILL.md に手順を足したのに版が patch（表では minor） | 示せる | 無し | 残課題（計画の版の上げ方に、案内の誤りを直す不具合の修正として patch にした理由を書いてある） |
 
 ## 経験の還元（手順 8）
 

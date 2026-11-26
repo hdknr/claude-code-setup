@@ -63,7 +63,8 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - 引数を省いた `init` で基盤の profile から初期値を決められなければ、今の初期値に落とさずに 4 で止める（何も書かない）。
   名指した画面の層は `load_external` で確かめ（形式の版・層の行）、設定の値が `外部の profile` の行に写せない形（`リポジトリ` に `/` が無い・profile とタグに空白）なら決められないとする——`hint` も同じ確かめを通った値だけを初期値として出す
 - `hint` と引数を省いた `init` は、基盤の profile が名指す画面の層の行が決まりに合わない（`check-screens.py` の `LayerRule`——#1571・#1581 の止め方を含む）とき、
-  「明示して渡す」とだけ案内しない——同じ外部の profile を `--external` で明示しても止まることと、外部の profile を直すか `--profile <重ねる先> --external なし` を渡すことを出す（#1582）。
+  「明示して渡す」とだけ案内しない——同じ外部の profile を `--external` で明示しても止まることと、外部の profile を直してタグを付け、基盤の profile の設定のタグをそれにするか、`--profile <重ねる先> --external なし` を渡すことを出す（#1582。
+  外部の profile はタグの時点で読むので、直しても設定のタグが同じなら止まったまま）。
   読めないとき（設定の形・clone・タグ・形式の版・`重ねる先`・行に写せない形）は今までどおり「読めない（…）」と出す
 - `init` が外部の profile を書くときは、`check-screens.py` と同じ読み方（`load_external`）で読み、足す列を見出し行の profile の列の後ろに宣言の順で入れる（読めなければ 4）
 - platform-spec のファイルを読み込まない（基盤の profile の設定の項目名は写し、値は spec-loop の `external-profile.py` が読む）
@@ -154,12 +155,13 @@ class LayerBroken(checks.Stop):
     """基盤の profile が名指す画面の層が、行の決まりに合わない（4。`check-screens.py` の `LayerRule`。#1582）。
 
     同じ外部の profile を `--external` で明示して渡しても止まるので、「明示して渡す」とだけ案内すると行き止まりになる。
-    `reason` は止めた理由、`advice` は進める案内（外部の profile を直すか、`--profile <重ねる先> --external なし`）。
+    `reason` は止めた理由、`advice` は進める案内（外部の profile を直してタグを付け、設定のタグをそれにするか、`--profile <重ねる先> --external なし`）。
     """
 
     def __init__(self, reason: str, profile: str) -> None:
         self.reason = reason
-        self.advice = f"外部の profile を直すか、--profile {profile} --external {EXTERNAL_NONE} を渡す"
+        self.advice = (f"外部の profile を直してタグを付け、{PLATFORM_SETTINGS} の タグ をそれにするか、"
+                       f"--profile {profile} --external {EXTERNAL_NONE} を渡す")
         super().__init__(f"{reason}——同じ外部の profile を --external で明示して渡しても止まる（{self.advice}）")
 
 
