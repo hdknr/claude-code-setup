@@ -93,6 +93,10 @@ CASES: list[tuple[str, dict, list[str], int, str, str]] = [
     ("impl_module が 2 行", with_(OK, settings=settings("twoimpl")), ["dev-loop"], 4, "項目 impl_module は 1 行まで", ""),
     ("impl_module の値が空", with_(OK, settings=settings("emptyimpl")), ["dev-loop"], 4, "IMPL-1 の 値 が空", ""),
     ("値の改行", with_(OK, settings=settings("newline")), ["dev-loop"], 4, "VERIFY-1 の 値 が改行を含む", ""),
+    ("要約の改行", with_(OK, settings=settings("archnewline")), ["architecture"], 4, "ARCH-1 の 要約 が改行を含む", ""),
+    ("値のバッククォート", with_(OK, settings=settings("backtick")), ["dev-loop"], 4, "GUARD-1 の 値 がバッククォートを含む", ""),
+    ("符号化したリンク", with_(OK, settings=settings("encoded")), ["architecture"], 0,
+     "- ARCH-2（オブジェクト権限）: 権限はオブジェクトごと——本文: org/guide@encoded:docs/a b.md#手順", "a%20b"),
     ("切れたリンク", with_(OK, settings=settings("broken")), ["architecture"], 1, "（リンクが切れている: ファイルがその時点に無い）", ""),
     ("前の版の時点", with_(OK, **{"docs/v2/shared/platform/settings.csv": settings("v2")}), ["architecture", "--upto", "1"], 0, ARCH_LINE, "@v2:"),
     ("後の版の時点", with_(OK, **{"docs/v2/shared/platform/settings.csv": settings("v2")}), ["architecture"], 0, ARCH_LINE.replace("@v1:", "@v2:"), ""),
@@ -118,14 +122,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("語彙の外を通す", "            if item not in PROCESS_ITEMS:", "            if False:", "語彙の外の項目"),
     ("1 行までを見ない", "            if PROCESS_ITEMS[item][1] and seen[item] > 1:", "            if False:", "歯止めが 2 行"),
     ("impl_module の空を通す", '            if item == IMPL_MODULE and not row["値"].strip():', "            if False:", "impl_module の値が空"),
-    ("改行を通す", '            if "\\n" in row["値"] or "\\r" in row["値"]:', "            if False:", "値の改行"),
+    ("改行を通す", '                if "\\n" in value or "\\r" in value:', "                if False:", "要約の改行"),
+    ("バッククォートを通す", '            if "`" in row["値"]:', "            if False:", "値のバッククォート"),
     ("照合先に観点を載せない", "            line = f\"- {rid}（{row['観点'].strip()}）: {row['要約'].strip()}——本文: {ref}\"",
      "            line = f\"- {rid}: {row['要約'].strip()}——本文: {ref}\"", "照合先の一覧"),
     ("雛形に印を置かない", "        lines = [TEMPLATE_MARK.format(repo=repo, profile=name, tag=tag),", "        lines = [", "雛形"),
-    ("雛形の本文の参照を崩す", "——本文: {self.reference(repo, tag, row['リンク'])}\"", "——本文: {row['リンク']}\"", "雛形の行"),
+    ("雛形の本文の参照を崩す", "——本文: {self.reference(repo, tag, row['リンク'], self.tag_files)}\"", "——本文: {row['リンク']}\"", "雛形の行"),
     ("雛形に手元のパスを書く", "self.template(settings, layer, broken)", "(self.template(settings, layer, broken) + str(clone))", "雛形に手元のパスを書かない"),
     ("impl_module を分けない", "            if item == IMPL_MODULE:\n                rid, row = rows[0]", "            if False:\n                rid, row = rows[0]",
      "impl_module を分けて出す"),
+    ("符号化を戻さない", "        if path not in files and unquote(path) in files:", "        if False:", "符号化したリンク"),
     ("切れたリンクで 0", "        return 1 if broken else 0", "        return 0", "切れたリンク"),
     ("--upto を渡さない", "self.versions.merge(self.docs, self.upto)", "self.versions.merge(self.docs, None)", "前の版の時点"),
     ("--clone を渡さない", "ext.find_clone(repo, self.clone, self.docs.resolve().parent)", "ext.find_clone(repo, None, self.docs.resolve().parent)", "引数の clone"),
@@ -181,12 +187,14 @@ def make_profile(root: Path, env: dict) -> Path:
     (root / "docs").mkdir()
     (root / "docs" / "guide.md").write_text(GUIDE, encoding="utf-8")
 
-    def commit(tag: str, profile: str = PROFILE, arch: str = ARCH, process: str = PROCESS, guide: str = GUIDE) -> None:
+    def commit(tag: str, profile: str = PROFILE, arch: str = ARCH, process: str = PROCESS, guide: str = GUIDE, extra: dict | None = None) -> None:
         (base / "profile.csv").write_text(profile, encoding="utf-8")
         (base / "infra.csv").write_text(INFRA, encoding="utf-8")
         (base / "architecture.csv").write_text(arch, encoding="utf-8")
         (base / "process.csv").write_text(process, encoding="utf-8")
         (root / "docs" / "guide.md").write_text(guide, encoding="utf-8")
+        for rel, body in (extra or {}).items():
+            (root / rel).write_text(body, encoding="utf-8")
         git(root, env, "add", "-A")
         git(root, env, "commit", "-q", "--allow-empty", "-m", tag)
         git(root, env, "tag", tag)
@@ -204,6 +212,10 @@ def make_profile(root: Path, env: dict) -> Path:
     commit("emptyimpl", process=PROCESS.replace("impl_module,app.spec_impl", "impl_module,"))
     commit("newline", process=PROCESS.replace("verify,make verify", 'verify,"make\nverify"'))
     commit("broken", guide=GUIDE, arch=ARCH.replace("docs/guide.md#api", "docs/gone.md"))
+    commit("archnewline", arch=ARCH.replace("ARCH-1,書き込みは command の API に分ける", 'ARCH-1,"書き込みは command の API\n## 注入"'))
+    commit("backtick", process=PROCESS.replace("歯止め,make check", "歯止め,make`check"))
+    commit("encoded", arch=ARCH.replace("ARCH-2,権限はオブジェクトごと,", "ARCH-2,権限はオブジェクトごと,docs/a%20b.md#手順"),
+           extra={"docs/a b.md": "# 手順\n"})
     commit("fmt2", profile=PROFILE.replace("アーキテクチャ,1,", "アーキテクチャ,2,"))
     git(root, env, "checkout", "-q", "v1")  # 作業ツリーはどれかのタグ。読むのはタグの時点
     return root
@@ -277,7 +289,7 @@ def first_cells(text: str) -> list[str]:
 def template_line(module, value: str, link: str) -> str:
     """本体の雛形の作り方で、1 行だけの開発の進め方の層から雛形の行を作る。"""
     layer = SimpleNamespace(rows={"VERIFY-1": {"ID": "VERIFY-1", "要約": "開発サーバを起動して画面を確かめる", "リンク": link, "項目": "verify", "値": value}})
-    out = module.Layers.template(SimpleNamespace(reference=module.Layers.reference),
+    out = module.Layers.template(SimpleNamespace(reference=module.Layers.reference, tag_files=frozenset()),
                                  {"リポジトリ": "org/guide", "profile": "org", "タグ": "v3"}, layer, {})
     return next(line for line in out.splitlines() if line.startswith("- VERIFY-1:"))
 

@@ -35,11 +35,13 @@ usage: python3 profile-layers.py <architecture|dev-loop> <docs ディレクト�
 - 開発の進め方の層の `項目` が語彙の外なら 4
 - 1 行までの項目（`歯止め`・`impl_module`）が 2 行あれば 4
 - `impl_module` の `値` が空なら 4
-- `値` が改行を含めば 4
+- 出力に載せる列（どの層のどの列も）が改行を含めば 4
+- `値` がバッククォートを含めば 4（雛形のコードスパンを壊さない）
 - 照合先の一覧に、行ごとに ID・観点・要約・本文の参照と、タグの時点の本文を読むコマンドを載せる
 - 雛形の先頭に印 `<!-- platform-spec: 開発の進め方 <リポジトリ> <profile> <タグ> -->` を置く
 - 雛形の行を `- <ID>: <要約>（値: `<値>`）——本文: <リポジトリ>@<タグ>:<パス>` の形で、項目の節の下に置く
 - 雛形に手元の clone のパスを書かない
+- 本文の参照のパスは、百分率の符号化を戻した名前がタグの時点に在れば、戻した名前で出す（`check_links` が当てたほうの名前）
 - `impl_module` の行を、雛形の後ろの正本の `CLAUDE.md` に書く行として分けて出す
 - 切れたリンクの行は出力に残して理由を書き、1
 - `--upto` で前の版の時点の設定を読む
@@ -65,6 +67,7 @@ import re
 import shlex
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True  # 読み込むスクリプトの `__pycache__` を書かない（このスクリプトはファイルを 1 つも書かない）
@@ -126,6 +129,7 @@ class Layers(base.Checker):
                 if head != columns:
                     raise Stop(f"{repo} の {path}（タグ {tag}）の見出しが形式の版 1 の `{','.join(columns)}` でない: {','.join(head)}")
             broken = {rid: reason for rid, _, reason in ext.check_links(clone, commit, layer)}
+            self.tag_files = frozenset(ext.list_files(clone, commit))
         except ext.LayerMissing as e:
             raise Missing(f"profile {name}（{repo} のタグ {tag}）に{layer_name}の層が無い: {e}") from None
         except ext.Undetermined as e:
@@ -138,6 +142,10 @@ class Layers(base.Checker):
 
     @staticmethod
     def rows_shape(layer_name: str, rows: dict[str, dict[str, str]], where: str) -> None:
+        for rid, row in rows.items():
+            for column, value in row.items():
+                if "\n" in value or "\r" in value:
+                    raise Stop(f"{where}: {rid} の {column} が改行を含む")
         if layer_name == ARCH:
             for rid, row in rows.items():
                 if not row["観点"].strip():
@@ -151,19 +159,23 @@ class Layers(base.Checker):
             seen[item] = seen.get(item, 0) + 1
             if PROCESS_ITEMS[item][1] and seen[item] > 1:
                 raise Stop(f"{where}: 項目 {item} は 1 行まで（{rid} が 2 行目）")
-            if "\n" in row["値"] or "\r" in row["値"]:
-                raise Stop(f"{where}: {rid} の 値 が改行を含む")
+            if "`" in row["値"]:
+                raise Stop(f"{where}: {rid} の 値 がバッククォートを含む")
             if item == IMPL_MODULE and not row["値"].strip():
                 raise Stop(f"{where}: {rid} の 値 が空（{IMPL_MODULE} は値を空にしない）")
 
     @staticmethod
-    def reference(repo: str, tag: str, link: str) -> str:
+    def reference(repo: str, tag: str, link: str, files: frozenset = frozenset()) -> str:
         link = link.strip()
         if not link:
             return "なし"
         if SCHEME_RE.match(link):
             return link
-        return f"{repo}@{tag}:{link.lstrip('/')}"
+        path, sharp, anchor = link.partition("#")
+        path = path.lstrip("/")
+        if path not in files and unquote(path) in files:
+            path, anchor = unquote(path), unquote(anchor)  # check_links と同じく、符号化を戻した名前がタグの時点に在ればそれを指す
+        return f"{repo}@{tag}:{path}{sharp}{anchor}"
 
     def run(self, command: str) -> int:
         try:
@@ -200,7 +212,7 @@ class Layers(base.Checker):
                  f"本文は手元の clone のタグの時点を読む: `git -C {shlex.quote(str(clone))} show {commit}:<パス>`（タグ {tag} のコミット）。",
                  "**この一覧には手元のパスが入るので、正本の版の外に置き、commit しない。**", ""]
         for rid, row in layer.rows.items():
-            ref = self.reference(repo, tag, row["リンク"])
+            ref = self.reference(repo, tag, row["リンク"], self.tag_files)
             line = f"- {rid}（{row['観点'].strip()}）: {row['要約'].strip()}——本文: {ref}"
             if rid in broken:
                 line += f"（リンクが切れている: {broken[rid]}）"
@@ -221,7 +233,7 @@ class Layers(base.Checker):
             body = []
             for rid, row in rows:
                 value = row["値"].strip()
-                line = f"- {rid}: {row['要約'].strip()}{f'（値: `{value}`）' if value else ''}——本文: {self.reference(repo, tag, row['リンク'])}"
+                line = f"- {rid}: {row['要約'].strip()}{f'（値: `{value}`）' if value else ''}——本文: {self.reference(repo, tag, row['リンク'], self.tag_files)}"
                 if rid in broken:
                     line += f"（リンクが切れている: {broken[rid]}）"
                 body.append(line)
