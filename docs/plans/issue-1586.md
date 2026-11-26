@@ -83,7 +83,11 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
 - Verifier 1 パス目: `dev-loop:dev-loop-verifier`・`model: sonnet` で起動（報告のファイル `<scratchpad>/gate-1586-verifier-1-20261126T110149Z.md`）。
 - Verifier 1 パス目: **済み・反証 2 件**（V1・V2。返事で届いた——報告のファイルは書けなかった）。
 - `/code-review` 1 パス目: **済み・指摘 8 件**（important 4・nit 4。報告のファイル `<scratchpad>/gate-1586-code-review-1-20261126T110149Z.md`）。
-- 1 パス目の指摘対応: 済み（採否の表の「直す」6 行）。次は手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目。
+- 1 パス目の指摘対応: 済み（採否の表の「直す」6 行。コミット `c2595ad4`。`check-all.py` 0 失敗）。
+  起点 `fb73c1c9` からの成果物の差分は 0 行ではない（両方の `SKILL.md` と生成ブロック）——2 パス目は要る。
+- **残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**（どちらも未着手）。
+- 割り目 2（2 パス目の前）: `AskUserQuestion` に 300 秒回答なし → このまま続けた（2026-11-26）。
+- Verifier 2 パス目: 起動（報告のファイル `<scratchpad>/gate-1586-verifier-2-20261126T113153Z.md`）。`/code-review` 2 パス目: 起動（`<scratchpad>/gate-1586-code-review-2-20261126T113153Z.md`）。
 
 ```dev-loop-gates
 周の base: 89561e1158ff0e49510ce1b4e7558d7e2d599fff
