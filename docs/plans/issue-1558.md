@@ -112,11 +112,17 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
 - 周の途中の事故（申告）: 1 パス目の `/code-review` の委譲文を組むとき、引用符で囲まないヒアドキュメントに委譲文のバッククォートを入れ、シェルがコマンド置換として `claude plugin eval`（このリポジトリの eval を worktree のプラグインで実行・課金）・`git fetch`・`git push`（上流が無く失敗）・`gh`（引数なし）・`claude`（入力なしで失敗）を走らせた。
   `git commit` は変更が無く何も作らず、リモートのブランチは作られていない（`git ls-remote` で確かめた）。worktree に残った `evals/results/` は消した。`git fetch` で手元の参照が更新された（利用者の `fetch.pruneTags` によってはタグが消えうる——確かめていない）。
 - 割り目（手順 6 の 2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
+- 2 パス目: Verifier（sonnet）を `f7fb7b85` に当てた——反証 1 件（R-1）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/ccb0151a-cd0f-4f1a-b328-115bd7bc4fd5/scratchpad/gate-1558-verifier-2-20261126T052719Z.md`。
+  `/code-review`（high）を `f7fb7b85` に当てた——指摘 6 件（CR2-1〜CR2-6）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/ccb0151a-cd0f-4f1a-b328-115bd7bc4fd5/scratchpad/gate-1558-code-review-2-20261126T052719Z.md`。委譲文のファイル 177 行を読ませた（報告は 177 行）。
+  `check-all.py`（run-serial 越し）を `f7fb7b85` で回した——失敗 0（34 本を回し、ほかは入力が変わらず CACHED）。
+- 狭いパスの起点: `f7fb7b85`（2 パス目の指摘対応を始める直前の HEAD）。直すのは R-1／CR2-1・CR2-2。
 
 ```dev-loop-gates
 周の base: 25d08f5dd1be61cb41d2a684b04ba5f77f9d585e
 関門: Verifier 1 ca35c817 反証=1
 関門: /code-review 1 ca35c817 指摘=7
+関門: Verifier 2 f7fb7b85 反証=1
+関門: /code-review 2 f7fb7b85 指摘=6
 マージの反映: ドキュメントとプラグインの配布
 ```
 
@@ -135,6 +141,17 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
 | CR-4 符号化した `リンク` を書いたまま参照に出し、dev-loop の周が `git show` で読めない。`#節` が slug であることを書いていない | 示せる（/code-review の `docs/a%20b.md` の実測） | 7（本文を clone のタグの時点から読む） | 直す（参照は戻した名前で出す。試料 1・変異 1。profile-template.md に slug の読み方） |
 | CR-5 照合先の読むコマンドの中身（`{commit}`→`HEAD`）と、`--clone` の経路の手元のパスをテストが判別しない | 示せない（いまの本体は正しい。変異が生き残る形の指摘） | 無し | 残課題 |
 | CR-6 layers.md の「雛形の節の名前は「はじめに」が拾うものに合わせてある」が事実と違う（`リポジトリの構成` は拾われない） | 示せる（SKILL.md の「はじめに」の 1 の項目） | 無し（行の形・読み方は変わらない） | 残課題 |
+### 2 パス目の指摘の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R-1／CR2-1 参照の正規化が `check_links` と食い違う——`./docs/…`・`docs//…`・`docs/x/../…` と、パスは素で節だけ符号化した行が、`git show` で読めない参照のまま 0 で出る | 示せる（Verifier・/code-review が一時の profile で実走し、`git show refs/tags/v1:docs/sub/../g.md` が fatal） | 7（本文を clone のタグの時点から読む）・1・2 | 直す（`check_links` と同じ `_safe_rel` で正規化し、節はいつも戻す。試料・変異を足す） |
+| CR2-2 改行の検査が `\n`・`\r` だけで、U+0085・U+2028 などの行の区切りを含む `要約` で `.claude/dev-loop.md` に行頭の宣言を足せる（`commit-gate.py` の `splitlines()` が拾う） | 示せる（/code-review の実測: `検証の関門: enforce` が off に読まれた） | 2（決まった形の行） | 直す（`str.splitlines()` が分ける文字の全部で 4。試料・変異を足す） |
+| CR2-3 正本と製品のリポジトリが別のとき、dev-loop の周は製品のリポジトリの `CLAUDE.md` で clone を探すが、その行が要ると書いていない（CR-2 の理由「同じ clone を読む」も偽になりうる） | 示せる（文面） | 無し（見つからなければ「読めなかった」で推測しない——安全側に止まる） | 残課題 |
+| CR2-4 `要約` に `——本文:`・`（値:` を書くと、行に偽の参照・値が先に出る | 示せる（/code-review の実測） | 無し（行は決まった形の後ろに本物の参照を持つ。読む側の規定の穴） | 残課題 |
+| CR2-5 タグ `v1-->x`・空白を含む profile の名前で印が崩れる | 示せる（`git check-ref-format` が通す） | 無し | 残課題 |
+| CR2-6 CLAUDE.md の profile-template.md の項が「先頭の印」のまま（CR-3 の直しと食い違う） | 示せる（文面） | 無し | 残課題 |
+
 | CR-7 profile-template.md が外の本文を対象リポジトリの `CLAUDE.md` より優先させ、`CLAUDE.md` の制約を外の本文で上書きしうる | 示せない（食い違う実例は無い。文面の上の筋書き） | 無し | 残課題 |
 
 
