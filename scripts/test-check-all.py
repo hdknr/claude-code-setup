@@ -24,6 +24,10 @@
 **時間を出しても判定が変わらないことは、契約 1〜10 を期待値を変えずに通すことで見る**（11 も rc と「失敗 1」を見る）。
 **契約の 12) も #1040**——回した本が上位の本数より少なく `SKIP` がある回で、見出しの本数と、`SKIP` を上位に入れないことを見る
 （11 だけでは回した本が多く、`SKIP` を 0 秒で足しても上位の外に隠れた）。
+**契約の 13) は #1556（変異の間引き）**——実物の `TESTS` のまま起動の引数を記録し、既定では間引くテスト（`THINNED`）に `--shard 1/4` だけを渡し、
+`--all-mutants` では何も渡さず、ほかの回帰テストの引数はどちらでも変わらないこと、間引いた回だけが間引いたことを見出しと集計に出すことを見る。
+キャッシュの契約は、間引いた回の記録が `--all-mutants` の回に当たらないこと（キーに `--shard` が入る）を、収録の確かめ（`--part registry`）は、
+間引くテストが収録されていて・CI が全シャードを回し・ソースに `--shard` の字句があることを見る（**テストが本当に `--shard` を受けるかは字句でしか見ない**）。
 
 **キャッシュ（#1151）の契約は `--part cache`**——**偽のリポジトリ（`git init` した一時ディレクトリ）に本体と hook を写し、子プロセスとして十数回起こす**
 （既存の契約はこのプロセスの中で本体を回し `sys.stdout` を差し替えるので、並列にできない）。入力の種類ごと（中身・一覧・無いファイル・
@@ -612,16 +616,18 @@ def contract_steps(target: Path, root: Path, tag: str):
     #    **実物の `GUARDS` のまま、起動の引数だけを記録する**（`run` を差し替えるので何も走らない）。
     #    **値そのものは見ない**——見るのは「渡すこと」「親が 1 なら 1」「親が 2 以上なら親より少ない」。
     #    **回帰テストのうち変異を同時に当てる 9 本にも渡す**（#748・#749・#1021・#1049・#1051・#1050・#1052・#1361・#1555）——実物の `TESTS` のまま、渡さないものには何も足さない。
-    recorded: dict[str, list[tuple[str, list[str]]]] = {}
+    recorded: dict[tuple[str, ...], list[tuple[str, list[str]]]] = {}
+    outputs: dict[tuple[str, ...], str] = {}
 
-    def nested_args(jobs: str, script: str = "check-mutation-claims.py") -> list[list[str]]:
-        if jobs not in recorded:  # 並列数ごとに 1 回だけ回し、記録を名前で引く
-            mod = load(target, f"{tag}_nested{jobs}")
+    def nested_args(jobs: str, script: str = "check-mutation-claims.py", *extra: str) -> list[list[str]]:
+        key = (jobs, *extra)
+        if key not in recorded:  # 引数の組ごとに 1 回だけ回し、記録を名前で引く
+            mod = load(target, f"{tag}_nested{'_'.join(key).replace('-', '')}")
             calls: list[tuple[str, list[str]]] = []
             mod.run = lambda name, args: (calls.append((name, list(args))), (True, ""))[1]
-            run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", jobs])
-            recorded[jobs] = calls
-        return [args for name, args in recorded[jobs] if name == script]
+            _, outputs[key] = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", jobs, *extra])
+            recorded[key] = calls
+        return [args for name, args in recorded[key] if name == script]
 
     def inner(args: list[list[str]]) -> int | None:
         if len(args) != 1 or args[0][:-1] != ["--jobs"] or not args[0][-1].isdigit():
@@ -638,10 +644,30 @@ def contract_steps(target: Path, root: Path, tag: str):
            all(inner(nested_args("1", t)) == 1 for t in nested_tests))
     yield ("--jobs 4 なら変異を同時に当てる回帰テストは 1 以上 4 未満（#749）",
            all(1 <= (inner(nested_args("4", t)) or 0) < 4 for t in nested_tests))
-    # **`TESTS` から `NESTED` を除いた全部を見る**（#749 の 2 パス目）——1 本だけでは、ほかのテストに渡す変異が素通りする
-    others = [t for t in load(target, f"{tag}_tests").TESTS if t not in nested_tests]
+    # **`TESTS` から `NESTED` と間引くテスト（#1556）を除いた全部を見る**（#749 の 2 パス目）——1 本だけでは、ほかのテストに渡す変異が素通りする
+    thinned_tests = ("test-autopilot-loop.py", "test-line-effects.py")  # 本体の `THINNED` の写し——宣言の側は下の収録の確かめが見る
+    others = [t for t in load(target, f"{tag}_tests").TESTS if t not in nested_tests and t not in thinned_tests]
     yield ("--jobs を受けない回帰テストには何も渡さない（#749）",
            bool(others) and all(nested_args("1", t) == [[]] for t in others))
+    # 13) 変異の間引き（#1556）——既定では間引くテストに `--shard 1/4` だけを渡し、`--all-mutants` では何も渡さない。
+    #     ほかの回帰テストの引数は `--all-mutants` でも変わらない（入れ子は `--jobs` だけ、ほかは無し）。
+    # **`--jobs` の 1 と 2 以上の両方で見る**（#1556 の 2 パス目の /code-review——`--jobs 1` だけでは、並列のときだけ間引かない変異が契約を通った）。
+    yield ("既定では間引くテストに --shard 1/4 だけを渡す（--jobs 1 と 4。#1556）",
+           all(nested_args(j, t) == [["--shard", "1/4"]] for j in ("1", "4") for t in thinned_tests))
+    yield ("--all-mutants では間引くテストに何も渡さない（--jobs 1 と 4。#1556）",
+           all(nested_args(j, t, "--all-mutants") == [[]] for j in ("1", "4") for t in thinned_tests))
+    yield ("--all-mutants でも、ほかの回帰テストの引数は変わらない（#1556）",
+           all(nested_args("1", t, "--all-mutants") == nested_args("1", t) for t in [*others, *nested_tests]))
+    thin_names = ", ".join(t for t in load(target, f"{tag}_thin").TESTS if t in thinned_tests)  # 出すのは `TESTS` の順
+    yield ("間引いた回は、間引くテストを見出しに出す（#1556）",
+           f"変異を間引く: {thin_names} に --shard 1/4（#1556）" in outputs[("1",)])
+    yield ("間引いた回は、手元の緑が変異の全部でないことと全部を回す口を集計に出す（#1556）",
+           f"変異を間引いた: {thin_names} は変異をシャード 1/4 に間引いた" in outputs[("1",)]
+           and "**手元の緑は変異の全部ではない**" in outputs[("1",)] and "`--all-mutants`" in outputs[("1",)]
+           and "全部は PR 側の CI が全シャードで回す" in outputs[("1",)])
+    nested_args("1", "check-mutation-claims.py", "--guards-only")
+    yield ("--all-mutants と --guards-only の回は、間引いたと言わない（#1556）",
+           all("変異を間引" not in outputs[k] for k in (("1", "--all-mutants"), ("1", "--guards-only"))))
 
     # 10) 並列で、遅れて落ちる子とシグナルで止まった子（打ち切り）を、表示と集計の両方で失敗に数える（#509）。
     #     **FAIL の行の数と「失敗 N」が一致する**ことを見る——表示と集計が別の経路で決まると、ここが割れる。
@@ -1408,6 +1434,20 @@ def test_ci_runs_every_registered_script() -> None:
                 print(f"       {fname}: {'・'.join(sorted(reasons))} — {hit}")
         print("       **`on:` に `pull_request:` と `push:`（`branches:` に `main`）を置いて狭める鍵を外すか、その `run:`（全部を回す行）を起動するワークフローに移す。**"
               " 起動しないワークフローは PR に検査を出さない。")
+    # **変異を間引くテスト**（#1556）——`check-all.py` が手元で `--shard` を渡して変異を間引くテストは、PR 側の CI が全部（全シャード）を回す砦になる。
+    # 収録していて・CI が全部に数え（上の `both`——無条件のジョブで、シャードの行が 1..N を覆う——で、起動しないワークフローにだけあるのでもない）・テストのソースに `--shard` の字句があるものだけを入れる。
+    # **テストが本当に `--shard` を受けるかは字句でしか見ない**（#1556 の 1 パス目の /code-review）——受けないテストを入れても、ここは緑のままでありうる。
+    # 引数を弾くテストなら既定の回が引数の誤り（2）で落ちるが、引数を読まないテストは `--shard` を黙って無視して全件を回し、集計は間引いたと言う（2 パス目の /code-review）。
+    # 実物の CI で 1 本のシャードを外すと、上の「引数なしで回している」と一緒にここも赤になる（上の mutation-claim と同じ当て方）。
+    thinned = list(getattr(mod, "THINNED", ()))
+    check("変異を間引くテストが 1 本以上ある（空振りしない。#1556）", len(thinned) > 0)
+    bad_thin = [n for n in thinned
+                if n not in mod.TESTS or n not in both or n in idle or "--shard" not in (SCRIPTS / n).read_text()]
+    check("変異を間引くテストは、収録していて・CI が全シャードを回し・ソースに --shard の字句がある（#1556。受けるかは字句でしか見ない）", not bad_thin)
+    if bad_thin:
+        print(f"       間引けないもの: {bad_thin}——`THINNED` から外すか、テストに `--shard` を足して CI を全シャードにする")
+    m = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", str(getattr(mod, "THIN_SHARD", "")))
+    check("間引きのシャードは K/N（1 ≤ K ≤ N）の形（#1556）", m is not None and int(m.group(1)) <= int(m.group(2)))
 
 
 # ------------------------------------------------------------------ 変異
@@ -1450,14 +1490,33 @@ MUTANTS = {
     "入れ子に --jobs を渡さない": ('                args = [*args, "--jobs", str(nested_jobs(opts.jobs))]\n',
                                    "                pass\n"),
     "回帰テストの入れ子に --jobs を渡さない（#749）": (
-        '["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []',
-        '[]'),
+        '    return [*args, "--jobs", str(nested_jobs(jobs))] if name in NESTED else args\n',
+        '    return args\n'),
     "--jobs を受けない回帰テストの 1 本にも --jobs を渡す（#749 の 2 パス目）": (
-        '["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []',
-        '["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED or name == "test-check-all.py" else []'),
+        '    return [*args, "--jobs", str(nested_jobs(jobs))] if name in NESTED else args\n',
+        '    return [*args, "--jobs", str(nested_jobs(jobs))] if name in NESTED or name == "test-check-all.py" else args\n'),
     "回帰テストの全部に --jobs を渡す（#749）": (
-        '["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []',
-        '["--jobs", str(nested_jobs(opts.jobs))]'),
+        '    return [*args, "--jobs", str(nested_jobs(jobs))] if name in NESTED else args\n',
+        '    return [*args, "--jobs", str(nested_jobs(jobs))]\n'),
+    # 以下は #1556（変異の間引き）
+    "間引くテストに --shard を渡さない（#1556）": (
+        '    args = ["--shard", THIN_SHARD] if name in THINNED and not all_mutants else []\n',
+        '    args = []\n'),
+    "--all-mutants でも間引く（#1556）": (
+        '    args = ["--shard", THIN_SHARD] if name in THINNED and not all_mutants else []\n',
+        '    args = ["--shard", THIN_SHARD] if name in THINNED else []\n'),
+    "間引かないテストにも --shard を渡す（#1556）": (
+        '    args = ["--shard", THIN_SHARD] if name in THINNED and not all_mutants else []\n',
+        '    args = ["--shard", THIN_SHARD] if not all_mutants else []\n'),
+    "間引く回の見出しを出さない（#1556）": (
+        '                print(f"変異を間引く: {\', \'.join(thinned)} に --shard {THIN_SHARD}（#1556）")\n',
+        '                pass\n'),
+    "間引いた回の集計の行を出さない（#1556）": ("    if thinned:\n        print(f\"変異を間引いた:", "    if False:\n        print(f\"変異を間引いた:"),
+    "間引いた回の集計の行から PR 側の CI を外す（#1556 の 1 パス目）": (
+        "（全部は PR 側の CI が全シャードで回す。`--all-mutants` で手元でも全部回す）", "（`--all-mutants` で手元でも全部回す）"),
+    "--guards-only でも間引いたと言う（#1556）": (
+        '        thinned = [] if opts.guards_only else [name for name in TESTS if "--shard" in test_args[name]]\n',
+        '        thinned = [name for name in TESTS if "--shard" in test_args[name]]\n'),
     # 以下は #1040（所要時間）
     "歯止めの行に所要時間を出さない": (
         "            print(f\"  {'OK  ' if ok else 'FAIL'} {label:<40} {secs:7.1f} 秒\", flush=True)\n",
@@ -2245,11 +2304,12 @@ HOOK = SCRIPTS / "check_all_trace" / "usercustomize.py"
 CACHE_HOOK_REL = "scripts/check_all_trace/usercustomize.py"
 CACHE_TESTS = ["t-file.py", "t-list.py", "t-absent.py", "t-child.py", "t-iso.py", "t-sh.py",
                "t-git.py", "t-layout.py", "t-flaky.py", "t-edit.py", "t-import.py", "t-nested.py", "t-fresh.py",
-               "t-gittmp.py", "t-strip.py", "t-nous.py", "t-relcwd.py", "t-shell.py", "t-wopt.py", "t-del.py", "t-slow.py", "t-hooked.py", "t-exe.py", "t-rmdir.py", "t-mkd.py", "t-two.py"]
+               "t-gittmp.py", "t-strip.py", "t-nous.py", "t-relcwd.py", "t-shell.py", "t-wopt.py", "t-del.py", "t-slow.py", "t-hooked.py", "t-exe.py", "t-rmdir.py", "t-mkd.py", "t-two.py", "t-shard.py"]
 CACHE_OVERRIDE = (
     'GUARDS = [("g.py", [], False)]\n'
     f"TESTS = {CACHE_TESTS!r}\n"
     'NESTED = ("t-nested.py",)\n'
+    'THINNED = ("t-shard.py",)\n'  # 変異を間引くテスト（#1556）。既定では `--shard THIN_SHARD` を受ける
     'CACHE_KEEP = 3\n'  # 上限で古い記録が消えることを、少ない状態で見るため（#1517）
 )
 # 偽の回帰テスト。名前 → 中身。**どれも作業ツリーの中の何かを、違う経路で読む。**
@@ -2294,6 +2354,9 @@ CACHE_FAKES = {
                 "open('data/t2.txt').read()\n",
     # 隣のモジュールを import する（import の仕組みの列挙を入力にしない）
     "t-import.py": "import sys; sys.path.insert(0, 'scripts'); import helpmod\n",
+    # 間引きの `--shard` を受ける（#1556。`--shard` はキーに入れる——間引いた回の記録を `--all-mutants` の回に当てない）。
+    # 受けた引数が既定の間引きか、何も無い（`--all-mutants`）のどちらかでなければ落ちる。
+    "t-shard.py": "import sys\nassert sys.argv[1:] in (['--shard', '1/4'], []), sys.argv\nopen('data/sh.txt').read()\n",
     # `--jobs` を受ける（`--jobs` はキーに入れない）
     "t-nested.py": "import sys\nassert sys.argv[1] == '--jobs'\nopen('data/a2.txt').read()\n",
     # 環境を組み直した子の Python（hook が入らない）が、引数に無いファイルを読む
@@ -2355,7 +2418,7 @@ CACHE_DATA = {
     "plugins/h/read.py": "open('plugins/h/a.txt').read()\n", "plugins/h/a.txt": "a\n", "plugins/h/b.txt": "b\n",
     "plugins/x/run.sh": "#!/bin/sh\ncat plugins/x/other.txt\n", "plugins/x/other.txt": "o\n",
     "data/sub/x.txt": "x\n", "data/m/one.txt": "1\n",
-    "data/del.txt": "del\n", "data/slow.txt": "slow\n",
+    "data/del.txt": "del\n", "data/slow.txt": "slow\n", "data/sh.txt": "sh\n",
 }
 GIT_ID = ["-c", "user.email=t@t", "-c", "user.name=t"]
 
@@ -2534,6 +2597,13 @@ def cache_contract(root: Path):
     # 入れ子に渡るのは親の半分（`nested_jobs`）——2 と 3 はどちらも 1 になるので、1 と 3 になる 2 と 6 で比べる。
     rc, out = cache_run(root, "--jobs", "6")
     yield "`--jobs` の値が違っても当たる（キーに入れない）", rc == 0 and only(out, set())
+    # 間引き（#1556）——`--shard` はキーに入る。ここまでの回は全部間引いた回（既定）。
+    rc, out = cache_run(root, "--all-mutants")
+    yield "間引いた回の緑の記録は `--all-mutants` の回に当たらない（#1556）", rc == 0 and only(out, {"t-shard.py"})
+    rc, out = cache_run(root, "--all-mutants")
+    yield "`--all-mutants` の回も自分の記録には当たる（#1556）", rc == 0 and only(out, set())
+    rc, out = cache_run(root)
+    yield "`--all-mutants` の記録を足しても、間引いた回の記録は残って当たる（#1556）", rc == 0 and only(out, set())
     touch("plugins/h/b.txt", "b changed\n")
     rc, out = cache_run(root)
     yield "hook の入る子は粗い単位にしない（同じプラグインの読んでいないファイルを変えても回さない）", rc == 0 and only(out, dirty())
@@ -2764,6 +2834,7 @@ CACHE_MUTANTS = {
     "記録を読まない": ("check-all", "                hits = {name for name in TESTS if is_cached(store, name, test_args[name], hasher)}\n",
                        "                hits = set()\n"),
     "--no-cache を無視する": ("check-all", "            if not opts.no_cache:\n", "            if True:\n"),
+    "キーから --shard を落とす（#1556）": ("check-all", '        if a == "--jobs":\n', '        if a in ("--jobs", "--shard"):\n'),
     "歯止めを回さない": ("check-all", "            guard_runs.append((label, pool.submit(timed, name, args)))\n",
                          "            guard_runs.append((label, None if store is not None else pool.submit(timed, name, args)))\n"),
     "一覧を入力に数えない": ("check-all", "            dirs.add(val)\n", "            pass\n"),
