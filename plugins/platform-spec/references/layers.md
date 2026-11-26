@@ -1,0 +1,103 @@
+# アーキテクチャの層と開発の進め方の層
+
+外部の profile の層のうち、基盤の層のほかの 2 つ——**アーキテクチャ**（API の方式・サービスレイヤー・オブジェクト権限など）と**開発の進め方**（リポジトリの構成・`impl_module` の窓口・verify と deploy の手順など）——の形と使い方（#1558。#1312 の段 4）。
+**この文書は、2 つの層の表の形・受け付ける形式の版の範囲・層ごとの持ち物・出すものの形の原本である。**
+本体 `scripts/profile-layers.py` の定数はここの写しで、写しがずれていないかは、このプラグインを置いているリポジトリ（hdknr/claude-code-setup）のテスト test-profile-layers.py が突き合わせる。
+**何を守り何を守らないか・終了コードは、スクリプトの docstring を正とする。**
+
+profile の置き場所・`profile.csv` の列・層の表の先頭 3 列・形式の版の比べ方・リンクの書き方・手元の clone の探し方は spec-loop の決まり（spec-loop の `references/external-profile.md`）で、ここでは写さない。
+案件の設定（`shared/platform/settings.csv` のリポジトリ・profile・タグ）は基盤の層と同じもの（`references/infra-profile.md` の「案件の設定」）を使う——層ごとに別の設定を置かない。
+
+## 層ごとの持ち物
+
+profile の層は、platform-spec が読んで、使う側に渡す形にして出す。**使う側（spec-loop の spec-review・dev-loop・scaffold）は platform-spec を読み込まず、出したものを読むだけ**である（spec-loop は platform-spec に依存しない——`references/spec-loop.md`）。
+
+| 持つもの | アーキテクチャの層 | 開発の進め方の層 |
+| --- | --- | --- |
+| 層の表の形・形式の版の範囲 | platform-spec（下の表） | platform-spec（下の表） |
+| 語彙（後ろの列の値） | 持たない——`観点` は組織が書く自由な名前 | platform-spec——`項目` は下の「開発の進め方の層の表」の語彙だけ |
+| 既定 | 持たない——profile に無い観点は「照合先が無い」のまま | 持たない——profile に無い項目は雛形に節を出さない |
+| 照合 | 使う側——Domain Checker が仕様と照らす（spec-loop の `agents/domain-checker.md`） | 使う側——dev-loop の周が雛形の行の本文を読んで従う（dev-loop の `references/profile-template.md`） |
+| 出す形 | platform-spec——Domain Checker の照合先の一覧（下の「照合先の一覧」） | platform-spec——`.claude/dev-loop.md` の雛形と、正本の `CLAUDE.md` に書く `impl_module` の行（下の「雛形」） |
+| 版の差分・起票の候補 | 持たない（下の「守らないもの」） | 持たない（同じ） |
+
+## アーキテクチャの層の表
+
+profile の `profile.csv` に、層の名前は `アーキテクチャ` で 1 行置き、`ファイル` がこの層の表を指す（例: `architecture.csv`）。
+
+| 列 | 書くもの |
+| --- | --- |
+| `ID` | 行の鍵。層の中で重ねない |
+| `要約` | 規約の短い要約（例: 「書き込みは command の API に分ける」）。本文は写さない |
+| `リンク` | 本文（ガイドのページの節）を指す。書き方は spec-loop の決まり |
+| `観点` | どの観点の規約か（例: `API の方式`・`サービスレイヤー`・`オブジェクト権限`）。空にしない |
+
+## 開発の進め方の層の表
+
+profile の `profile.csv` に、層の名前は `開発の進め方` で 1 行置き、`ファイル` がこの層の表を指す（例: `process.csv`）。
+
+| 列 | 書くもの |
+| --- | --- |
+| `ID` | 行の鍵。層の中で重ねない |
+| `要約` | 手順・決まりの短い要約。本文は写さない |
+| `リンク` | 本文（ガイドのページの節）を指す。書き方は spec-loop の決まり |
+| `項目` | 下の語彙のどれか |
+| `値` | 雛形にそのまま載せる短い値（コマンド 1 行・モジュール名など）。空でよい。改行を含めない |
+
+`項目` の語彙と、雛形のどこに出るか:
+
+| 項目 | 雛形の節 | 1 つの層に置ける行 |
+| --- | --- | --- |
+| `verify` | 実機検証（verify）の手順 | 何行でも |
+| `deploy` | デプロイ経路 | 何行でも |
+| `歯止め` | 歯止めを全部回す 1 本のコマンド | 1 行まで |
+| `制約` | やってはいけない制約 | 何行でも |
+| `リポジトリの構成` | リポジトリの構成 | 何行でも |
+| `impl_module` | 正本の `CLAUDE.md` に書く行（scaffold が読む） | 1 行まで。`値` を空にしない |
+
+- 雛形の節の名前は dev-loop の `SKILL.md` の「はじめに — プロジェクト固有設定の発見」が `CLAUDE.md` から拾うものに合わせてある。`impl_module` の行の形は spec-loop の `references/monorepo.md` の「CLAUDE.md の分担」の例に合わせてある。
+
+## 形式の版の範囲
+
+2 つの層の `形式の版` は、層ごとに次の範囲のものだけを読む（比べ方は spec-loop の決まり）。
+
+| 層 | 下限（この版を含む） | 上限（この版を含まない） |
+| --- | --- | --- |
+| `アーキテクチャ` | `1` | `2` |
+| `開発の進め方` | `1` | `2` |
+
+- 形式の版 1 の表は、上の列である。列や語彙を変えるときは形式の版を上げ、この範囲と本体を同じ周で直す。
+
+## 照合先の一覧
+
+```bash
+python3 <platform-spec の base ディレクトリ>/scripts/profile-layers.py architecture <正本の docs> [--upto <n>] [--clone <profile の手元の clone>] [--spec-loop <spec-loop のプラグインの根>]
+```
+
+- 案件の設定のタグの時点のアーキテクチャの層を、Domain Checker に渡す照合先の一覧（Markdown）にして標準出力に出す。行ごとに `ID`・`観点`・`要約`・本文の参照と、本文の読み方（手元の clone でタグの時点を `git show` で読むコマンド）を載せる。
+- **出力には手元の clone のパスが入るので、正本の版の外（`build/` の下など、commit しない場所）に書く。** 正本の `CLAUDE.md` の Domain Checker の照合先にそのパスを書けば、spec-review が照合先として渡す（spec-loop の spec-review の `SKILL.md` の「はじめに」）。
+- 切れたリンクの行は一覧に `（リンクが切れている: <理由>）` と書いて残し、終了コードで知らせる（終了コードは docstring）。
+
+## 雛形
+
+```bash
+python3 <platform-spec の base ディレクトリ>/scripts/profile-layers.py dev-loop <正本の docs> [--upto <n>] [--clone <profile の手元の clone>] [--spec-loop <spec-loop のプラグインの根>]
+```
+
+- 案件の設定のタグの時点の開発の進め方の層から、`.claude/dev-loop.md` の雛形（Markdown）を標準出力に出す。先頭の行は印 `<!-- platform-spec: 開発の進め方 <リポジトリ> <profile> <タグ> -->` である。
+- 項目ごとに上の表の節を出し、行ごとに次の形の 1 行を置く（`値` が空なら `（値: …）` を出さない）:
+
+  ```text
+  - <ID>: <要約>（値: `<値>`）——本文: <リポジトリ>@<タグ>:<パス>#<節>
+  ```
+
+  リンクが空なら `——本文: なし`、外の URL ならその URL をそのまま書く。
+- **雛形には手元のパスを書かない**——`.claude/dev-loop.md` は製品のリポジトリに commit されるので、本文は `<リポジトリ>@<タグ>:<パス>` の参照だけで指す。読み方（手元の clone の探し方とタグの時点の読み出し）は dev-loop の `references/profile-template.md` を正とする。
+- `impl_module` の行は雛形の後ろに「正本の `CLAUDE.md` に書く行」として分けて出す（scaffold は正本の `CLAUDE.md` を読む）。
+- 雛形は案である。製品のリポジトリの `.claude/dev-loop.md` に置くか・ほかの宣言（`直す線:` など）と並べるかは利用者が決める。
+
+## 守らないもの
+
+- **2 つの層の版の差分と起票の候補**——基盤の層の差分は発注者の合意が要る基盤要件の変更なので共有の Q&A 表に起票するが（`references/infra-profile.md` の「版の差分と関門」）、この 2 つの層は発注者が決める値ではなく、出したものを毎回タグの時点から作り直す。版を上げたら作り直し、差分は出したものの差分で見る。
+- **アーキテクチャの層の `観点` の語彙**——組織ごとに違うので持たない。Domain Checker は観点の名前を手がかりにするだけで、名前で照合しない。
+- **雛形の行の本文が正しいか**——本文は profile のリポジトリの文書が正で、platform-spec は在るか（リンクが切れていないか）までしか見ない。

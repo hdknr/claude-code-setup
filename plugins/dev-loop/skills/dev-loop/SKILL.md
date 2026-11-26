@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 2.25.1 -->
-> **このスキルの版: 2.25.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 2.26.0 -->
+> **このスキルの版: 2.26.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -57,6 +57,8 @@ skills ディレクトリに置いた場合は `/dev-loop`（`~/.claude/skills/d
    - **一次ソースのドキュメント** — 開発フローや運用 runbook が別ファイルにあれば、それを正とする。
    - **歯止めを全部回す 1 本のコマンド** — あれば手順 6 で使う（無ければ手順 6 のとおり 1 本ずつ名指しで報告する）。
 2. `.claude/dev-loop.md` があれば、それをこのプロジェクト向けの追補設定として最優先で従う（任意）。
+   **先頭の行が印 `<!-- platform-spec: 開発の進め方 … -->` なら、profile の開発の進め方の層から作った雛形である——行は本文を写さずに profile のリポジトリのタグの時点の文書を指すので、
+   `references/profile-template.md` を読んでから本文を読む（必須）**（このスキルと同じ場所にある。#1558。**印の無い周では読まなくてよい**）。
 3. どれも無ければ、テスト実行（`Makefile` / `package.json` scripts / CI 定義から推測）と
    アプリ起動の**汎用手順に縮退**する。`/run` スキルが使える環境ならアプリ起動はそれに委ねてよい。
 
