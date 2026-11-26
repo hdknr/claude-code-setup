@@ -4237,7 +4237,12 @@ CASES: list[Case] = [
          args=("--red-check", "--in-progress"), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row),
     Case("取りこぼし: 止まる行が理由を言う", 1, UNCOVERED_STOP, ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES),
     Case("取りこぼし: --upto で前の版の時点を見るときは止めない", 0, "作れる（", args=("--dry-run", "--upto", "1"),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=v2([]), absent=UNCOVERED_STOP),
+    Case("取りこぼし: --upto で前の版の時点を見るときも内訳と名指しは出す", 0, "どちらにも無い: F1-4（spec/order.md:10）", args=("--dry-run", "--upto", "1"),
          ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=v2([])),
+    # v<n> を作る前の `--check --upto <n-1>`（差分の周を始める前の確かめ）は作業中の版を見るので止まる（CR1-1。`spec-ir.md` の移行の 4）
+    Case("取りこぼし: v2 を作る前の --check --upto 1 は作業中の版として止まる", 1, "どちらにも無い: F1-5（spec/order.md:11）", args=("--check", "--upto", "1"),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, generate_first=True, pre=add_spec_row, absent="は新しい"),
     Case("取りこぼし: 同じ試料の作業中の版は止まる", 1, "どちらにも無い: F1-4（spec/order.md:10）", args=("--dry-run",),
          ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=v2([])),
     # #1562: 決めて外すケース（中間表現の最上位の `excluded`）
