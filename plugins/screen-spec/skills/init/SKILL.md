@@ -5,8 +5,8 @@ description: "spec-loop の正本リポジトリに、画面設計書の置き�
 
 # init スキル
 
-<!-- skill-version: 0.12.1 -->
-> **このスキルの版: 0.12.1**（プラグイン `screen-spec`）。
+<!-- skill-version: 0.12.3 -->
+> **このスキルの版: 0.12.3**（プラグイン `screen-spec`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update screen-spec@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -52,6 +52,10 @@ python3 <このスキルの base ディレクトリ>/../../scripts/write-screens
   **profile と外部の profile は表を置く最初の版で決まり、後の版で変えられない**（表の見出し行に profile の列と外部の profile が足す列が入る。`../../references/profiles.md` の「選び方」）ことも添えて訊く。
   方式がまだ決まっていなくても、使う見込みの profile を選べる——列と節に `N/A。実現方式が未定` と書いておける。
   **`基盤の profile: 読めない（…）` の行が出たら**、理由（clone が手元に無いなど）を利用者に見せ、直してから `hint` を走らせ直すか、値を決めて手順 3 で明示で渡す。
+  **`基盤の profile: 画面の層が決まりに合わない（…）` の行が出たら**、同じ外部の profile は明示しても止まる——理由を利用者に見せ、次の 3 つのどれにするかを `AskUserQuestion` で訊く（`../../references/profiles.md` の「基盤の profile から引く初期値」。#1582・#1590）:
+  外部の profile を直してタグを付け、基盤の profile の設定のタグをそれにしてから `hint` を走らせ直す（設定は `shared/` に在るので 2 つの承認を取り直すことになり、基盤の層もそのタグの時点で読むことになる——訊くときに添える）・
+  `shared/` を触らずに、直したタグを行の案内のとおり `--external "<リポジトリ> <名前> <新しいタグ>"` で明示して手順 3 で渡す（外部の profile を直してタグを付けるのは利用者）・
+  行の案内のとおり外部の profile を `なし` にする（どちらも `--profile` は行が名指す profile）。
 - **画面IDの接頭辞**: 既定は `S-`。案件ですでに使っている画面ID の形があれば、それに合わせるかを `AskUserQuestion` で訊く。
   形は英大文字で始まり英大文字と数字が続き `-` で終わる（`../../references/tables.md` の「案件ごとの設定」）。
 

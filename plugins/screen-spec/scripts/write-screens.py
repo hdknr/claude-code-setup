@@ -37,7 +37,8 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - 3: 今の正本の状態では書けない——版が無い、`init` は置き済み、`add` は `init` の前・設定が読めない・同じ名前の仕様書かワイヤーフレームが在る。書かない
 - 4: spec-loop が見つからない・版が対応の範囲の外（`check-screens.py` と同じ）——書かない。
   `init` が書く外部の profile を読めない・決まりに合わない（`check-screens.py` と同じ）、引数を省いた `init` で基盤の profile から初期値を決められない
-  （設定の形が違う・spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・`profile.csv` が読めない・`重ねる先` がこのプラグインの profile でない）——書かない
+  （設定の形が違う・spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・`profile.csv` が読めない・`重ねる先` がこのプラグインの profile でない・
+  名指した画面の層の行が決まりに合わない——このときは止めた理由に、同じ外部の profile を明示しても止まることと進める案内を添える。#1582）——書かない
 
 **守ること**:
 
@@ -61,6 +62,11 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
   基盤の profile が無い・画面の層が無い・`重ねる先` が空なら `未設定`・外部の profile なしで、書くものと出力は基盤の profile を見る前と同じ
 - 引数を省いた `init` で基盤の profile から初期値を決められなければ、今の初期値に落とさずに 4 で止める（何も書かない）。
   名指した画面の層は `load_external` で確かめ（形式の版・層の行）、設定の値が `外部の profile` の行に写せない形（`リポジトリ` に `/` が無い・profile とタグに空白）なら決められないとする——`hint` も同じ確かめを通った値だけを初期値として出す
+- `hint` と引数を省いた `init` は、基盤の profile が名指す画面の層の行が決まりに合わない（`check-screens.py` の `LayerRule`——#1571・#1581 の止め方を含む）とき、
+  「明示して渡す」とだけ案内しない——同じ外部の profile を `--external` で明示しても止まることと、外部の profile を直してタグを付け、基盤の profile の設定のタグをそれにするか、`--profile <重ねる先> --external なし` を渡すことを出す（#1582。
+  外部の profile はタグの時点で読むので、直しても設定のタグが同じなら止まったまま）。
+  タグを変える道には、`shared/` の変更なので 2 つの承認を取り直すことと、`shared/` を触らずに直したタグを `--profile <重ねる先> --external "<リポジトリ> <名前> <新しいタグ>"` で明示する道を添える（#1590）。
+  読めないとき（設定の形・clone・タグ・形式の版・`重ねる先`・行に写せない形）は今までどおり「読めない（…）」と出す
 - `init` が外部の profile を書くときは、`check-screens.py` と同じ読み方（`load_external`）で読み、足す列を見出し行の profile の列の後ろに宣言の順で入れる（読めなければ 4）
 - platform-spec のファイルを読み込まない（基盤の profile の設定の項目名は写し、値は spec-loop の `external-profile.py` が読む）
 
@@ -144,6 +150,23 @@ class Refused(Exception):
 
 class Broken(Exception):
     """重ね合わせが決まりに反する（1）。"""
+
+
+class LayerBroken(checks.Stop):
+    """基盤の profile が名指す画面の層が、行の決まりに合わない（4。`check-screens.py` の `LayerRule`。#1582）。
+
+    同じ外部の profile を `--external` で明示して渡しても止まるので、「明示して渡す」とだけ案内すると行き止まりになる。
+    `reason` は止めた理由、`advice` は進める案内（外部の profile を直してタグを付け、設定のタグをそれにする——`shared/` の変更なので承認を取り直す——か、
+    `shared/` を触らずに直したタグを `--profile <重ねる先> --external "<リポジトリ> <名前> <新しいタグ>"` で明示するか、`--profile <重ねる先> --external なし`。#1590）。
+    """
+
+    def __init__(self, reason: str, profile: str, repo: str, name: str) -> None:
+        self.reason = reason
+        self.advice = (f"外部の profile を直してタグを付け、{PLATFORM_SETTINGS} の タグ をそれにする"
+                       f"（shared/ の変更なので 2 つの承認を取り直し、基盤の層もそのタグの時点で読むことになる）か、"
+                       f"shared/ を触らずに直したタグを --profile {profile} --external \"{repo} {name} <新しいタグ>\" で明示するか、"
+                       f"--profile {profile} --external {EXTERNAL_NONE} を渡す")
+        super().__init__(f"{reason}——同じ外部の profile を --external で明示して渡しても止まる（{self.advice}）")
 
 
 def table(columns: list[str] | None, rows: list[list[str]]) -> str:
@@ -310,6 +333,10 @@ def hint(docs: Docs) -> int:
     print(f"profile: {'・'.join(names) if names else 'このプラグインにはまだ無い——' + UNSET + ' にする'}")
     try:
         profile, external, note = base_initial(docs)
+    except LayerBroken as e:
+        print(f"基盤の profile: 画面の層が決まりに合わない（{e.reason}）——init の引数を省いても、"
+              f"同じ外部の profile を --external で明示して渡しても止まる（{e.advice}）")
+        return 0
     except checks.Stop as e:
         print(f"基盤の profile: 読めない（{e}）——init の引数を省くと止まる（--profile と --external を明示して渡す）")
         return 0
@@ -384,7 +411,10 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
                           f"リポジトリが `<持ち主>/<名前>` でないか、profile かタグが空白を含む（--profile と --external を明示して渡す）")
     checker = checks.Checker(docs.spec_loop, docs.docs, None)  # init が書く前に読むのと同じ読み方で、画面の層を確かめる（形式の版・層の行）
     checker.profile = row.base
-    checker.load_external(repo, name, tag)
+    try:
+        checker.load_external(repo, name, tag)
+    except checks.LayerRule as e:  # 読めたが行が決まりに合わない——明示しても止まるので案内を言い分ける（#1582）
+        raise LayerBroken(str(e), row.base, repo, name) from None
     return row.base, (repo, name, tag), f"画面は {row.base} + 外部の profile {repo} {name} {tag}（{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先）"
 
 
