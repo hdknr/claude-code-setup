@@ -21,13 +21,13 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 - `.claude-plugin/marketplace.json` — 版
 - `plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行（2 本）
 - `docs/plans/issue-1581.md` — この計画ファイル
+- `CLAUDE.md` — プロジェクト構成の `check-screens.py` の項に #1581 の止め方の 1 句を足す（追補。PR #1584 のマージの後、利用者の指示「1584 に関しては足すでお願いします」（2026-11-26）で別の PR にした。周の中では自動モードの分類器に 2 回拒まれて外していた）
 
 触らない:
 
 - `plugins/screen-spec/scripts/write-screens.py`——`init` は `load_external` を読み込むので、同じ止め方を受け継ぐ（コードは変えない）
 - `screen-items.csv`・`transitions.csv` の決まった値の列（`種類`・`必須` など）の語彙——Issue の範囲は画面の表の `種別`・`ステータス`。守らないものに名指す
 - `plugins/spec-loop/`、plugin.json・marketplace.json の description
-- `CLAUDE.md`——プロジェクト構成の `check-screens.py` の項に 1 句（#1581 の止め方）を足すつもりだったが、その変更を含むコミットが自動モードの分類器に「Undermining Oversight」で 2 回拒まれた（2026-11-26。CLAUDE.md を外したコミットは通った）。不在の周なので変更を外し、足すかは人間に渡す（PR コメントの残課題）。決まりの原本は `profiles.md` と docstring で、CLAUDE.md の項は「#1571 の 4 つ」を列挙したまま 1 つ欠ける（偽ではないが不足）
 
 依存の追加・更新: なし
 
@@ -36,7 +36,7 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
 - 照らすのは `SCREEN_FIXED`（`screens.csv` の `種別`・`ステータス`）の列に外部の語彙が在るときだけ。語彙と決まった値の共通部分が空なら 4（`Stop`）。語彙が無い列・共通部分が 1 つでもある列は止めない。
 - 止めた理由には、列・語彙の値・決まった値と、語彙の行の ID を名指す。
 - 照らすのは画面の層の行を全部読んでから（語彙の行の順に依らない）。既定の照合（#1571）より前に置く。
-- 複製の数: 決まりの原本（`profiles.md`）1・本体の docstring（守ること 1 行・守らないもの 1 行）——原本以外は指すだけ。分けない（1 つの規則）。CLAUDE.md の 1 句は外した（変更範囲の「触らない」）。
+- 複製の数: 決まりの原本（`profiles.md`）1・本体の docstring（守ること 1 行・守らないもの 1 行）——原本以外は指すだけ。分けない（1 つの規則）。CLAUDE.md の 1 句は周の中では外し、マージの後に利用者の指示で追補の PR で足した。
 
 ## verify の受入基準
 
