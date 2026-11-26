@@ -101,6 +101,9 @@ main へのマージ → GitHub Pages の再ビルドとプラグインの配布
 - 1 パス目の指摘対応: `0adf3e14c83511fe84209c27a06e166fd7ea49bb`（成果物の差分あり → 2 パス目を回す）
 - 2 パス目の指摘対応の起点（狭いパスの起点）: `0adf3e14c83511fe84209c27a06e166fd7ea49bb`
 - 関門: Verifier 2 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1562-verifier-2-20261126T020532Z.md`）・/code-review 2 パス目（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1562-code-review-2-20261126T020532Z.md`）——渡した時点の HEAD `0adf3e14`
+- 関門の結果: Verifier 2 パス目（`dev-loop:dev-loop-verifier`・sonnet）反証 0・/code-review 2 パス目（high）指摘 6（直す 5・残課題 1）。採否は「採否の表（2 パス目）」
+- 2 パス目の指摘対応の終点（狭いパスの終点）: `dd8ee7f0ef911c525beb84b567a7c9888d6d9bb7`
+- 関門: 狭いパス（`dev-loop:dev-loop-verifier`・sonnet。反証 0。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/4c7034dc-d804-4ffa-8433-2d789038064f/scratchpad/gate-1562-narrow-1-20261126T024500Z.md`）
 
 ## 既知の限界・決着済みの論点
 
@@ -152,7 +155,35 @@ Verifier 2 パス目: 反証 0 件。/code-review 2 パス目: 指摘 6 件（�
 - 効いた行: R-01（CR2-3。試料が主張を判別していない）
 - 効いた行: なし（CR2-5 は「該当なし」）
 
-（狭いパスの結果はここに足す）
+### 狭いパス（2 パス目の指摘対応 `0adf3e14..dd8ee7f0`）
+
+反証 0 件（`dev-loop:dev-loop-verifier`・sonnet）。Verifier が設計した変異 10 本のうち、赤（捕まえた）9 本: 内訳の行を古いときだけ出す・`loaded.current` の反転・古さの行を取りこぼしだけで出す・`--red-check` を止めない・`--check` で内訳を落とす・`--dry-run` を止めない・
+`--check` を `--upto` 付きだけで止める・`--check` の取りこぼしを 2 にする（ほか 1）。**素通り 1 本**: `--check` から `mock_missing`（生成したモックの写しが無い）を落とす——この周の差分の行ではなく #1099 の既存の行で、
+取りこぼしの試料（画面の表を持たない）の外。Verifier は陽性対照を取っておらず「穴」とは報告していない。採否は人間が決める（PR コメント）——振り分けは「記録だけ」（この周の受入基準の外・既存の行・後退ではない）。
+著者の変異 6 本は Verifier は独立に当て直していない（`check-all.py` の test-scaffold.py で赤を確かめた）。
+
+- 効いた行: V-05（狭いパスの変異を設計して当てた——指摘ではなく、反証 0 の証拠）
+
+```dev-loop-gates
+周の base: 4d9370bf432634441164d1731d3ec9e149aa959b
+関門: Verifier 1 6537145845f1b1471c9161d7d3774e55fd44dd3b 反証=1
+関門: /code-review 1 6537145845f1b1471c9161d7d3774e55fd44dd3b 指摘=6
+関門: Verifier 2 0adf3e14c83511fe84209c27a06e166fd7ea49bb 反証=0
+関門: /code-review 2 0adf3e14c83511fe84209c27a06e166fd7ea49bb 指摘=6
+関門: 狭いパス 0adf3e14c83511fe84209c27a06e166fd7ea49bb dd8ee7f0ef911c525beb84b567a7c9888d6d9bb7 反証=0
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+受入基準: A7 満たす
+受入基準: A8 満たす
+受入基準: A9 満たす
+受入基準: A10 満たす
+受入基準: A11 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
 
 ## 手順 8
 
