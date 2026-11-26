@@ -71,7 +71,7 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
 
 ## 起票
 
-- この周の起票: 0 件（測っていない判定役（G1）は実データで失敗を示せないので、起票の条件 (a) を満たさない）
+- この周の起票: 0 件（残課題 C4・C5 の起票を訊いたが回答が無く、利用者の承認（条件 (c)）が無い。測っていない判定役（G1）は実データで失敗を示せない）
 
 ## 関門の進捗（再開点）
 
@@ -93,7 +93,11 @@ main へのマージで、プラグインの配布（`marketplace.json`）と Gi
 - 狭いパス: 起動（`dev-loop:dev-loop-verifier`・`model: sonnet`。報告のファイル `<scratchpad>/gate-1586-narrow-1-20261126T115031Z.md`）。
 - 狭いパス: **済み・反証 2 件**（F1・F2。受入基準を破るものは 0 件。報告のファイルは書けなかった——ガードに断られ、回避はしなかった。報告は返事で届いた）。
   変異は当てていない（Verifier が外に複製を作らず「当てられなかった」と報告）——数字の主張はトランスクリプトの再集計で判別した。
-- **関門はここで終わり。** 次は PR の前の歯止め → PR → 外部レビュー → 起票とマージの確認（人間）。
+- **関門はここで終わり。**
+- PR の前の歯止め（`check-pr-preconditions.sh`・`check-deps-declared.py`・`check-spec-writeback.py`・`formal-sync.py check`・`check-plan-scope.py`・`check-plan-counts.py`・`check-gates.py`）: どれも通った。
+- PR #1592 を作った。PR 側の CI: 20 pass・1 skipping、`mergeable: MERGEABLE`。
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` の終了コード 3）。
+- 起票とマージを `AskUserQuestion` で訊いた（2026-11-26）——300 秒回答なし。**起票しない・マージしない**（どちらも利用者の承認が要る）。**マージは利用者の承認待ち。**
 - Verifier 2 パス目: 起動（報告のファイル `<scratchpad>/gate-1586-verifier-2-20261126T113153Z.md`）。`/code-review` 2 パス目: 起動（`<scratchpad>/gate-1586-code-review-2-20261126T113153Z.md`）。
 
 ```dev-loop-gates
