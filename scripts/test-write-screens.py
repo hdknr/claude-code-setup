@@ -268,6 +268,10 @@ CASES: list[tuple] = [
     ("explicit-external-default-outside-vocab", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4,
      "種別 list の列 レイアウト の既定 'wide' が")], None, [], {},
      {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT.replace("list,standard\n", "list,wide\n")}}}),
+    # #1581: ステータスの語彙が決まった値（下書き・記入中）と 1 つも重ならない画面の層も、init は書く前に 4 で止める（同じ load_external）
+    ("explicit-external-status-vocab-disjoint", {"v1": DIR}, [(["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4,
+     "列 ステータス の語彙（完了）が決まった値（下書き・記入中）と 1 つも重ならない")], None, [], {},
+     {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT + "S-1,完了だけ,,語彙,screens.csv,ステータス,,完了\n"}}}),
     ("base-no-clone", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 読めない（"),
         (["init"], 4, "基盤の profile org/guide の org（タグ v1） を読めない"),
