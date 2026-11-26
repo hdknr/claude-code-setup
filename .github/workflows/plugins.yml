@@ -517,6 +517,10 @@ jobs:
       - name: platform-spec の profile の版の差分の候補のテスト（#1457）
         run: python3 scripts/test-check-profile-diff.py
 
+      # 本体は plugins/platform-spec/scripts/ にある（アーキテクチャの層と開発の進め方の層を照合先の一覧と dev-loop の雛形にして出す。check-infra-profile.py と spec-loop を読み込むので、本物の spec-loop と並べて回す）。
+      - name: platform-spec のアーキテクチャの層と開発の進め方の層のテスト（#1558）
+        run: python3 scripts/test-profile-layers.py
+
       # 本体は plugins/spec-loop/scripts/ にある（外部の profile の関門と scaffold・build-proposal の口。platform-spec は本物の写しか偽物を隣に置く）。
       - name: spec-loop の外部の profile の関門のテスト（#1457）
         run: python3 scripts/test-profile-gate.py

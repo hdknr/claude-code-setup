@@ -262,6 +262,7 @@ TESTS: list[str] = [
     "test-check-infra-csv.py",
     "test-check-infra-profile.py",
     "test-check-profile-diff.py",
+    "test-profile-layers.py",
     "test-profile-gate.py",
     "test-check-screens.py",
     "test-screen-gate.py",

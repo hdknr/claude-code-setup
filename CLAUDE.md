@@ -19,6 +19,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/references/spec-gap.md` - **仕様の穴を実装で決めず、spec-loop の Q&A 表に差し戻す**規定
       （#219。spec-loop から来た Issue の読み方も持つ。**Issue の印と節は spec-loop の `references/handoff-issue.md`
       の写しで、`scripts/test-scaffold.py` が突き合わせる**——dev-loop から spec-loop を相対パスで指せないため）
+    - `skills/dev-loop/references/profile-template.md` - **`.claude/dev-loop.md` が platform-spec の開発の進め方の層から作った雛形（先頭の印 `<!-- platform-spec: 開発の進め方 … -->`）のとき、行が指す本文を手元の clone のタグの時点から読む**規定
+      （#1558。`SKILL.md` の「はじめに」の 2 が指す。**印の無い周では読まない**。雛形の印と行の形の原本は platform-spec の `references/layers.md` で、`scripts/test-profile-layers.py` が突き合わせる）
     - `skills/dev-loop/scripts/ledger.py` - 依存のある複数 Issue を回すときの**台帳**（依存グラフと状態）を
       メインの作業ツリーの `.claude/plans/cruise-<名前>.json` に読み書きする（#390。**worktree の中から走らせても同じファイル**。
       いつ書きどう再開するかは `references/ledger.md`、守る／守らないは docstring を正とする。テストは `scripts/test-ledger.py`）
@@ -307,9 +309,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `build/mkdocs/mock/v<n>/`（`build-mock.py` の出力の `build/mock/` と分ける）に書いてサイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
       決まりの原本は `references/mkdocs.md`、守る／守らないは docstring を正とする。テストは `scripts/test-screen-spec-pages.py`）
   - `platform-spec/` - spec-loop の基盤要件（`shared/infra.csv`）を、組織の開発ガイドのような外部の設計パターン（profile）とつなぐプラグイン（#1312。**spec-loop は platform-spec に依存しない**——
-    置かなければ今の `infra.csv` と `check-infra-csv.py` のまま動く。いまは基盤の層の形と照合（#1456）と、版の差分の候補（#1457）まで。スキルはまだ持たない）
+    置かなければ今の `infra.csv` と `check-infra-csv.py` のまま動く。いまは基盤の層の形と照合（#1456）と、版の差分の候補（#1457）と、アーキテクチャと開発の進め方の層を使う側に渡す形にして出す口（#1558）まで。スキルはまだ持たない）
     - `references/` - **決まりの原本**（基盤の層の表の形・形式の版の範囲・案件の設定（版の中の `shared/platform/settings.csv`）・`profile の行` の書き方・照合は `infra-profile.md`、
-      spec-loop との境目・対応する spec-loop の版・spec-loop の見つけ方は `spec-loop.md`）。profile の置き場所と読み方は spec-loop の `references/external-profile.md` を正とし、写さない
+      spec-loop との境目・対応する spec-loop の版・spec-loop の見つけ方は `spec-loop.md`、アーキテクチャと開発の進め方の層の形・語彙・層ごとの持ち物（platform-spec か使う側か）・出すものの形は `layers.md`）。profile の置き場所と読み方は spec-loop の `references/external-profile.md` を正とし、写さない
     - `scripts/check-infra-profile.py` - 案件の `infra.csv` の末尾の任意の列 `profile の行` が、案件の設定のタグの時点の基盤の層に在るかを照らし、無い ID（別のタグにだけ在る ID も）を名指しする（#1456。
       **spec-loop の重ね方（`merge-versions.py`）・列の名前（`check-infra-csv.py` の `PROFILE_COLUMN`）・外部の profile の読み方（`external-profile.py`）を読み込む——写さない**。読むだけ。
       spec-loop の見つけ方は screen-spec と同じ順の写し（platform-spec は screen-spec に依存しない）。案件の設定の任意の項目 `確かめたタグ`（#1457）も受ける。守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-profile.py`）
@@ -317,6 +319,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `profile の行` が指す行のうち変わった・消えた・リンクの切れた行を、共有の Q&A 表に起票する候補（`起票の候補: `）として出す（#1457。**番号を振らない。読むだけ**。
       新しい版が `タグ`・`確かめたタグ` と同じなら比べない。設定の読み方と spec-loop の見つけ方は `check-infra-profile.py`、差分は spec-loop の `external-profile.py` を読み込む——写さない。
       spec-loop の `profile-gate.py` が子のプロセスで呼ぶ。決まりの原本は `references/infra-profile.md` の「版の差分と関門」、守る／守らないは docstring を正とする。テストは `scripts/test-check-profile-diff.py`）
+    - `scripts/profile-layers.py` - 案件の設定のタグの時点の profile のアーキテクチャの層を spec-review の **Domain Checker の照合先の一覧**（`architecture`。読むコマンドに手元の clone のパスが入るので正本の版の外に置く）に、
+      開発の進め方の層を **dev-loop の `.claude/dev-loop.md` の雛形**と正本の `CLAUDE.md` の `impl_module` の行（`dev-loop`。本文は写さず `<リポジトリ>@<タグ>:<パス>` で指し、手元のパスを書かない）にして標準出力に出す（#1558。**読むだけ。使う側は platform-spec を読み込まない**——
+      雛形の読み方は dev-loop の `references/profile-template.md`）。設定の読み方と spec-loop の見つけ方は `check-infra-profile.py`、層の読み出しとリンクは spec-loop の `external-profile.py` を読み込む——写さない。
+      決まりの原本は `references/layers.md`、守る／守らないは docstring を正とする。テストは `scripts/test-profile-layers.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -522,6 +528,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     一時ディレクトリに本物の spec-loop と platform-spec の写しを並べ、profile は一時の git リポジトリにタグ（`v9`・`v10`・profile を持たないタグなど）を付けて作る。
     候補の種類と名指し・指していない行を出さない・番号を振らない・新しい版の決め方・止まり方・読むだけと、**候補の性質のプロパティテスト（標準ライブラリの `random`。性質を破る変異で落ちる陽性対照つき）**・
     本体の定数が `references/infra-profile.md` と一致することを見る。**変異の数は docstring の「守ること」の行の数と同じ**
+  - `test-profile-layers.py` - platform-spec のアーキテクチャの層と開発の進め方の層の出す口（#1558）の回帰テスト（変異テストを含む）。**本体は `plugins/platform-spec/scripts/` にある**。
+    一時ディレクトリに本物の spec-loop と platform-spec の写しを並べ、profile は一時の git リポジトリにタグ（形の違う試料のタグを含む）を付けて作る。
+    照合先の一覧と雛形の形・**雛形に手元のパスが出ないこと**・止まり方（1・2・3・4）・読むだけと、**本体の定数が `references/layers.md` と、雛形の印と行の形が dev-loop の `references/profile-template.md`・`SKILL.md` と、
+    `impl_module` の行が spec-loop の `references/monorepo.md` の例と一致すること**（崩す陽性対照つき）を見る。**変異の数は docstring の「守ること」の行の数と同じ**
   - `test-profile-gate.py` - spec-loop の外部の profile の関門（#1457）と、それを当てる `scaffold.py`・`build-proposal.py` の口の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。一時ディレクトリに本物の spec-loop の写しを置き、隣に本物の platform-spec の写しか、終了コードと受けた引数を記録する偽物を置く・置かない・名指す。
     **陽性対照: 同じ置き方で `profile の行` に値があれば呼ぶ**（値が無ければ呼ばない）。scaffold・提案書の正本の試料は `test-scaffold-screens.py`・`test-build-proposal.py` を読み込む。
