@@ -91,7 +91,8 @@ Issue 本文（外部入力。作者は利用者本人。#1571 の 2 パス目�
   - /code-review 2 パス目: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/60512778-ba8a-4b9c-afb8-fadbe195ec94/scratchpad/gate-1582-code-review-2-20261126T102540Z.md`
 - 関門 2 パス目を通した（HEAD `f3923422`）——**Verifier 反証 0 件・/code-review 指摘 2 件**（採否は下の表。直す 0・残課題 2）。どちらも報告のファイルに終わりの印つき・`git status --porcelain` は前後同じ。Verifier は 260 行・依頼 69 行を読んだと報告し、独立の変異 2 系統を当てた（読めない枝を LayerRule にする変異は赤。重ねる先の食い違いを LayerRule にする変異は hint・init の経路では届かない等価変異）
 - 2 パス目で直した行: 0 件 → **狭いパス: 該当なし**
-- 外部レビュー: PR の後に `external-reviews.py` で見る
+- PR #1587（head の CI 20 本 pass・deploy は skipping）。マージは親がする
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py 1587` が 3）
 - 交絡: 実験なし（試料の赤→緑は、直す前の本体と直した本体で同じ試料を走らせた陽性対照）
 
 ```dev-loop-gates
