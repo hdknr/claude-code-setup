@@ -68,7 +68,10 @@ Issue 本文（外部入力。作者は利用者本人）から読んだ要件: 
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1571-default-in-vocab`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1571`・起点 `366a3c7e`・base 参照 `origin/main` → `366a3c7eca1c629a04b5f4dd9742f037dbf7bf39`
-- 関門: まだ
+- 実装: `16af6c11`（check-all 緑）。手順 5 から再開できる（この worktree で `/clear` → `/dev-loop:dev-loop 1571`）
+- 1 パス目の指摘対応の起点（1 パス目の関門に渡した HEAD）: `16af6c11`
+- 割り目（手順 4）: 「ここで割る」を選んだ（2026-11-26）
+- 関門: まだ（次は手順 5: Verifier 1 パス目と /code-review 1 パス目。どちらも base 366a3c7e を渡す）
 - 交絡: 実験なし
 
 ```dev-loop-gates
