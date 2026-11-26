@@ -156,7 +156,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/parent-checklist.py --in
 python3 <spec-loop の base ディレクトリ>/scripts/green-list.py {record|check} [--repo <製品のリポジトリ>] [--list <一覧>]
 ```
 
-`--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。
+`--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。仕様のテストケースが中間表現に揃っていない（取りこぼし）ときも 1 になります（作業中の版を見るどのモードも。`--upto` で前の版の時点を見るときは止めません。`references/spec-ir.md` の「Red テストにしない受入基準」）。
 `--upto <n>` を付けると `v<n>` の時点に当てます（差分の周を始める前の確かめ。`references/versions.md`）。
 `--red-check` は Red テストを走らせ、回帰は緑で、追加・変更は失敗するか前の版の実装がもう満たすかを確かめます。
 **実装が前の版の状態にあることを前提にせず**、前の版の Red テストも同じ実装に当てて確かめます。
