@@ -429,6 +429,11 @@ R_ROWS = "R-1,担当者,,語彙,screens.csv,主たる利用者,,担当者\nR-2,�
 L_ROWS = L_COL + L_STD + L_MODAL + L_LIST + L_FORM + R_ROWS
 BODY_MARK = "ガイドの本文の目印-7f3a"  # リンク先の本文。検査の出力に出てはならない（B9）
 GUIDE_MD = f"# ガイド\n\n## レイアウト\n\n{BODY_MARK}\n\n## 標準\n\n## モーダル\n\n## 種別ごと\n"
+# Issue #1571 の再現の値（語彙 L-001〜L-008・既定 form → L-008）
+ISSUE_L_VALUES = [f"L-{n:03d}" for n in range(1, 9)]
+ISSUE_L_COL = "F-COL,レイアウトの列,,列,screens.csv,レイアウト,,\n"
+ISSUE_L_VOCAB = "".join(f"V-{n},レイアウト {n},,語彙,screens.csv,レイアウト,,{v}\n" for n, v in enumerate(ISSUE_L_VALUES, 1))
+ISSUE_L_FORM = "F-FORM,入力は L-008,,既定,screens.csv,レイアウト,form,L-008\n"
 EXT_LABEL = "外部の profile org/guide の org（タグ v1）"
 
 
@@ -532,11 +537,23 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
      f"行 L-LIST: 種別 list の列 レイアウト の既定 'standard' が {EXT_LABEL} の語彙（std・modal）に無い", "違反"),
     # 語彙の行が既定の行より後ろでも通る（全部を読んでから照らす）
     ("ext-vocab-after-default", ext(), prof({"v1": guide(rows=L_COL + L_LIST + L_FORM + L_STD + L_MODAL + R_ROWS)}), [], 0, "違反 0 件", "止めた"),
+    # 語彙の行が既定の行より後ろで、既定が語彙の外でも止まる（既定を読んだ時点の語彙で照らす形を判別する）
+    ("ext-vocab-after-default-outside", ext(), prof({"v1": guide(rows=L_COL + L_LIST + L_FORM.replace(",standard\n", ",wide\n") + L_STD + L_MODAL + R_ROWS)}), [], 4,
+     f"行 L-FORM: 種別 form の列 レイアウト の既定 'wide' が {EXT_LABEL} の語彙（standard・modal）に無い", "違反"),
+    # Issue の再現の値そのまま（語彙 L-001〜L-008・既定 form → L-008 を L-080 に／語彙の L-008 を L-009 に）
+    ("ext-issue-default-L080", ext(), prof({"v1": guide(rows=ISSUE_L_COL + ISSUE_L_VOCAB + ISSUE_L_FORM.replace(",L-008\n", ",L-080\n") + R_ROWS)}), [], 4,
+     f"行 F-FORM: 種別 form の列 レイアウト の既定 'L-080' が {EXT_LABEL} の語彙（{'・'.join(ISSUE_L_VALUES)}）に無い", "違反"),
+    ("ext-issue-vocab-L009", ext(), prof({"v1": guide(rows=ISSUE_L_COL + ISSUE_L_VOCAB.replace(",L-008\n", ",L-009\n") + ISSUE_L_FORM + R_ROWS)}), [], 4,
+     f"行 F-FORM: 種別 form の列 レイアウト の既定 'L-008' が {EXT_LABEL} の語彙（{'・'.join(ISSUE_L_VALUES[:-1] + ['L-009'])}）に無い", "違反"),
     # 語彙も決まった値も無い列（足した列）の既定は照らさない
     ("ext-default-no-vocab-column", ext(S=SE_HEAD.replace("\n", ",サイズ\n") + ES1.replace("\n", ",\n") + ES2.replace("\n", ",\n")),
      prof({"v1": guide(rows=L_ROWS + "A-COL2,サイズの列,,列,screens.csv,サイズ,,\nA-SIZE,入力は大,,既定,screens.csv,サイズ,form,big\n")}), [], 0, "違反 0 件", "止めた"),
     # core の決まった値の列
     ("ext-default-status-outside", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,ステータス,detail,完了\n")}), [], 4,
+     "行 X-1: 種別 detail の列 ステータス の既定 '完了' が決まった値（下書き・記入中）に無い", "違反"),
+    # 語彙と決まった値が同じ列に在るときは、語彙の中でも決まった値の外なら止まる（両方に在ること）
+    ("ext-default-status-vocab-outside-fixed", ext(), prof({"v1": guide(rows=L_ROWS + "S-1,下書き,,語彙,screens.csv,ステータス,,下書き\nS-2,完了,,語彙,screens.csv,ステータス,,完了\n"
+                                                                     "X-1,誤り,,既定,screens.csv,ステータス,detail,完了\n")}), [], 4,
      "行 X-1: 種別 detail の列 ステータス の既定 '完了' が決まった値（下書き・記入中）に無い", "違反"),
     ("ext-default-status-good", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,詳細は下書き,,既定,screens.csv,ステータス,detail,下書き\n")}), [], 0, "違反 0 件", "止めた"),
     ("ext-default-kind-outside", ext(), prof({"v1": guide(rows=L_ROWS + "X-1,誤り,,既定,screens.csv,種別,detail,grid\n")}), [], 4,
@@ -884,6 +901,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("語彙の無い列の既定も語彙で止める", "if vocab is not None and value not in vocab:", "if value not in (vocab or ()):", "ext-default-no-vocab-column"),
     ("既定を決まった値に照らさない", "if fixed is not None and value not in fixed:", "if False:", "ext-default-status-outside"),
     ("決まった値の無い列の既定も止める", "if fixed is not None and value not in fixed:", "if value not in (fixed or ()):", "ext-default-no-vocab-column"),
+    ("語彙の在る列の既定を決まった値に照らさない", "if fixed is not None and value not in fixed:", "if fixed is not None and vocab is None and value not in fixed:",
+     "ext-default-status-vocab-outside-fixed"),
+    ("既定を読んだ行より前の語彙だけで照らす", "            vocab = external.vocab.get(SCREENS, {}).get(column)\n",
+     "            vocab = [r[\"値\"].strip() for k, r in layer.rows.items() if list(layer.rows).index(k) < list(layer.rows).index(rid)"
+     " and r[\"種類\"].strip() == EXTERNAL_VOCAB and r[\"表\"].strip() == \"screens.csv\" and r[\"列\"].strip() == column] or None\n",
+     "ext-vocab-after-default-outside"),
     ("種別の列の既定を種別と比べない", "if column == \"種別\" and value != screen_kind:", "if False:", "ext-default-kind-mismatch"),
     ("種別の列の既定が種別と同じでも止める", "if column == \"種別\" and value != screen_kind:", "if column == \"種別\":", "ext-default-kind-same"),
     ("決まりに無い種類を通す", "raise Stop(f\"{where}: 種類 {kind!r}", "None and (f\"{where}: 種類 {kind!r}", "ext-bad-kind"),
