@@ -65,6 +65,7 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - `hint` と引数を省いた `init` は、基盤の profile が名指す画面の層の行が決まりに合わない（`check-screens.py` の `LayerRule`——#1571・#1581 の止め方を含む）とき、
   「明示して渡す」とだけ案内しない——同じ外部の profile を `--external` で明示しても止まることと、外部の profile を直してタグを付け、基盤の profile の設定のタグをそれにするか、`--profile <重ねる先> --external なし` を渡すことを出す（#1582。
   外部の profile はタグの時点で読むので、直しても設定のタグが同じなら止まったまま）。
+  タグを変える道には、`shared/` の変更なので 2 つの承認を取り直すことと、`shared/` を触らずに直したタグを `--profile <重ねる先> --external "<リポジトリ> <名前> <新しいタグ>"` で明示する道を添える（#1590）。
   読めないとき（設定の形・clone・タグ・形式の版・`重ねる先`・行に写せない形）は今までどおり「読めない（…）」と出す
 - `init` が外部の profile を書くときは、`check-screens.py` と同じ読み方（`load_external`）で読み、足す列を見出し行の profile の列の後ろに宣言の順で入れる（読めなければ 4）
 - platform-spec のファイルを読み込まない（基盤の profile の設定の項目名は写し、値は spec-loop の `external-profile.py` が読む）
@@ -155,12 +156,15 @@ class LayerBroken(checks.Stop):
     """基盤の profile が名指す画面の層が、行の決まりに合わない（4。`check-screens.py` の `LayerRule`。#1582）。
 
     同じ外部の profile を `--external` で明示して渡しても止まるので、「明示して渡す」とだけ案内すると行き止まりになる。
-    `reason` は止めた理由、`advice` は進める案内（外部の profile を直してタグを付け、設定のタグをそれにするか、`--profile <重ねる先> --external なし`）。
+    `reason` は止めた理由、`advice` は進める案内（外部の profile を直してタグを付け、設定のタグをそれにする——`shared/` の変更なので承認を取り直す——か、
+    `shared/` を触らずに直したタグを `--profile <重ねる先> --external "<リポジトリ> <名前> <新しいタグ>"` で明示するか、`--profile <重ねる先> --external なし`。#1590）。
     """
 
-    def __init__(self, reason: str, profile: str) -> None:
+    def __init__(self, reason: str, profile: str, repo: str, name: str) -> None:
         self.reason = reason
-        self.advice = (f"外部の profile を直してタグを付け、{PLATFORM_SETTINGS} の タグ をそれにするか、"
+        self.advice = (f"外部の profile を直してタグを付け、{PLATFORM_SETTINGS} の タグ をそれにする"
+                       f"（shared/ の変更なので 2 つの承認を取り直し、基盤の層もそのタグの時点で読むことになる）か、"
+                       f"shared/ を触らずに直したタグを --profile {profile} --external \"{repo} {name} <新しいタグ>\" で明示するか、"
                        f"--profile {profile} --external {EXTERNAL_NONE} を渡す")
         super().__init__(f"{reason}——同じ外部の profile を --external で明示して渡しても止まる（{self.advice}）")
 
@@ -410,7 +414,7 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
     try:
         checker.load_external(repo, name, tag)
     except checks.LayerRule as e:  # 読めたが行が決まりに合わない——明示しても止まるので案内を言い分ける（#1582）
-        raise LayerBroken(str(e), row.base) from None
+        raise LayerBroken(str(e), row.base, repo, name) from None
     return row.base, (repo, name, tag), f"画面は {row.base} + 外部の profile {repo} {name} {tag}（{label} の層 {checks.EXTERNAL_LAYER} の 重ねる先）"
 
 
