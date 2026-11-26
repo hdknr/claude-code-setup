@@ -662,7 +662,8 @@ def contract_steps(target: Path, root: Path, tag: str):
            f"変異を間引く: {thin_names} に --shard 1/4（#1556）" in outputs[("1",)])
     yield ("間引いた回は、手元の緑が変異の全部でないことと全部を回す口を集計に出す（#1556）",
            f"変異を間引いた: {thin_names} は変異をシャード 1/4 に間引いた" in outputs[("1",)]
-           and "**手元の緑は変異の全部ではない**" in outputs[("1",)] and "`--all-mutants`" in outputs[("1",)])
+           and "**手元の緑は変異の全部ではない**" in outputs[("1",)] and "`--all-mutants`" in outputs[("1",)]
+           and "全部は PR 側の CI が全シャードで回す" in outputs[("1",)])
     nested_args("1", "check-mutation-claims.py", "--guards-only")
     yield ("--all-mutants と --guards-only の回は、間引いたと言わない（#1556）",
            all("変異を間引" not in outputs[k] for k in (("1", "--all-mutants"), ("1", "--guards-only"))))
@@ -1433,13 +1434,14 @@ def test_ci_runs_every_registered_script() -> None:
         print("       **`on:` に `pull_request:` と `push:`（`branches:` に `main`）を置いて狭める鍵を外すか、その `run:`（全部を回す行）を起動するワークフローに移す。**"
               " 起動しないワークフローは PR に検査を出さない。")
     # **変異を間引くテスト**（#1556）——`check-all.py` が手元で `--shard` を渡して変異を間引くテストは、PR 側の CI が全部（全シャード）を回す砦になる。
-    # 収録していて・CI が全部に数え（上の `both`——無条件のジョブで、シャードの行が 1..N を覆う——で、起動しないワークフローにだけあるのでもない）・テスト自身が `--shard` を受けるものだけを入れる。
+    # 収録していて・CI が全部に数え（上の `both`——無条件のジョブで、シャードの行が 1..N を覆う——で、起動しないワークフローにだけあるのでもない）・テストのソースに `--shard` の字句があるものだけを入れる。
+    # **テストが本当に `--shard` を受けるかは字句でしか見ない**（#1556 の 1 パス目の /code-review）——受けないテストを入れると、契約 9 の「--jobs を受けない回帰テストには何も渡さない」と、既定の回の引数の誤りで赤になる。
     # 実物の CI で 1 本のシャードを外すと、上の「引数なしで回している」と一緒にここも赤になる（上の mutation-claim と同じ当て方）。
     thinned = list(getattr(mod, "THINNED", ()))
     check("変異を間引くテストが 1 本以上ある（空振りしない。#1556）", len(thinned) > 0)
     bad_thin = [n for n in thinned
                 if n not in mod.TESTS or n not in both or n in idle or "--shard" not in (SCRIPTS / n).read_text()]
-    check("変異を間引くテストは、収録していて・CI が全シャードを回し・--shard を受ける（#1556）", not bad_thin)
+    check("変異を間引くテストは、収録していて・CI が全シャードを回し・ソースに --shard の字句がある（#1556。受けるかは字句でしか見ない）", not bad_thin)
     if bad_thin:
         print(f"       間引けないもの: {bad_thin}——`THINNED` から外すか、テストに `--shard` を足して CI を全シャードにする")
     m = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", str(getattr(mod, "THIN_SHARD", "")))
@@ -1508,6 +1510,8 @@ MUTANTS = {
         '                print(f"変異を間引く: {\', \'.join(thinned)} に --shard {THIN_SHARD}（#1556）")\n',
         '                pass\n'),
     "間引いた回の集計の行を出さない（#1556）": ("    if thinned:\n        print(f\"変異を間引いた:", "    if False:\n        print(f\"変異を間引いた:"),
+    "間引いた回の集計の行から PR 側の CI を外す（#1556 の 1 パス目）": (
+        "（全部は PR 側の CI が全シャードで回す。`--all-mutants` で手元でも全部回す）", "（`--all-mutants` で手元でも全部回す）"),
     "--guards-only でも間引いたと言う（#1556）": (
         '        thinned = [] if opts.guards_only else [name for name in TESTS if "--shard" in test_args[name]]\n',
         '        thinned = [name for name in TESTS if "--shard" in test_args[name]]\n'),
