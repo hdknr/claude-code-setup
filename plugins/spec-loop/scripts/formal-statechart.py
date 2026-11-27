@@ -25,6 +25,11 @@ Formal Checker が組んだモデルは `spec/formal/<対象>/` に残るが、�
 - **陽性対照**（`--controls` のときだけ）: 記録の `陽性対照のファイル` の TLC のモデル。**違反が 1 つも出なければ描いたことにしない（4）**——印を付ける形を確かめられない。
 - 一覧のファイルを 1 つの一時ディレクトリに写し、呼び方の後ろに `-continue -dump dot,actionlabels <名前>.dump.dot <名前>.tla` を足してそのディレクトリで `sh` に渡す。
   `-continue` は不変条件の違反の後も展開を続けさせる（違反した状態ごとに反例を出し、状態グラフを最後まで書く）。
+- **状態グラフのファイルは使い終わったら消す**（#1594。数 GB になり、一時ディレクトリに溜まってディスクを使い切った）——モデルごとに、TLC が走り終えたら
+  `<名前>.dump_liveness.dot`（cfg に `PROPERTY`／`PROPERTIES` があると TLC が書く活性の挙動グラフ。図は読まない）を、状態グラフは読み込んだ直後に消す。
+  溜まる量は 1 モデル分（TLC が走っている間に書くもの）までになる。**cfg から `PROPERTY` は外さない**——外すと時相の性質の反例（1）と陽性対照の違反（4）の判定が、検査と別のモデルで決まる。
+- **止められても片付ける**: SIGTERM・SIGINT・SIGHUP を受けたら（親が無視にしたシグナルは無視のまま——`nohup` で起こした実行を端末を閉じただけで止めない）、TLC のプロセスグループを止め（`check-tlc.py` の `run_model`）、一時ディレクトリを消して、128+信号の番号で終わる（`--out` には触らない）。
+  一時ディレクトリの名前は `spec-loop-statechart-<pid>-<乱字 8 文字>` で、**起動時に、名前がこの形どおりで、その pid のプロセスが居ないもの**（SIGKILL で片付けが走らなかった残り）を消す。
 - **状態**: 状態グラフの節点。対応で同じ言葉になる状態は 1 つにまとめる（ビュー）。初めの状態（`style = filled`）に `[*]` からの矢印を付ける。
 - **遷移**: 状態グラフの辺を、行為の名前を対応の言葉に替えて描く（まとめた結果が同じ遷移は 1 本）。対応の `skip` の行為は、まとめた後で同じ状態に戻る辺に限って描かない。
 - **印**: TLC の出力の反例（`is violated`・`Deadlock reached`。初めの状態が破る `is violated by the initial state:` の形も）の最後の状態を、規則を破る状態として `⚠` を付けて描く（`classDef violated` も付ける）。
@@ -58,6 +63,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 0 | 描けた（`--out` に書いたか、標準出力に出した） |
 | 1 | 描けない——対応に無い状態・行為がある、対応の形が違う・使えない文字、`skip` の行為が別の状態へ移る、規則を破る状態と破らない状態を 1 つの言葉にまとめた（不変条件の反例のとき）、時相の性質の反例（繰り返しのある反例）・行為の性質の反例。対応を直すか、描かない対象と読む |
 | 2 | 引数が違う・想定外の例外 |
+| 128+信号の番号 | SIGTERM（143）・SIGINT（130）・SIGHUP（129）で止められた——描いていない。一時ディレクトリを消し、TLC を止めた |
 | 4 | 判定できなかった——呼び方の行が無い、記録が読めない、TLC のモデルが一覧に無い、`図の対応のファイル` が無い、一覧のファイルが無い、TLC が走りきらない（時間切れ・反例の印と別の `Error: ` の行——反例の後の評価の誤りを含む）・状態グラフが無いか読めない、反例の状態・段が状態グラフに無い、`--controls` で陽性対照に違反が出ない |
 
 ## 何を守り、何を守らないか
@@ -78,6 +84,10 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | TLC が走りきらない（反例の印と別の `Error: ` の行がある）・状態グラフが無いなら 4 | 走っていないモデル・途中で止まったモデルの図を出す |
 | 待ちの状態が残ったグラフには「全体ではない」と書く | 途中で止まった展開を全体と読ませる |
 | 一時ディレクトリで走らせ、描けたときだけ `--out` の 1 ファイルを書く | 正本に `states/` や状態グラフが残る・描けなかったのに古い図が新しく見える |
+| モデルごとに、状態グラフを読んだら消し、`_liveness.dot` は TLC が走り終えたら消す（#1594） | 全部のモデルの状態グラフが 1 回の実行の中で溜まり、ディスクを使い切る |
+| SIGTERM・SIGINT・SIGHUP で、TLC のプロセスグループを止め、一時ディレクトリを消して 128+信号で終わる | 止められた実行が一時ディレクトリと java を残す |
+| 親が無視にしたシグナル（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま | `nohup` で起こした実行が、端末を閉じただけで止まる |
+| 起動時に、持ち主の pid が居ない `spec-loop-statechart-<pid>-<乱字 8 文字>` を消す（居る・分からない pid と、この形でない名前——pid の無い名前・全角の数字・pid の先頭の 0・乱字に無い文字・乱字が 8 文字でない・後ろに余分——は消さない）。そこで TLC（記録したプロセスグループ）がまだ走っていれば・その記録が読めなければ（権限・UTF-8 でない・数字でない・0 以下）、消さずにそう言う（例外で起動を止めない） | SIGKILL の残りが溜まり続ける・並行する実行の作業中のディレクトリを消す・走り続ける TLC の書くファイルを見えなくして「消した」と言う |
 | 呼び方の行が無ければ 4（`PATH` の `tlc` で探さない） | `check-tlc.py` と違う探し方で走らせる |
 
 **守らないもの**:
@@ -90,6 +100,9 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | **TLC の版による出力の違い** | 状態グラフ（`-dump dot,actionlabels`）と反例の出力の形は TLC 2.19（tla2tools v1.7.4）で確かめた。回帰テストは本物で取った出力を偽の TLC が返す |
 | **最初の反例のほかの反例の経路** | 印は全部の反例の最後の状態に付けるが、経路は最初の 1 つだけ描く |
 | **TLC でないモデル**（Alloy・総当たり・Z3） | Issue の範囲の外。渡されたら TLC のモデルが無いとして 4 |
+| **TLC が走っている間の 1 モデル分の状態グラフの大きさ** | TLC が走りながら書く。大きさの上限で止める仕組みは無い（#1594 の任意の案。入れていない） |
+| **この版が作る形でない名前の一時ディレクトリ**（`spec-loop-statechart-<ランダム>` の #1594 より前の版の残りや、手で作った名前） | 持ち主が分からないので消さない。手で消す |
+| **SIGKILL の直後のディスク** | 片付けは走らず、別のセッションの TLC は走り続ける。次の起動は TLC が走っている間は消さずにプロセスグループの番号を言い、止まった後の起動が消す（持ち主の pid が再使用されて居るように見える間は消さない）。TLC を止めるのは人 |
 | **呼び方の安全** | 正本の `CLAUDE.md` の文字列をそのまま `sh` で走らせる（`check-tlc.py` と同じ） |
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う。
@@ -104,6 +117,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import sys
 import tempfile
 from pathlib import Path
@@ -139,6 +153,13 @@ TRACE_START = ("is violated", "Deadlock reached", "were violated")
 # 反例の本体の前置き（反例の印の後ろに TLC が書く行）。ほかの `Error: ` の行は、TLC が走りきらなかった印
 BEHAVIOR = ("Error: The behavior up to this point is:", "Error: The following behavior constitutes a counter-example:")
 INITIAL = "by the initial state:"
+# 一時ディレクトリの名前の頭（後ろに持ち主の pid）と、片付ける信号（#1594）
+PREFIX = "spec-loop-statechart-"
+OWNED = re.compile(re.escape(PREFIX) + r"([1-9][0-9]*)-[a-z0-9_]{8}")  # この版が作る形だけを丸ごと（pid は先頭が 0 でない 10 進、乱字は `tempfile` の英小文字・数字・`_` のちょうど 8 文字）。`\d`・前方だけの一致は作っていない名前まで消す
+# 一時ディレクトリに書く、いま走らせている TLC のプロセスグループの番号（SIGKILL の後も TLC は別のセッションで走り続ける）
+TLC_GROUP = ".tlc-group"
+UNREADABLE = -1  # `.tlc-group` を読み出せない（権限）——プロセスグループの番号にはならない値
+SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
 
 class Stop(Exception):
@@ -147,6 +168,81 @@ class Stop(Exception):
     def __init__(self, code: int, message: str):
         super().__init__(message)
         self.code = code
+
+
+class Interrupted(BaseException):
+    """信号で止められた。`Exception` の子にしない——途中の `except Exception` に呑ませず、`with` の片付けまで上げる。"""
+
+    def __init__(self, signum: int):
+        super().__init__(signum)
+        self.signum = signum
+
+
+def on_signal(signum, frame):
+    for sig in SIGNALS:  # 2 回目は無視する——片付けの途中で止めない
+        signal.signal(sig, signal.SIG_IGN)
+    raise Interrupted(signum)
+
+
+def alive(pid: int) -> bool:
+    """そのプロセスが居るか。分からない（権限・範囲の外）は居るほうに倒す。"""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        return True
+    return True
+
+
+def reclaim(base: Path) -> list[Path]:
+    """持ち主の pid が居ない `spec-loop-statechart-<pid>-…` を消す（SIGKILL の残り）。(消したディレクトリ, TLC がまだ走っているので消さなかった (ディレクトリ, グループ))。"""
+    gone, kept = [], []
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return gone, kept
+    for path in entries:
+        found = OWNED.fullmatch(path.name)
+        if not found or path.is_symlink() or not path.is_dir():
+            continue
+        if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):
+            continue
+        group = running_group(path)
+        if group is not None:  # 持ち主が SIGKILL されても TLC は走り続け、ここに書いている——消しても空かず見えなくなるだけなので、消さずに言う
+            kept.append((path, group))
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            gone.append(path)
+    return gone, kept
+
+
+def running_group(path: Path) -> int | None:
+    """そのディレクトリに書いた TLC のプロセスグループが、まだ居ればその番号。
+
+    記録が無ければ None（消してよい）。記録を読み出せない（権限）・正の整数として読めない中身（UTF-8 でない・数字でない・0 以下。本体はこの形を書かない）は
+    `UNREADABLE`——走っているかを決められないので、消さない側に倒す（例外で起動を止めない）。
+    """
+    try:
+        raw = (path / TLC_GROUP).read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError:  # 権限などで読めない
+        return UNREADABLE
+    try:
+        group = int(raw.decode("ascii").strip())
+    except ValueError:  # UTF-8・ASCII でない（UnicodeDecodeError も ValueError）・数字でない
+        return UNREADABLE
+    if group < 1:  # 0 は自分のグループ、負は別の意味の宛先——グループの番号ではない
+        return UNREADABLE
+    try:
+        os.killpg(group, 0)
+    except PermissionError:  # 別の利用者のグループが居る
+        return group
+    except (OSError, OverflowError):
+        return None
+    return group
 
 
 def unescape(text: str) -> str:
@@ -466,20 +562,24 @@ def draw(call: str, directory: Path, max_edges: int, timeout: int, controls: boo
     targets = [(n, "本体") for n in bodies] + ([(n, "陽性対照（わざと壊した版）") for n in broken] if controls else [])
     sections: list[str] = []
     notes: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="spec-loop-statechart-") as tmp:
+    with tempfile.TemporaryDirectory(prefix=f"{PREFIX}{os.getpid()}-") as tmp:
         for name in names:
             shutil.copyfile(directory / name, Path(tmp) / name)
         for name, kind in targets:
             dot_name = f"{name}.dump.dot"
-            rc, out = tlc.run_model(f"{call} -continue -dump dot,actionlabels {shlex.quote(dot_name)}", tmp, name, timeout)
+            rc, out = tlc.run_model(f"{call} -continue -dump dot,actionlabels {shlex.quote(dot_name)}", tmp, name, timeout,
+                                    started=lambda proc: (Path(tmp) / TLC_GROUP).write_text(str(proc.pid), encoding="utf-8"))
             dot_path = Path(tmp) / dot_name
+            (Path(tmp) / f"{name}.dump_liveness.dot").unlink(missing_ok=True)  # 活性の挙動グラフ——図は読まない（#1594）
             if rc is None or not (tlc.GOOD_MARK in out or rerun.violated(out)) or not dot_path.is_file():
                 raise Stop(EXIT_UNKNOWN, f"{directory}: {name}.tla を TLC が走りきらなかった（終了コード {rc}）: {tlc.tail(out)}")
             odd = [line for line in out.splitlines()
                    if line.startswith("Error: ") and not any(mark in line for mark in TRACE_START) and not line.startswith(BEHAVIOR)]
             if odd:  # 反例の後に評価の誤りで止まった形——状態グラフが途中で切れている
                 raise Stop(EXIT_UNKNOWN, f"{directory}: {name}.tla を TLC が走りきらなかった（終了コード {rc}。{odd[0]}）")
-            lines, found = render(name, kind, dot_path.read_text(encoding="utf-8", errors="replace"), out, view, max_edges)
+            dot = dot_path.read_text(encoding="utf-8", errors="replace")
+            dot_path.unlink()  # 読んだら消す——溜まるのを 1 モデル分にする（#1594）
+            lines, found = render(name, kind, dot, out, view, max_edges)
             if kind != "本体" and not found:
                 raise Stop(EXIT_UNKNOWN, f"{directory}: 陽性対照 {name}.tla で違反が出ない（印を付ける形を確かめられない。空振りの疑い）")
             notes.append(f"{directory}: {name}.tla（{kind}）: {'反例あり' if found else '反例なし'}")
@@ -508,6 +608,32 @@ def main(argv: list[str]) -> int:
     if args.out is not None and not args.out.parent.is_dir():
         print(f"--out の親のディレクトリが無い: {args.out.parent}", file=sys.stderr)
         return EXIT_USAGE
+    for sig in SIGNALS:
+        if signal.getsignal(sig) is not signal.SIG_IGN:  # 親が無視にしたもの（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま
+            signal.signal(sig, on_signal)
+    try:
+        return run(args)
+    except Interrupted as stop:
+        # 片付け（TemporaryDirectory の rmtree）の途中に届いた信号で、片付けが途切れていることがある——自分の pid のものを消し直す（信号はもう無視している）
+        for path in Path(tempfile.gettempdir()).glob(f"{PREFIX}{os.getpid()}-*"):
+            shutil.rmtree(path, ignore_errors=True)
+        print(f"描かなかった: 信号 {signal.Signals(stop.signum).name} で止められた（TLC を止め、一時ディレクトリを消した）", file=sys.stderr)
+        if args.out is not None:
+            print(f"{args.out} には触っていない", file=sys.stderr)
+        return 128 + stop.signum
+
+
+def run(args) -> int:
+    gone, kept = reclaim(Path(tempfile.gettempdir()))
+    for path in gone:
+        print(f"持ち主の居ない一時ディレクトリを消した: {path}", file=sys.stderr)
+    for path, group in kept:
+        if group == UNREADABLE:
+            print(f"持ち主の居ない一時ディレクトリだが、TLC のプロセスグループの記録（{TLC_GROUP}）が読めない（権限か、本体の書かない中身）ので消していない: {path}"
+                  f"（TLC が走っていないことを確かめてから手で消す）", file=sys.stderr)
+            continue
+        print(f"持ち主の居ない一時ディレクトリだが、TLC（プロセスグループ {group}）がまだ書いているので消していない: {path}"
+              f"（止めるなら kill -9 -{group}。止めた後の起動が消す）", file=sys.stderr)
     try:
         call, _, note = tlc.read_declarations(args.root)
     except tlc.Unknown as e:
@@ -521,6 +647,8 @@ def main(argv: list[str]) -> int:
         if args.out is not None:
             print(f"{args.out} には触っていない", file=sys.stderr)
         return stop.code
+    for sig in SIGNALS:  # 描けた後は止めない——書いたのに「触っていない」と言わない
+        signal.signal(sig, signal.SIG_IGN)
     for line in notes:
         print(line, file=sys.stderr)
     if args.out is None:

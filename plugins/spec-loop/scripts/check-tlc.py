@@ -190,20 +190,29 @@ def after_key(line, key):
     return None
 
 
-def run_model(call, workdir, name, timeout):
-    """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。"""
+def run_model(call, workdir, name, timeout, started=None):
+    """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。
+    `started` があれば、起こした直後にそのプロセス（別のセッションのリーダー。pid がプロセスグループの番号）を渡して呼ぶ。"""
     try:
         proc = subprocess.Popen(["/bin/sh", "-c", f"{call} {name}.tla"], cwd=workdir, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
                                 start_new_session=True)
+    except OSError as e:
+        return None, f"起動できない: {e}"
+    try:
+        if started is not None:
+            started(proc)
         out, _ = proc.communicate(timeout=timeout)
         return proc.returncode, out
     except subprocess.TimeoutExpired:
         with_group(proc, signal.SIGKILL)
         out, _ = proc.communicate()
         return None, (out or "") + f"\n（{timeout} 秒で時間切れ）"
-    except OSError as e:
-        return None, f"起動できない: {e}"
+    except BaseException:
+        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）
+        with_group(proc, signal.SIGKILL)
+        proc.wait()
+        raise
 
 
 def with_group(proc, sig):
