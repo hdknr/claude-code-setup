@@ -1381,6 +1381,30 @@ def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: in
     return problems
 
 
+def unreadable_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """持ち主の居ない残りの `.tlc-group` が読めない（権限）とき、起動を止めずに描き、その残りを消さずにそう言う（#1594 の狭いパスの R1）。"""
+    name = f"spec-loop-statechart-{dead_pid()}-abcd1234"
+    repo, argv, env = setup(work, fake, fakebin, CASES["本体: 反例なし"], (name,))
+    record = work / "tmp" / name / ".tlc-group"
+    record.write_text("1", encoding="utf-8")
+    record.chmod(0)
+    try:
+        if os.access(record, os.R_OK):
+            return ["権限を外しても読める（root で走っている？）——試料を組めない"]
+        proc = subprocess.run([sys.executable, "-I", str(script), str(repo), str(repo / T), *argv],
+                              capture_output=True, text=True, cwd=work, env=env, timeout=120)
+    finally:
+        if record.exists():  # 消された（変異）なら戻すものは無い
+            record.chmod(0o600)
+    out = proc.stdout + proc.stderr
+    problems = [] if proc.returncode == 0 else [f"終了コード {proc.returncode}（期待 0）: {out[-300:]!r}"]
+    if not (work / "tmp" / name).is_dir():
+        problems.append("記録の読めない残りを消した（TLC が走っているかを決められないのに）")
+    if "読めないので消していない" not in out:
+        problems.append(f"消していないことを言わない: {out[-300:]!r}")
+    return problems
+
+
 def ignored_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int) -> list[str]:
     """親が無視にした信号（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま——TLC が走っている間に受けても止まらず、描き切る（#1594）。"""
     case = (f"TLC の呼び方: {CALL}\n", target("Sleepy"), ["--out", OUT], 0, "", [])
@@ -1417,12 +1441,14 @@ def ignored_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: i
 
 SIGNAL_CASES = {f"信号: {sig.name}": sig for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
 IGNORED_CASES = {f"親が無視にした信号: {sig.name}": sig for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)}
-SPECIAL = ["回収", "信号: 片付けの途中", "想定外の例外", "SIGKILL の後に TLC が走っている", *SIGNAL_CASES, *IGNORED_CASES]
+SPECIAL = ["回収", "回収: 記録が読めない", "信号: 片付けの途中", "想定外の例外", "SIGKILL の後に TLC が走っている", *SIGNAL_CASES, *IGNORED_CASES]
 
 
 def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
     if name == "回収":
         return reclaim_problems(script, work, fake, fakebin)
+    if name == "回収: 記録が読めない":
+        return unreadable_problems(script, work, fake, fakebin)
     if name == "信号: 片付けの途中":
         return cleanup_problems(script, work, fake, fakebin)
     if name == "想定外の例外":
@@ -1487,6 +1513,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("乱字に無い文字の名前を消す", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9][0-9]*)-[^-]{8}")', "回収"),
     ("乱字の長さを見ない", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9][0-9]*)-[a-z0-9_]+")', "回収"),
     ("名前の後ろの余分を見ない", "        found = OWNED.fullmatch(path.name)", "        found = OWNED.match(path.name)", "回収"),
+    ("読めない記録の残りを消す", "    except OSError:  # 権限などで読めない", "    except ZeroDivisionError:  # 権限などで読めない", "回収: 記録が読めない"),
+    ("読めない記録の残りを消して黙る", "        return UNREADABLE\n", "        return None\n", "回収: 記録が読めない"),
     ("親が無視にした信号を奪う", "        if signal.getsignal(sig) is not signal.SIG_IGN:", "        if True:", "親が無視にした信号: SIGHUP"),
     ("無視の確認を SIGHUP だけに効かせる", "        if signal.getsignal(sig) is not signal.SIG_IGN:",
      "        if sig != signal.SIGHUP or signal.getsignal(sig) is not signal.SIG_IGN:", "親が無視にした信号: SIGINT"),
