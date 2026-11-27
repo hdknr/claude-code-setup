@@ -25,7 +25,7 @@ spec-loop のスクリプトを読み込むので、一時ディレクトリに 
    **名指した画面の層の行が決まりに合わない（#1571・#1581 の形）とき、`hint` と引数なしの `init` は、同じ外部の profile を明示しても止まることと、
    外部の profile を直してタグを付け設定のタグをそれにするか `--profile web-spa --external なし` を渡す案内を出し、案内どおりに渡せば書けて検査が 0（#1582）**。
    **タグを変える道には、`shared/` の変更なので承認を取り直すことと、`shared/` を触らずに直したタグを `--external` で明示する道も添え、
-   直したタグを明示すれば書けて検査が 0（陽性対照。#1590）**。読めないときは今までどおり「読めない」。
+   直したタグを明示すれば書けて検査が 0（陽性対照。#1590）**。**層のファイルの中身の欠陥（ID が 2 行。spec-loop の `LayerContent`）も同じに言い分ける（#1589）**。読めないときは今までどおり「読めない」。
    この言い分けは `check-screens.py` の `LayerRule` に乗るので、`check-screens.py` を壊す変異（`CHECK_MUTATIONS`）も当てる。
 9. **platform-spec を読み込まない（#1460 の A5）**——試料の置き方に platform-spec は無く、プラグインの隣に**読み込まれたら印を書く偽の platform-spec**を置いて、
    どの試料の後にも印が無いことを見る。写した設定の置き場所・見出し・項目名が platform-spec の `check-infra-profile.py` の定数と一致すること（崩すと落ちることも）。
@@ -136,6 +136,8 @@ BASE_INITIAL = "init の初期値（--profile と --external を省いたとき�
 # 画面の層の行が決まりに合わない基盤の profile（#1582）——#1571（既定が語彙の外）と #1581（ステータスの語彙が決まった値と重ならない）の形
 GUIDE_WIDE = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT.replace("list,standard\n", "list,wide\n")}}}
 GUIDE_STATUS = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT + "S-1,完了だけ,,語彙,screens.csv,ステータス,,完了\n"}}}
+# 層のファイルの中身が決まりに合わない基盤の profile（#1589）——Issue の再現の形（画面の層に L-STD を 2 行）
+GUIDE_DUP = {"guide": {"v1": {**guide()["guide"]["v1"], f"{GUIDE_DIR}/screens/layout.csv": GUIDE_LAYOUT + "L-STD,重なり,docs/guide.md#画面,語彙,screens.csv,レイアウト,,wide\n"}}}
 LAYER_ADVICE = ("外部の profile を直してタグを付け、shared/platform/settings.csv の タグ をそれにする"
                 "（shared/ の変更なので 2 つの承認を取り直し、基盤の層もそのタグの時点で読むことになる）か、"
                 "shared/ を触らずに直したタグを --profile web-spa --external \"org/guide org <新しいタグ>\" で明示するか、"
@@ -299,6 +301,16 @@ CASES: list[tuple] = [
     ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES,
      {SD + "settings.csv": EXT_SETTINGS.replace("org/guide org v1", "org/guide org v2"), SD + "data/screens.csv": EXT_S_HEAD},
      {"guide": {**GUIDE_WIDE["guide"], "v2": guide()["guide"]["v1"]}}),
+    # #1589: 層のファイルの中身の欠陥（ID が 2 行）でも、hint と引数なしの init は「明示して渡す」だけの行き止まりを案内しない（Issue の再現の 3 手順）。
+    # 案内どおり --external なし を渡せば書けて検査が 0（陽性対照）
+    ("base-layer-dup-id", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, "基盤の profile: 画面の層が決まりに合わない（外部の profile org/guide の org（タグ v1） を読めない: 層 画面 に ID L-STD が 2 行ある"),
+        (["hint"], 0, LAYER_HINT),
+        (["init"], 4, LAYER_INIT),
+        (["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4, "層 画面 に ID L-STD が 2 行ある"),
+        (["init", "--profile", "web-spa", "--external", "なし"], 0, "profile: web-spa）"),
+    ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES,
+     {SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"), SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n")}, GUIDE_DUP),
     ("base-layer-status-vocab-disjoint", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 画面の層が決まりに合わない（外部の profile org/guide の org（タグ v1） の行 S-1: 列 ステータス の語彙（完了）が決まった値"),
         (["hint"], 0, LAYER_HINT),
@@ -844,6 +856,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 CHECK_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("層の行の決まりを LayerRule にしない", "        except Stop as e:  # 行の決まり（#1582）——読めないのと分けて名指す\n            raise LayerRule(str(e)) from None",
      "        except Stop as e:  # 行の決まり（#1582）——読めないのと分けて名指す\n            raise", "base-layer-default-outside-vocab"),
+    ("層のファイルの中身の欠陥を LayerRule にしない", "        except getattr(ext, \"LayerContent\", ()) as e:", "        except ZeroDivisionError as e:", "base-layer-dup-id"),
     ("読めないのも LayerRule にする", "        except (ext.Undetermined, ext.LayerMissing) as e:\n            raise Stop(",
      "        except (ext.Undetermined, ext.LayerMissing) as e:\n            raise LayerRule(", "base-screen-layer-version-out-of-range"),
 ]
