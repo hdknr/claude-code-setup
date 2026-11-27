@@ -138,6 +138,8 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - リポジトリはいつもガイドにする書き直し（A12・A14 の直し。利用者の求め、2026-11-27）: 起点 `0c38d35f` → 終点 `3b16c00f`。`check-all.py` 緑。非公開の名前の grep 0 件
 - 当て直し 4（Verifier・sonnet。`0c38d35f..3b16c00f`）: 済み——**反証 1 件**（カタログの description が書き直し前の「デザインシステム用のリポジトリ」のまま）→ 直した（`63c99330`。注記 N1 の Q&A 表の頁・N2 の雛形の段も一緒に）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-4-20261127T101658Z.md`
 - 当て直し 5（Verifier・sonnet。`3b16c00f..63c99330`）: 済み——**反証 1 件（軽微）**: README の 5 行目「人間がレビューするドキュメントのサイトを作ります」に旧い言い回しが残る（頁を差し込む形と食い違う）。**直さずに人間に渡す**（直すとまた当て直しが要る）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-5-20261127T102048Z.md`
+- 人間に渡した 2 件（README の 5 行目・A13 の正規表現 2 か所）を、利用者の指示「提案通りに修正して」（2026-11-27）で直した: 起点 `e3475f91` → 終点 `2bec11be`。A13 は一覧に 2 か所を足し、子の Issue が着手の時点で数え直すと添えた。`check-all.py` 緑
+- 当て直し 6（Verifier・sonnet。`e3475f91..2bec11be`）: 済み——**反証 0 件**（数え上げを自分で grep で数え直して一致）。軽微な注記（反証ではない）: `review.md` 13 行の「生成したドキュメントのサイト」は節の名前と同じで誤りではない。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-6-20261127T103209Z.md`
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
@@ -152,6 +154,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 関門: 当て直し 2d9f02265f682fdc9df6d546a28ec2e1cfdd17f5 7ffde7c2b71e8f3d53fd4f82cd2084e8fbec17b1 反証=0
 関門: 当て直し 0c38d35fe55ac8c8360bf0e1dedb60a5cbaa0986 3b16c00f48a4ca0ad3ec9a3cdab7d988544e68e4 反証=1
 関門: 当て直し 3b16c00f48a4ca0ad3ec9a3cdab7d988544e68e4 63c993307a5d9f33c41e9273f5b4db033a9d0152 反証=1
+関門: 当て直し e3475f912abba6c7d9358a4a079f6839c542bb7b 2bec11beb3f56ecfcae339a0a9319002a4e7f5b5 反証=0
 受入基準: A1 満たす
 受入基準: A2 満たす
 受入基準: A3 満たす
@@ -162,7 +165,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 受入基準: A8 満たす
 受入基準: A9 満たす
 受入基準: A12 満たす
-受入基準: A13 満たさない
+受入基準: A13 満たす
 受入基準: A14 満たす
 受入基準: A10 満たす
 受入基準: A11 満たす
