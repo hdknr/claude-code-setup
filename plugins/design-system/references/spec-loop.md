@@ -65,16 +65,17 @@ design-system でも次の口が要る。**どれも spec-loop の側の Issue �
 
 | # | 口 | 要る理由 | 案 |
 | --- | --- | --- | --- |
-| 1 | **行の単位で重ねる表の登録** | 利用者と決めた（#1613 の D2）——v2 以降に変えた行だけを置き、版の差分に「どのトークン・部品が変わったか」を出す。サイトの変更の印と引き渡しの Issue がこれに乗る | `versions.md` の「行の単位で重ねる表」と `merge-versions.py` の `KINDS`・`ROW_TABLES` に、`references/tree.md` の 5 つの表を種類（`トークン`・`部品`・`部品の仕様`・`パターン`・`規則`）つきで足す。今ある種類と重ねない。`ROW_TABLES` を読むスクリプト（`diff-versions.py`・`check-signoff.py`・`build-proposal.py`・`screen-gate.py` と、screen-spec の `build-mock.py`）も見直す（`versions.md` が求める）。**`screen-gate.py`（`TABLES = tuple(versions.ROW_TABLES)`）と `build-mock.py` は一覧の表を全部画面の表として読む**ので、そのまま足すとデザインシステムの表を画面の表として扱う——画面の表の意味で読む箇所を種類で絞る。部品を消したらその部品の仕様の行も消したものとして扱うか（画面と項目の前例）を決める |
-| 2 | **「見た目」の線** | spec-loop の `references/spec-scope.md` の「見た目」は、色・余白・フォントの指摘を共有の Q&A 表に起票しない。デザインシステムの表のセル（トークンの値・部品の状態）の質問がこれに当たって見送られる | 「表に列のある決定は見た目でない」と読める線にする——画面の表の項目が見た目でないのと同じ理屈（`spec-scope.md` の「見た目」は「画面の表にも仕様にも列や性質の無い描き方」と定義している）。表の名前は design-system の原本を指す |
+| 1 | **行の単位で重ねる表の登録** | 利用者と決めた（#1613 の D2）——v2 以降に変えた行だけを置き、版の差分に「どのトークン・部品が変わったか」を出す。サイトの変更の印と引き渡しの Issue がこれに乗る | `versions.md` の「行の単位で重ねる表」と `merge-versions.py` の `KINDS`・`ROW_TABLES` に、`references/tree.md` の 5 つの表を種類（`トークン`・`部品`・`部品の仕様`・`パターン`・`規則`）つきで足す。今ある種類と重ねない。`ROW_TABLES` を読むスクリプト（`diff-versions.py`・`check-signoff.py`・`build-proposal.py`・`screen-gate.py` と、screen-spec の `build-mock.py`）も見直す（`versions.md` が求める）。**一覧の表や種類を画面の表の意味で読む箇所がある**ので、そのまま足すとデザインシステムの表を画面の表として扱う——画面の表の意味で読む箇所を種類で絞る。数えた箇所: `screen-gate.py`（`TABLES = tuple(versions.ROW_TABLES)`）・screen-spec の `build-mock.py`・`merge-versions.py` の連鎖（消した `画面` の ID だけを集め、全部の表の参照の列に当てる）・`diff-versions.py` の削除の理由（`画面` に固定）・`build-proposal.py`（`ROW_KINDS` を画面の種類として節にする）・`check-signoff.py`（`ROW_KINDS` の削除の行をまとめて扱う）。**連鎖は画面に固定**なので、部品を消したらその部品の仕様の行も消したものとして扱う（画面と項目の前例）には連鎖を種類ごとにする変更が要る——扱うかを決める（`references/tree.md` の「決めていないこと」）。表のパスは `requirements/design/data/`（`references/tree.md` の「木」。プラグインの名前を持たない） |
+| 2 | **「見た目」の線** | spec-loop の `references/spec-scope.md` の「見た目」は、色・余白・フォントの指摘を共有の Q&A 表に起票しない。デザインシステムの表のセル（トークンの値・部品の状態）の質問がこれに当たって見送られる | 「表に列のある決定は見た目でない」と読める線にする——画面の表の項目が見た目でないのと同じ理屈（`spec-scope.md` の「見た目」は「画面の表にも仕様にも列や性質の無い描き方」と定義している）。表はパス（`requirements/design/data/`）で指し、プラグインの名前を spec-loop に持ち込まない（下の「依存の向き」） |
 | 3 | **関門** | req-loop とサインオフの前の確かめが、デザインシステムの表の未決定の印と design-system の検査の結果を入れる（検査を飛ばしたまま承認しない） | `screen-gate.py` と同じ形——表があれば design-system の検査を子のプロセスで呼び、見つからなければ止める。spec-loop で design-system の名前を持つのはこのスクリプトだけにする（platform-spec の `profile-gate.py` と同じ形。テストが見る） |
-| 4 | **レビュー会の資料** | 質問の頁に、生成したサイトの該当の頁を載せる `qa-to-pptx.py --links`・`--groups`（JSON を外から受ける）に design-system が JSON を渡す。**ただし今の `qa-to-pptx.py` は `--links` か `--groups` を渡すと表紙に「見た目は確かめる対象ではない」（`APPEARANCE_NOTE`）を必ず出す**——デザインシステムの会では見た目が範囲の中なので逆を伝える。注記を出さない口が要り、2 の「見た目」の線と一緒に決める。`review-meeting.py groups` は画面の表の逆引きなので使わない |
+| 4 | **レビュー会の資料** | 質問の頁に、生成したサイトの該当の頁を載せる `qa-to-pptx.py --links`・`--groups`（JSON を外から受ける）に design-system が JSON を渡す。**ただし今の `qa-to-pptx.py` は `--links` か `--groups` を渡すと表紙に「見た目は確かめる対象ではない」（`APPEARANCE_NOTE`）を必ず出す**——デザインシステムの会では見た目が範囲の中なので逆を伝える。注記を出さない口が要り、2 の「見た目」の線と一緒に決める（同じ子の Issue で入れる——`README.md` の「子の Issue」の段 1）。**リンクの段落の文も「モック: <リンク>」に固定されている**（`qa-to-pptx.py` の `--links`）——サイトの頁を渡すと「モック」と出るので、ラベルを変える口も要る。`review-meeting.py groups` は画面の表の逆引きなので使わない |
 
 ## 決めていないこと
 
 | 事項 | どこで決めるか |
 | --- | --- |
 | feasibility を使わない正本で、予算側のサインオフのタグ（`budget-<k>`。spec-loop の `references/signoff-tags.md` では範囲・開発費・運用費・期間の合意）が何に合意するか——照合は 2 つのタグを求める | レビューのスキルの子の Issue（承認の運用を決めるところ） |
+| 既存の UI の棚卸し（任意。Issue #1613 の利用のイメージの 2）——既存の製品のコードから部品とトークンの候補を起こすのを、spec-loop の持ち込まれたコードの取り込み（#998。spec-loop の `scripts/intake-code.py`）と同じ形で起こせるか | `init` と表の子の Issue（`README.md` の「子の Issue」の段 2） |
 
 ## 依存の向き
 

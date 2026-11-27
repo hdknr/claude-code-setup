@@ -22,7 +22,7 @@ design-system は spec-loop の決まりに従い、**spec-loop は design-syste
 
 ## 出所
 
-原本が「記事」と引くのは、デザインシステムの基本をまとめた記事 <https://hdknr.github.io/blogs/posts/2026/11/design-system-basics/> である（#1613 の本文が参考に挙げたもの）。
+原本が「記事」と引くのは、デザインシステムの基本をまとめた記事 <https://hdknr.github.io/blogs/posts/2026/11/design-system-basics/> である（親 #1609 の本文が参考に挙げたもの）。
 
 ## 子の Issue
 
@@ -30,11 +30,11 @@ design-system は spec-loop の決まりに従い、**spec-loop は design-syste
 
 | 段 | 中身 | Issue |
 | --- | --- | --- |
-| 1 | spec-loop: 5 つの表を行の単位で重ねる登録と、「見た目」の線（`references/spec-loop.md` の「spec-loop に要る口」の 1・2） | 起票する |
-| 2 | design-system: `init` のスキルと書き込み、表の形の確定、機械の検査（`references/tree.md`・`references/review.md` の「機械の検査」） | 起票する |
+| 1 | spec-loop: 5 つの表を行の単位で重ねる登録と、「見た目」の線と、レビュー会の資料の注記とリンクの文（`references/spec-loop.md` の「spec-loop に要る口」の 1・2・4） | 起票する |
+| 2 | design-system: `init` のスキルと書き込み、表の形の確定、機械の検査（`references/tree.md`・`references/review.md` の「機械の検査」）。既存の UI の棚卸しを起こせるかもここで決める（`references/spec-loop.md` の「決めていないこと」） | 起票する |
 | 3 | design-system: 生成物——索引・DTCG のトークン・描画キットと `--check`（`references/outputs.md`）。索引の層 `規則` は #1605、層 `参照` は #1607 が使う側として確定させる | 起票する（#1605・#1607 はこの段の後） |
 | 4 | design-system: ドキュメントのサイト | #1611 |
-| 5 | spec-loop: 関門とレビュー会の資料の口（`references/spec-loop.md` の「spec-loop に要る口」の 3・4） | 起票する |
+| 5 | spec-loop: 関門（`references/spec-loop.md` の「spec-loop に要る口」の 3） | 起票する |
 | 6 | design-system: レビューのスキルと判定役（`references/review.md` の「判定役」） | 起票する |
 | 7 | design-system: UI プロファイルへの引き渡し（`references/handoff.md`）と、dev-loop が印を読むか | 起票する |
 | 8 | 雛形のリポジトリの原本と公開 | #1610 |

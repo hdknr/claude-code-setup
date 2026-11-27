@@ -11,7 +11,7 @@
 │   └── v<n>/                       # spec-loop の版のディレクトリ（`references/versions.md` は spec-loop の原本）
 │       ├── shared/qa.csv           # 共有の Q&A 表（spec-loop。番号は req-loop が振る）
 │       ├── spec/qa-dev.csv         # 内部の Q&A 表（spec-loop。実装だけに効く決定）
-│       └── requirements/design-system/
+│       └── requirements/design/
 │           ├── settings.csv        # デザインシステムの設定（下の「設定」）
 │           ├── data/               # 表（下の「表」。行の単位で重ねる）
 │           │   ├── tokens.csv
@@ -26,11 +26,13 @@
 └── build/design-system/site/       # 生成物（コミットしない）——ドキュメントのサイト
 ```
 
+- **版の中のディレクトリの名前にプラグインの名前を入れない**（`requirements/design/`）——spec-loop に表を行の単位で登録すると、spec-loop の `merge-versions.py` と `versions.md` が表のパスを持つ（今ある `requirements/screens/data/` と同じ。`references/spec-loop.md` の「spec-loop に要る口」の 1）。
+  パスに `design-system` を入れると、spec-loop が design-system の名前を持つことになる（下の依存の向き——`references/spec-loop.md` の「依存の向き」）。
 - **表と散文は `requirements/` の中に置く**——spec-loop の 2 つのサインオフが比べる範囲（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）に入り、承認の対象になる。
 - **生成物は版のディレクトリの外**（リポジトリの根）——承認の対象ではなく、表から作り直せる。コミットする 3 つは `--check` で鮮度を見る（`references/outputs.md`）。
 - `spec/` には spec-loop の `qa-dev.csv` だけを置く。spec-loop の spec-review は使わない（`references/spec-loop.md` の「spec-loop のどの段を使うか」）ので、`spec/` に仕様は書かない。
 
-## 設定（`requirements/design-system/settings.csv`）
+## 設定（`requirements/design/settings.csv`）
 
 見出し行は `項目,値`。ファイルの単位で重なる（screen-spec の `settings.csv` と同じ扱い）。
 
@@ -41,7 +43,9 @@
 
 ## 表
 
-5 つの表を `data/` に置く。どれも次を守る:
+5 つの表を `data/` に置く。Issue #1613 の一覧（トークン・部品・パターン・原則と規則・文言）から 2 つ変えた——
+**文言は表を分けず、規則の区分 `文言` にした**（文言の規則も対象の部品・パターンと確かめ方を規則と同じ列で持つので、置き場所を 2 つにしない）。
+**部品の仕様（`component-specs.csv`）を足した**（部品の状態とアクセシビリティを行で持ち、判定役と引き渡しの受入基準の単位にする——#1613 の D4・`references/handoff.md`）。どれも次を守る:
 
 - 1 行目は見出し行で、下の列名と同じ文字列・同じ順。**見出し行は版の間で変えない**（spec-loop の `references/versions.md` の「行の単位で重ねる表」が求める）。
 - **鍵の列は 1 つ**。鍵の値は空にせず、版をまたいで重ねない（同じ鍵は「変更」の意味——spec-loop の決まり）。
@@ -54,7 +58,7 @@
 
 | 列 | 書くもの |
 | --- | --- |
-| `トークン` | 鍵。`.` で区切った英小文字の名前（`color.text.primary`）。DTCG のグループの道筋になる |
+| `トークン` | 鍵。英小文字・数字・`-` の語を `.` で区切った名前（`color.text.primary`・`color.blue.600`）。DTCG のグループの道筋になる |
 | `層` | `基本`・`意味`・`部品` のどれか（primitive・semantic・component）。`意味` と `部品` の層は値に別名（下）を書くのを基本にする |
 | `種類` | DTCG の型（`color`・`dimension`・`fontFamily`・`fontWeight`・`duration`・`cubicBezier`・`number` など。DTCG の仕様の型の名前のまま） |
 | `値` | 値そのもの（`#0055ff`・`16px`）か、別のトークンへの別名（`{color.blue.600}`） |
@@ -116,7 +120,7 @@
 
 ## 散文
 
-`requirements/design-system/` の直下の Markdown——原則の説明・部品とパターンの説明・使い方の例。サイトの頁の本文になる（`references/outputs.md` の「ドキュメントのサイト」）。
+`requirements/design/` の直下の Markdown——原則の説明・部品とパターンの説明・使い方の例。サイトの頁の本文になる（`references/outputs.md` の「ドキュメントのサイト」）。
 
 - 部品・パターンの頁は `<部品ID か パターンID>.md`（`CMP-001.md`）にし、サイトは表の行と並べて描く。表の中身を散文に写さない——サイトが表から描く。
 - 見出しの id は GitHub の付け方で読まれる（使う側の索引のリンクが節を指す——`references/outputs.md` の「索引」）。
@@ -129,7 +133,7 @@
 
 ```text
 <リポジトリ>/
-├── docs/v<n>/requirements/design-system/   # デザインシステムの正本（spec-loop の版）
+├── docs/v<n>/requirements/design/          # デザインシステムの正本（spec-loop の版）
 ├── spec-profile/
 │   ├── <デザインシステムの名前>/          # 生成物（design-system が書く）
 │   ├── <UI プロファイルの名前>/           # 手で書く——screen-spec の外部の profile（層 `画面`。#1612 で層を足す）
@@ -148,10 +152,10 @@ screen-spec の初期値は基盤の profile 自身の `profile.csv` の層 `画
 | --- | --- |
 | **`spec-profile/` の下の名前を重ねない**——`settings.csv` の `名前` は、手で書く profile の名前と違うものにする | 生成器は `spec-profile/<名前>/` を丸ごと作り直す |
 | **生成器は自分の印のある `spec-profile/<名前>/` だけを書き、`--check` もそこだけを比べる。印の無いディレクトリが同じ名前で在れば、書かずに止める** | 手で書いた profile を上書きしない（spec-loop の `build-proposal.py` の印 `.build-proposal` と同じ考え方。印の名前は生成物の子の Issue で決める） |
-| **タグの接頭辞を、版を出すものごとに分ける**——デザインシステムは spec-loop の決まりで `release-v<n>`、ほかは `ui-v<n>`・`infra-v<n>` など | 版を別々に出せる。platform-spec の版の差分は、設定のタグと同じ名前の形（接頭辞・区切り・末尾が同じ）のタグだけを新しい版の候補にする（platform-spec の `scripts/check-profile-diff.py` の `name_shape`）ので、接頭辞の違うタグは混ざらない |
+| **タグの接頭辞を、版を出すものごとに分ける**——デザインシステムは spec-loop の決まりで `release-v<n>`、ほかは `ui-v<n>`・`infra-v<n>` など。**束（下の「ガイドラインとして一括で渡す」）では、基盤・アーキテクチャ・開発の進め方・画面の層は 1 つの系列（`guide-v<n>` など）になる**——screen-spec は画面の層を基盤の profile と同じタグで読む（screen-spec の `references/profiles.md` の「基盤の profile から引く初期値」）ので、画面の層だけ別の系列にすると届かない | 版を別々に出せる。platform-spec の版の差分は、設定のタグと同じ名前の形（接頭辞・区切り・末尾が同じ）のタグだけを新しい版の候補にする（platform-spec の `scripts/check-profile-diff.py` の `name_shape`）ので、接頭辞の違うタグは混ざらない |
 | 1 つのタグで全部を出してもよい——UI プロファイルの設定のタグを `release-v<n>` にする | 版を揃えたいとき。デザインシステムを上げるたびに UI プロファイルも同じタグになる |
 | **手で書く profile の本文は `docs/` の外に置く**（例: `guides/`） | `docs/` は spec-loop の正本と MkDocs の `docs_dir` で、Markdown 以外もサイトに写る（spec-loop の `references/tree.md` の「デザインの正本の参照」の MkDocs の項）。profile の本文をサイトに載せたいなら、明示して足す |
-| **リポジトリの直下の名前は spec-loop が使うものを避ける**（`docs/`・`scaffold/`・`spec-review/`・`build/`・`site/`・`hooks/`）——コミットしない design-system の生成物は spec-loop の `build/` の下の `build/design-system/` に置く（screen-spec の `build/mock/` と同じ形）。直下の `site/` は spec-loop の MkDocs の出力（雛形の `site_dir: site`）なので使わない | spec-loop の `references/monorepo.md` の「推奨のレイアウト」と「build/ を分けない」 |
+| **リポジトリの直下の名前は spec-loop が使うものを避ける**（`docs/`・`scaffold/`・`spec-review/`・`build/`・`site/`・`hooks/`）——コミットしない design-system の生成物は spec-loop の `build/` の下の `build/design-system/` に置く（screen-spec の `build/mock/` と同じ形）。直下の `site/` は spec-loop の MkDocs の出力（雛形の `site_dir: site`）なので使わない | 前例は screen-spec（UI モックの出力が `build/mock/`——screen-spec の `references/mock.md`）。spec-loop の `references/monorepo.md` の「build/ を分けない」が直下の `build/` から締め出すのは**実装のビルドの出力**で、spec-loop を使うプラグインの出力の置き場所は決めていない——`build/design-system/` は同じ節が挙げる spec-loop の名前（`build/merged/` など）と重ならない |
 | **承認の範囲は版のディレクトリだけ**——2 つのサインオフはデザインシステムの表と散文を比べ、UI プロファイルと基盤の profile は比べない | spec-loop の照合は版のディレクトリの中しか見ない（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）。profile の変更は PR とタグで出す |
 | 使う側の手元の clone は 1 つでよい——案件の `CLAUDE.md` の `外部の profile の clone:` の行は、リポジトリごとに 1 行 | spec-loop の `references/external-profile.md` の「探し方」 |
 
