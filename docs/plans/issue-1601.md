@@ -92,6 +92,43 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 - 関門の報告のファイル: Verifier 1 パス目 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1601-verifier-1-20261127T080049Z.md`、/code-review 1 パス目 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1601-code-review-1-20261127T080049Z.md`
 - 関門: Verifier 1 パス目 通した——反証 4 件（A〜D。`dev-loop:dev-loop-verifier`・sonnet。テンプレート 260 行は一致。`test-formal-baseline.py` は順番待ちの時間切れで走らせていない、と報告。終点 dd669a9d）。/code-review 1 パス目（high）通した——指摘 7 件（終点 dd669a9d）
 - 手順 5 の反証による手順 4 への差し戻し: V1-B（CR1-1 と同じ）を直した。ほかの直す: CR1-2・CR1-3・CR1-6（下の採否の表）
+- 1 パス目の指摘対応の差分: `dd669a9d..2221cfb3`（0 行でない——2 パス目を回す）
+- 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）——このまま続ける。残っているのは Verifier の当て直し（2 パス目）と /code-review 2 パス目の両方
+- 関門の報告のファイル（2 パス目）: Verifier `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1601-verifier-2-20261127T090344Z.md`、/code-review `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1601-code-review-2-20261127T090344Z.md`
+- 関門: Verifier 2 パス目 通した——反証 0 件（テンプレート 260 行は一致。`test-formal-baseline.py` を run-serial 越しに走らせ OK。終点 2221cfb3）。/code-review 2 パス目（high）通した——指摘 6 件（終点 2221cfb3）
+- 2 パス目の指摘対応: 起点 `2221cfb3`（指摘対応を始める直前の HEAD）・終点 `5be8bd9d`。直したのは CR2-2 だけ（試料「辿れない」は直す前の本体で赤 rc 0「無かった」、直した後に緑）
+- 狭いパス: `2221cfb3..5be8bd9d` に別ティアの Verifier を 1 回。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1601-narrow-1-20261127T093757Z.md`
+- 狭いパス: 通した——反証 0 件・観察 1 件（O1）・素通りした変異 2 件（M4・M2）。O1（通常ファイルの下の実在しないパスが「消せなかった」で rc 1）は示せて受入基準 3（無いパスは 0）を破る——
+  `マージ前の判断 = 推奨で決めて起票（後退・未達を含む）` の線の「満たしていない受入基準は、推奨を決める前にまず周が直す」で直す。起点 `5be8bd9d`・終点 `bac8d63e`
+  陽性対照 `bash /private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/t1601/pc-enotdir.sh <formal-baseline.py> <作業場所>`: 起点 `5be8bd9d` で `消せなかった: …/tmp/file/m（辿れない: Not a directory）` rc=1（赤）、終点で `無かった: …` rc=0（緑）
+- 当て直し: `5be8bd9d..bac8d63e` に別ティアの Verifier を 1 回。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1601-redo-1-20261127T103620Z.md`
+- 当て直し: 通した——反証 0 件（`dev-loop:dev-loop-verifier`・sonnet。テンプレート 260 行は一致。陽性対照を走らせ直し、起点 rc 1・終点「無かった」rc 0。基準 3 を満たすと判定。`test-formal-baseline.py` は `OK: 試料 87 件・変異 70 件`）。
+  受入基準 3 は満たした（満たしていない受入基準を直した——当て直しで消えた）
+- 外部レビュー: PR を作った後に見る
+- 再開点: 関門は全部通した。残りは PR を作り、PR 側の CI を見るところまで（マージは親）
+
+```dev-loop-gates
+周の base: 0c824eace80033e869325f8fd757fb58bc766376
+関門: Verifier 1 dd669a9d 反証=4
+関門: /code-review 1 dd669a9d 指摘=7
+関門: Verifier 2 2221cfb3 反証=0
+関門: /code-review 2 2221cfb3 指摘=6
+関門: 狭いパス 2221cfb3 5be8bd9d 反証=1
+関門: 当て直し 5be8bd9d bac8d63e 反証=0
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+受入基準: 5 満たす
+受入基準: 6 満たす
+受入基準: 7 満たす
+受入基準: 8 未証明
+受入基準: 9 満たす
+受入基準: 10 満たす
+受入基準: 11 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
+（狭いパスの `反証=1` は観察 O1——Verifier は観察として挙げたが、受入基準 3 を破るので著者が反証に数えた。）
 - 交絡を潰した手順: 受入基準 6 の実測（`scratchpad/t1601/ac6.sh`。一時の正本で 写す → `check` → `cleanup`）は、初回に素の `mktemp -d` で作った場所が `TMPDIR` を差し替えた試料で「外」になり消えなかった——
   macOS の `mktemp` が `TMPDIR` を読まないことが原因と `man mktemp` と単独の実行で確かめ、文面をテンプレートつきに直して同じ試料で消えることを見た（陽性・陰性の両側）。
   差し替えない実際の `TMPDIR`（末尾が `/`）でも、テンプレートつきで作った場所が消えることを見た
@@ -118,6 +155,47 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 | CR1-5 formal-checker.md の状態グラフ（.dot）の作業場所がテンプレートなしの `mktemp -d` のまま | 示せない（判定役が自分で消す場所。残った記録は無い） | 無し | 残課題 |
 | CR1-6 docstring と計画の「一時ディレクトリの実体の真下より深い」は字義では孫以下だが、実装は真下も消す | 示せる（docstring の文と `temp not in real.parents` の判定） | 1（原本の docstring が実装と違う規則を述べる） | 直す——docstring を「一時ディレクトリの実体の下（そのものは除く）」に直す。計画の基準 1 の文は変えず注記だけ足す |
 | CR1-7 プラグインの README の表に `cleanup` が無い | 示せる（`plugins/spec-loop/README.md:59`） | 無し | 残課題 |
+
+### 2 パス目の関門の指摘の採否（直す線: 既定）
+
+Verifier 2 パス目: 反証 0 件（観察 2 点——HOME が TMPDIR の祖先だと全部を名指しする・V1-A の再掲。反証ではない）。
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1 `TMPDIR` が `HOME` の中（`TMPDIR=$HOME/tmp`）だと、V1-B の直しで足した「HOME の中」の判定が全部を止め、1 つも消さずに毎回 rc 1 | 示せる（関門が `TMPDIR=$S/home/.tmp/ HOME=$S/home` で rc 1 を実行） | 無し（基準 1 は「`HOME` を含まず、その中にもない」ものだけを消すと決めており、実装はそのとおり。main との比では消さないのは前と同じで後退ではない） | 残課題 |
+| CR2-2 在るのに辿れない（親が `chmod 000`）ディレクトリを渡すと `lexists` が False になり「無かった」で rc 0、ディレクトリは残る | 示せる（関門が実行して rc 0・残ったのを示した） | 3（消せなかったものは名指しして 1） | 直す——`os.lstat` が `FileNotFoundError` のときだけ「無かった」、ほかの `OSError` は「消せなかった」で 1。消した後の確かめも同じ形。試料と変異 |
+| CR2-3 `TMPDIR` が無い・書けないと `gettempdir()` が `/tmp`・cwd などに切り替わり、消してよい範囲が広がる | 示せる（`TMPDIR=<無いパス>` で `/tmp` を出した） | 無し（基準 1 は `gettempdir()` の実体と決めている） | 残課題 |
+| CR2-4 autopilot の権限の点検（`autopilot-check.py` の `SPEC_REVIEW_SCRIPTS`）に `formal-baseline.py` が無い（前からの穴に `cleanup` が載った） | 示せない（拒まれた記録は無い） | 無し | 残課題 |
+| CR2-5 手順の文面が `cleanup` の 2 の扱いを書かず、本体は例外のときそれまでの行を出さない | 示せない | 無し（基準 4 は 2 を返すこと） | 残課題 |
+| CR2-6 CLAUDE.md の `formal-baseline.py` の要約が「その中のもの」に直っていない | 示せる（`CLAUDE.md:265` と docstring） | 無し（要約で、原本は docstring） | 残課題 |
+
+### 狭いパスの指摘（`2221cfb3..5be8bd9d`）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| O1 通常ファイルの下の実在しないパスが「消せなかった（辿れない: Not a directory）」で rc 1 | 示せる（Verifier と著者の陽性対照。起点 `5be8bd9d` で rc 1） | 3（無いパスは 0） | 直した（`マージ前の判断 = 推奨で決めて起票（後退・未達を含む）` の線の「まず周が直す」。`bac8d63e`・当て直しで消えた） |
+| M4 変異「`FileNotFoundError` と `NotADirectoryError` を無いに数える」が素通り（ENOTDIR の試料が無い） | 示せる（陽性対照つき） | 無し | O1 の直しが正しい形そのものになり、試料「ファイルの下のパス」が逆向きの変異を殺す——解消 |
+| M2 消した後の確かめの `except OSError: gone = False` を `True` にする変異が素通り | 示せない（到達させる入力を作れない——rmtree が成功した直後に lstat が ENOENT 以外で落ちる形） | 無し | 人間が決める（記録だけを推奨） |
+
+### 周の途中の課題の振り分け（`周の途中の課題 = 外に出す`。found-lines の「振り分け」）
+
+| 行 | 出所 | 実物で失敗を示せるか | 振り分け |
+| --- | --- | --- | --- |
+| V1-A `cleanup` が名前の接頭辞（`formal-`）を縛らない | #1601 Verifier 1 パス目 | 示せない | 記録だけ |
+| V1-C 変異の不足（消した後の分岐・git を起動できないときの戻り・`..`） | #1601 Verifier 1 パス目 | 示せない | 記録だけ |
+| V1-D 全対象が判定できなかったときの手順 5 の文面 | #1601 Verifier 1 パス目 | 示せない | 記録だけ |
+| CR1-4 片付けに届かない経路（判定役の再実行・autopilot のやり直し・`check` が 0 にならない） | #1601 /code-review 1 パス目 | 示せない | 記録だけ |
+| CR1-5 .dot の作業場所がテンプレートなしの `mktemp -d` | #1601 /code-review 1 パス目 | 示せない | 記録だけ |
+| CR1-7 プラグインの README の表に `cleanup` が無い | #1601 /code-review 1 パス目 | 示せる（README の表） | 記録だけ（載っていないだけで、誤った結果を返す記述ではない） |
+| `-dumpTrace` の JSON と対応表の一時ファイル（モデルのディレクトリの外）は誰も消さない | #1601 /code-review 1 パス目（CR1-2 の派生） | 示せない（溜まった実物を見ていない。この周の前からの形） | 記録だけ |
+| CR2-1 `TMPDIR` が `HOME` の中だと全部を名指しして 1 つも消さない | #1601 /code-review 2 パス目 | 示せる（関門の試料） | 記録だけ（基準 1 どおりの安全側。main では何も消さないのと同じで後退ではない。`TMPDIR=$HOME/…` の利用者から実際に溜まると報告が来たら起票） |
+| CR2-3 `TMPDIR` が無い・書けないと `gettempdir()` が `/tmp` などに切り替わる | #1601 /code-review 2 パス目 | 示せる（`TMPDIR=<無いパス>`） | 記録だけ（ふつうには作らない環境） |
+| CR2-4 autopilot の権限の点検に `formal-baseline.py` が無い | #1601 /code-review 2 パス目 | 示せない | 記録だけ（この周の前からの穴） |
+| CR2-5 手順の文面が `cleanup` の 2 の扱いを書かない | #1601 /code-review 2 パス目 | 示せない | 記録だけ |
+| CR2-6 CLAUDE.md の要約が「その中のもの」に直っていない | #1601 /code-review 2 パス目 | 示せる（`CLAUDE.md:265`） | 記録だけ（原本の docstring は正しい。要約の言い落とし） |
+| M2（上の狭いパスの表） | #1601 狭いパス | 示せない | 記録だけ |
+
+直すの行: 0 件（起票の候補なし）。後退を示す指摘: なし。
 
 ## 手順 8 の記録
 
