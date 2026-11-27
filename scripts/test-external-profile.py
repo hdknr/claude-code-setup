@@ -141,6 +141,8 @@ BAD = {
     "bad-cols": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,一覧,,一覧,余り\n"},
     "bad-dup-col": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,リンク\nS-1,一覧,docs/guide.md,docs/missing.md\n"},
     "bad-layer-utf8": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,\udcff,,x\n"},
+    "bad-layer-csv": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1," + "x" * 200000 + ",,x\n"},  # csv の既定の上限（131072 字）を超える欄——CSV として読めない
+    "bad-profile-utf8": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,infra.csv,\udcff\n画面,1,screens/*.csv,\n"},
     "bad-empty-id": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\n,空,,x\n"},
     "bad-outside-file": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,../shared.csv,\n画面,1,screens/*.csv,\n",
                          "spec-profile/shared.csv": "ID,要約,リンク\nZ-1,外,\n"},
@@ -498,12 +500,13 @@ def main() -> int:
         check("求めた層が無ければ 3（無い）（A7）", o["check 層が無い"][0] == 3 and "無い:" in o["check 層が無い"][1])
         check("無い層と切れた層を一緒に求めると 1（1 が 3 より強い）", o["check 層が無い・切れた層"][0] == 1)
         check("読めない形式の版（1a）は 4（A3）", o["check bad-version"][0] == 4 and "[基盤] 判定できなかった" in o["check bad-version"][1])
-        for t in ("bad-wide-digit", "bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file"):
+        for t in ("bad-wide-digit", "bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file",
+                  "bad-layer-utf8", "bad-layer-csv", "bad-profile-utf8"):
             check(f"表の形が違う {t} は 4（A8）", o[f"check {t}"][0] == 4)
         content = "LayerContent（Undetermined の下位）"
-        for t in ("bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-layer-utf8"):
+        for t in ("bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-layer-utf8", "bad-layer-csv"):
             check(f"層のファイルの中身の欠陥 {t} は LayerContent（Undetermined の下位）を投げる（#1589）: {o[f'read_layer {t}']}", content in o[f"read_layer {t}"])
-        for t in ("bad-wide-digit", "bad-version", "bad-profile-head", "bad-dup-layer", "bad-missing-file", "bad-outside-file"):
+        for t in ("bad-wide-digit", "bad-version", "bad-profile-head", "bad-dup-layer", "bad-missing-file", "bad-outside-file", "bad-profile-utf8"):
             check(f"profile.csv・形式の版・ファイルの当たり先で判定できない {t} は LayerContent にしない（#1589）: {o[f'read_layer {t}']}",
                   content not in o[f"read_layer {t}"] and "Undetermined（Undetermined の下位）" in o[f"read_layer {t}"])
         check("画面の層の後ろの列が違っても、層ごとに読める・改行入りの値も読む（A6）",
