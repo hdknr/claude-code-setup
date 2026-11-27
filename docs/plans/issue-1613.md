@@ -108,6 +108,9 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 2 パス目の関門に渡す終点: `c550ffb6`。狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: 2 パス目の結果を受けて書く
 - 残っている関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。どちらも未着手
 - 割り目（手順 6・2 パス目の前）: 利用者に訊いた（2026-11-27）——**ここで割る**を選んだ。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 1613`（Verifier 2 パス目と `/code-review` 2 パス目から。差分の base は周の base のまま、2 パス目の対象は 1 パス目の指摘対応 `7b419007..c550ffb6`）
+- 再開（2026-11-27、2 つ目の割り目の `/clear` の後）: `find-cycle.py` は 1（当たった）。ブランチ・HEAD（`cd36a3ec`）が周の在り処と一致。base `0c824eac` は HEAD の祖先
+- Verifier 2 パス目: 起動（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-verifier-2-20261127T091442Z.md`）
+- `/code-review` 2 パス目: 起動（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-code-review-2-20261127T091442Z.md`）
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
