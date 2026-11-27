@@ -105,7 +105,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 
 ## 未解決の判断・確認待ち
 
-- 子の Issue の分け方は `references/` の「子の Issue」に案を置き、起票は手順 8 で利用者に訊く。
+- 子の Issue の分け方は README の「子の Issue」に置き、利用者の指示で 6 件を起票した（#1617〜#1622。手順 8）。
 - D4 の形（自前のレビューのスキルと判定役）は人間レビューで確かめてもらう。
 
 ## 関門の進捗（再開点）
@@ -129,7 +129,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 2 パス目の指摘対応: 採否の表（2 パス目）の「直す」12 行を直した。終点（指摘対応の最後のコミット）: `0ac8fe9ddbeffe078e31edf50149944c60604179`。`check-all.py` 緑（16/106 を回して失敗 0、90 は CACHED）。A4 の grep は 0 件
 - 狭いパス（Verifier）: 済み——**反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。素通りした変異: 読解の変異 (a) 旧名の残り——対象が 0 件で届かない。注意 1: V2-R1 の根拠は monorepo.md の解釈に依る——人間が決める。`cd32a056..0ac8fe9d` の 2 点。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-narrow-1-20261127T092505Z.md`）
 - PR: #1615。PR 側の CI 20 pass・1 skipping（deploy）。外部レビュー: 該当なし（`.claude/dev-loop.md` に宣言が無い）。関門の記録を PR コメントに書いた
-- マージ: 最初に訊いたときは答えが無く止めた。関門の後の書き直しを終えたあと、利用者の指示「マージして」（2026-11-27）でマージする（子の Issue の起票は決めていないので、件数の行は 0 件のまま）
+- マージ: 最初に訊いたときは答えが無く止めた。関門の後の書き直しを終えたあと、利用者の指示「マージして」（2026-11-27）でマージする（子の Issue 6 件は利用者の指示で起票した——手順 8）
 - 関門の後の範囲の追加（A12・A13。利用者の求め、2026-11-27）: 起点 `4b21fe18`（計画ファイルだけのコミットの後）→ 終点 `0abb3e2f`。`check-all.py` 緑
 - 当て直し 1（Verifier・sonnet。`4b21fe18..0abb3e2f`）: 済み——**反証 1 件**（A13 の決め打ちの数え上げに dev-loop の 2 本が漏れた）→ 直した（`3fee47b6`）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-1-20261127T095131Z.md`
 - 当て直し 2（Verifier・sonnet。`0abb3e2f..3fee47b6`）: 済み——**反証 1 件（軽微）**: 同じ 2 ファイルの中の正規表現（`formal-sync.py` 134 行の `BASE_README`・`rework-metrics.py` 127 行の `TABLE`）も `docs/` を決め打ちしていて、数え上げから漏れている。**直さずに人間に渡す**（狭いパスと同じ扱い）。A13 は文字どおりには満たしていない——マージするかは利用者が決める。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-2-20261127T095510Z.md`
@@ -140,6 +140,8 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 当て直し 5（Verifier・sonnet。`3b16c00f..63c99330`）: 済み——**反証 1 件（軽微）**: README の 5 行目「人間がレビューするドキュメントのサイトを作ります」に旧い言い回しが残る（頁を差し込む形と食い違う）。**直さずに人間に渡す**（直すとまた当て直しが要る）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-5-20261127T102048Z.md`
 - 人間に渡した 2 件（README の 5 行目・A13 の正規表現 2 か所）を、利用者の指示「提案通りに修正して」（2026-11-27）で直した: 起点 `e3475f91` → 終点 `2bec11be`。A13 は一覧に 2 か所を足し、子の Issue が着手の時点で数え直すと添えた。`check-all.py` 緑
 - 当て直し 6（Verifier・sonnet。`e3475f91..2bec11be`）: 済み——**反証 0 件**（数え上げを自分で grep で数え直して一致）。軽微な注記（反証ではない）: `review.md` 13 行の「生成したドキュメントのサイト」は節の名前と同じで誤りではない。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-6-20261127T103209Z.md`
+- 子の Issue 6 件を利用者の指示「課題も起票して」（2026-11-27）で起票し、README の番号を書いた: 起点 `9a982542` → 終点 `133732de`。`check-all.py` 緑
+- 当て直し 7（Verifier・sonnet。`9a982542..133732de`）: 済み——**反証 0 件**（各 Issue の題と本文が README の段と原本に一致、非公開の名前 0 件）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-7-20261127T104413Z.md`
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
@@ -155,6 +157,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 関門: 当て直し 0c38d35fe55ac8c8360bf0e1dedb60a5cbaa0986 3b16c00f48a4ca0ad3ec9a3cdab7d988544e68e4 反証=1
 関門: 当て直し 3b16c00f48a4ca0ad3ec9a3cdab7d988544e68e4 63c993307a5d9f33c41e9273f5b4db033a9d0152 反証=1
 関門: 当て直し e3475f912abba6c7d9358a4a079f6839c542bb7b 2bec11beb3f56ecfcae339a0a9319002a4e7f5b5 反証=0
+関門: 当て直し 9a98254284dfbbe087043d922245232cf5bc65b6 133732de02008c7aaeb5c4f04e2bc7a354597d3f 反証=0
 受入基準: A1 満たす
 受入基準: A2 満たす
 受入基準: A3 満たす
@@ -217,4 +220,4 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 
 ## 手順 8
 
-- この周の起票: 0 件（2026-11-27 に AskUserQuestion で訊いたが 300 秒で答えが無く、起票しない側に倒した。README の子の Issue 6 件は後で利用者が起票する）
+- この周の起票: 6 件（#1617・#1618・#1619・#1620・#1621・#1622。README の「子の Issue」の段 1・2・3・5・6・7——利用者の指示「課題も起票して」、2026-11-27、マージの前）
