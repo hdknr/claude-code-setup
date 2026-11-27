@@ -72,6 +72,7 @@ MUTATIONS = {
     "見出しの同じ名前を許す": [("        if len(set(head)) != len(head):\n", "        if False:\n")],
     "ID が空でも読む": [("            if not rid:\n", "            if False:\n")],
     "ID が重なっても読む": [("            if rid in result.rows:\n", "            if False:\n")],
+    "層のファイルの中身の欠陥を LayerContent にしない": [("raise LayerContent(f", "raise Undetermined(f"), ("path, LayerContent)", "path)")],
     "列の数を見ない": [("            if len(r) != len(head):\n", "            if False:\n")],
     "ファイルが当たらなくても読む": [("    if not matched:\n", "    if False:\n")],
     "ファイルが profile の外でも読む": [('rel = _safe_rel(row.file) if row.file and not row.file.startswith("/") else None', "rel = posixpath.normpath(row.file)"),
@@ -139,6 +140,9 @@ BAD = {
     "bad-dup-id": {f"{PROFILE}/screens/b.csv": "ID,要約,リンク,幅,高さ\nS-1,重なり,,1,2\n"},
     "bad-cols": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,一覧,,一覧,余り\n"},
     "bad-dup-col": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,リンク\nS-1,一覧,docs/guide.md,docs/missing.md\n"},
+    "bad-layer-utf8": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1,\udcff,,x\n"},
+    "bad-layer-csv": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\nS-1," + "x" * 200000 + ",,x\n"},  # csv の既定の上限（131072 字）を超える欄——CSV として読めない
+    "bad-profile-utf8": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,infra.csv,\udcff\n画面,1,screens/*.csv,\n"},
     "bad-empty-id": {f"{PROFILE}/screens/a.csv": "ID,要約,リンク,種類\n,空,,x\n"},
     "bad-outside-file": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,../shared.csv,\n画面,1,screens/*.csv,\n",
                          "spec-profile/shared.csv": "ID,要約,リンク\nZ-1,外,\n"},
@@ -179,7 +183,7 @@ def write_tree(root: Path, files: dict) -> None:
     for rel, text in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text, encoding="utf-8", newline="")
+        p.write_text(text, encoding="utf-8", errors="surrogateescape", newline="")  # 試料の \udcff は UTF-8 でないバイト（#1589）
 
 
 def commit_tree(root: Path, files: dict, msg: str) -> None:
@@ -382,6 +386,16 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
     o["check 層が無い・切れた層"] = ck("v1", "運用=1,2", "基盤=1,2")
     for t in BAD:
         o[f"check {t}"] = ck(t, "基盤=1,2", "画面=1,2")
+    # 読み込む口の例外の種類（#1589）——層のファイルの中身の欠陥だけが LayerContent（Undetermined の下位）
+    for t in BAD:
+        kinds = []
+        for layer in ("基盤", "画面"):
+            try:
+                mod.read_layer(prof, mod.resolve_tag(prof, t), "org", layer, "1", "2")
+                kinds.append("読めた")
+            except Exception as exc:
+                kinds.append(type(exc).__name__ + ("（Undetermined の下位）" if isinstance(exc, getattr(mod, "Undetermined", ())) else ""))
+        o[f"read_layer {t}"] = tuple(kinds)
     o["diff v1 v2"] = df("v1", "v2", "基盤=1,2", "画面=1,2")
     o["diff v1 v1"] = df("v1", "v1", "画面=1,2")
     o["diff 層が無い"] = df("v1", "v2", "運用=1,2")
@@ -486,8 +500,15 @@ def main() -> int:
         check("求めた層が無ければ 3（無い）（A7）", o["check 層が無い"][0] == 3 and "無い:" in o["check 層が無い"][1])
         check("無い層と切れた層を一緒に求めると 1（1 が 3 より強い）", o["check 層が無い・切れた層"][0] == 1)
         check("読めない形式の版（1a）は 4（A3）", o["check bad-version"][0] == 4 and "[基盤] 判定できなかった" in o["check bad-version"][1])
-        for t in ("bad-wide-digit", "bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file"):
+        for t in ("bad-wide-digit", "bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file",
+                  "bad-layer-utf8", "bad-layer-csv", "bad-profile-utf8"):
             check(f"表の形が違う {t} は 4（A8）", o[f"check {t}"][0] == 4)
+        content = "LayerContent（Undetermined の下位）"
+        for t in ("bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-layer-utf8", "bad-layer-csv"):
+            check(f"層のファイルの中身の欠陥 {t} は LayerContent（Undetermined の下位）を投げる（#1589）: {o[f'read_layer {t}']}", content in o[f"read_layer {t}"])
+        for t in ("bad-wide-digit", "bad-version", "bad-profile-head", "bad-dup-layer", "bad-missing-file", "bad-outside-file", "bad-profile-utf8"):
+            check(f"profile.csv・形式の版・ファイルの当たり先で判定できない {t} は LayerContent にしない（#1589）: {o[f'read_layer {t}']}",
+                  content not in o[f"read_layer {t}"] and "Undetermined（Undetermined の下位）" in o[f"read_layer {t}"])
         check("画面の層の後ろの列が違っても、層ごとに読める・改行入りの値も読む（A6）",
               o.get("read_layer の画面の行", {}).get("S-2", {}).get("高さ") == "2\n00"
               and o.get("read_layer の画面のファイル") == [f"{PROFILE}/screens/a.csv", f"{PROFILE}/screens/b.csv"]
