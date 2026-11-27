@@ -37,7 +37,7 @@ design-system は spec-loop の決まりに従い、**spec-loop は design-syste
 | 5 | spec-loop: 関門と、正本の根のディレクトリの名前を変える口（`references/spec-loop.md` の「spec-loop に要る口」の 3・5）。名前を変える口は dev-loop の 2 本（正本を探す側）も読む | 起票する（dev-loop の側も） |
 | 6 | design-system: レビューのスキルと判定役（`references/review.md` の「判定役」） | 起票する |
 | 7 | design-system: UI プロファイルへの引き渡し（`references/handoff.md`）と、dev-loop が印を読むか | 起票する |
-| 8 | 雛形のリポジトリの原本と公開 | #1610 |
+| 8 | 雛形のリポジトリの原本と公開——雛形はガイドのリポジトリの形（ガイドの文書とデザインシステムを含める。`references/tree.md` の「ガイドのリポジトリ」） | #1610 |
 
 デザインシステム・UI プロファイル・基盤の profile は 1 つのリポジトリに共存させてよく、組織のガイドラインの束として案件に一括で渡せる（`references/tree.md` の「モノレポで共存させる」）。リポジトリはいつも**組織のシステム構築ガイドの文書のリポジトリ**で、ガイドの文書が全体の世界観を説明し、デザインシステム・UI プロファイル・基盤の profile をその構成要素として持つ（`references/tree.md` の「ガイドのリポジトリ」）。人が読む入口はガイドのサイト 1 つで、design-system はそこへ頁を差し込む（`references/outputs.md` の「ドキュメントのサイト」）。design-system を使うには、正本の根の名前を変える spec-loop の口が前提になる（`references/spec-loop.md` の「spec-loop に要る口」の 5）。
 
