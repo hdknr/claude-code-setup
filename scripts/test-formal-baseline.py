@@ -16,7 +16,7 @@
 3. **本体の記録の項目・`結果` と `前回のモデル` の値が `references/tree.md` の「形式検査のモデル」の表と一致する**（写しのずれ）。
 4. **`check-findings-csv.py` が `モデルの保存` の行を実行の行と読まない**（`抜けた` の行は読む——陽性対照）。
 5. **`cleanup`**（#1601）: 一時ディレクトリ（試料ごとに `TMPDIR` を差し替える）の下のディレクトリは消して 0（陽性対照）。**一時ディレクトリの外・そのもの・途中の symlink で外を指す先・
-   相対パス・symlink・ファイル・リポジトリを含むもの・リポジトリの中（サブディレクトリから呼んでも根で決める）・`HOME` を含むもの**は消さずに名指しして 1、
+   相対パス・symlink・ファイル・リポジトリを含むもの・リポジトリの中（サブディレクトリから呼んでも根で決める）・`HOME` を含むもの・`HOME` の中**は消さずに名指しして 1、
    消さないパスが混ざってもほかは消す、消し切れない（書けない親）は名指しして 1、無いパスは 0、パスを渡さなければ 2。**試料ごとに、走らせた後にどのパスが残ったかも突き合わせる**。
 6. **想定外の例外は 2 で、トレースバックの 1 にしない。`-OO`（docstring が無い）で引数なしに呼んでも 2**（#286 と同じ形）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる（全部の試料がこの形で走る）。
@@ -211,7 +211,7 @@ CHECK_CASES: list[CheckCase] = [
 # 鍵: make 作るディレクトリ・files 作るファイル・links (リンク, 先)・cwd（K からの相対。git init する場所は repo）・home（HOME を差し替える）・
 # locked 書けなくするディレクトリ・args（`{K}` は K の絶対パス）・watch 走らせた後に在るかを見るパス。期待の文字列は全部が出力に含まれること。
 CLEANUP_CASES: list[tuple[str, dict, int, tuple[str, ...]]] = [
-    ("消せる", {"files": ["tmp/m1/states/x.st", "tmp/m2/trace.json"], "args": ["{K}/tmp/m1", "{K}/tmp/m2"], "watch": ["tmp/m1", "tmp/m2"]}, 0,
+    ("消せる", {"files": ["tmp/m1/states/x.st", "tmp/m2/tlc.out"], "args": ["{K}/tmp/m1", "{K}/tmp/m2"], "watch": ["tmp/m1", "tmp/m2"]}, 0,
      ("消した: {K}/tmp/m1", "消した: {K}/tmp/m2", "[在る] なし")),
     ("外のディレクトリ", {"make": ["out/m"], "args": ["{K}/out/m"], "watch": ["out/m"]}, 1,
      ("消さなかった: {K}/out/m（一時ディレクトリ（", "[在る] out/m")),
@@ -230,6 +230,8 @@ CLEANUP_CASES: list[tuple[str, dict, int, tuple[str, ...]]] = [
                          "watch": ["tmp/r/repo/b"]}, 1, ("消さなかった: {K}/tmp/r/repo/b（リポジトリ（", "[在る] tmp/r/repo/b")),
     ("HOME を含む", {"make": ["tmp/h/home"], "home": "tmp/h/home", "args": ["{K}/tmp/h"], "watch": ["tmp/h/home"]}, 1,
      ("消さなかった: {K}/tmp/h（HOME（", "[在る] tmp/h/home")),
+    ("HOME の中", {"make": ["tmp/h/docs"], "home": "tmp/h", "args": ["{K}/tmp/h/docs"], "watch": ["tmp/h/docs"]}, 1,
+     ("消さなかった: {K}/tmp/h/docs（HOME（", "[在る] tmp/h/docs")),
     ("無いパス", {"args": ["{K}/tmp/gone"], "watch": []}, 0, ("無かった: {K}/tmp/gone",)),
     ("混ざる", {"make": ["out/m", "tmp/m"], "args": ["{K}/out/m", "{K}/tmp/m"], "watch": ["out/m", "tmp/m"]}, 1,
      ("消さなかった: {K}/out/m", "消した: {K}/tmp/m", "[在る] out/m")),
@@ -312,7 +314,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("リポジトリの中を消す", "_contains(real, repo_real) or _contains(repo_real, real)", "_contains(real, repo_real)", "リポジトリの中"),
     ("リポジトリの根を見ない", "        root = top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else str(repo)\n",
      "        root = str(repo)\n", "サブディレクトリから呼んでも根を守る"),
-    ("HOME を含むものを消す", "            elif _contains(real, home_real):\n", "            elif False:\n", "HOME を含む"),
+    ("HOME を含むものを消す", "elif _contains(real, home_real) or _contains(home_real, real):", "elif _contains(home_real, real):", "HOME を含む"),
+    ("HOME の中を消す", "elif _contains(real, home_real) or _contains(home_real, real):", "elif _contains(real, home_real):", "HOME の中"),
     ("消し切れないのを 0 にする", "        except OSError as e:\n            code = 1\n", "        except OSError as e:\n            code = 0\n", "消せない"),
     ("無いパスで止まる", '            lines.append(f"無かった: {raw}")\n', '            code = 1\n            lines.append(f"無かった: {raw}")\n', "無いパス"),
     ("消さないパスで打ち切る", '            lines.append(f"消さなかった: {raw}（{reason}）")\n            continue\n',
