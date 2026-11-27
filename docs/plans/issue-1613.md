@@ -30,6 +30,9 @@ design-system が自分のレビューのスキルと、書き込みツールを
 周の途中の利用者の求め（2026-11-27）: 「同じリポジトリにデザインシステム・UI 実装プロファイル・基盤要件プロファイルをモノレポで共存させられるか」——
 範囲を広げた（触るファイルは同じ `references/tree.md`。受入基準 A10 を足した）。
 続けて「spec-loop＋dev-loop でシステム開発する際に、ガイドラインとして一括でも渡せるようにしたい」——同じファイルに節を足し、受入基準 A11 を足した。
+関門の 2 パスと狭いパスの後（2026-11-27）: 「spec-profile がモノレポで管理されるのであれば、これらの human readable ドキュメントも追加することになる」——
+`AskUserQuestion` で確かめた: **同じサイトに載せる**（ドキュメントのサイトをリポジトリ全体のガイドラインのサイトにし、手で書く profile の層の表と `guides/` の本文、束の入口の頁を描く）・**この PR に足す**（足した差分だけに Verifier を 1 回当てる——当て直し）。
+触るファイルは同じ `references/tree.md`・`references/outputs.md`（と README の要約）。受入基準 A12 を足した。
 
 ## 変更範囲
 
@@ -80,6 +83,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 | A8 | 歯止めが全部緑 | リポジトリ全体 | `python3 scripts/check-all.py` |
 | A10 | デザインシステム・UI プロファイル・基盤の profile を 1 つのリポジトリに共存させる形が原本にあり、生成物が手で書いた profile を上書きしないこと・タグの系列が混ざらないこと・承認の範囲が書かれている（周の途中で利用者が求めた。2026-11-27） | `references/tree.md` の「モノレポで共存させる」 | Verifier が spec-loop の `external-profile.md`・platform-spec の `check-profile-diff.py` の `name_shape`・spec-loop の `monorepo.md`・`signoff-tags.md` と照らす（必要なら `name_shape` を走らせる） |
 | A11 | 束（基盤・アーキテクチャ・開発の進め方・画面の層とデザインシステム）を案件に一括で渡す形が原本にあり、入口が 1 つ（platform-spec の案件の設定）で、今ある口（`profile-layers.py`・screen-spec の基盤の profile から引く初期値）の事実と合い、デザインシステムを作業中の時点で読まない（周の途中で利用者が求めた。2026-11-27） | `references/tree.md` の「ガイドラインとして一括で渡す」 | Verifier が platform-spec の `references/infra-profile.md`・`layers.md`・`scripts/profile-layers.py`、screen-spec の `references/profiles.md` の「基盤の profile から引く初期値」と照らす |
+| A12 | 手で書く profile（UI プロファイル・基盤の profile）の人が読む文書が、デザインシステムと同じサイトに載る形が原本にある——何から描くか（`spec-profile/<名前>/` の層の表と `guides/` の本文）・束の入口の頁・作業中かリリース済みかの示し方（profile はタグの系列が別）・誰がいつレビューし承認するか（サインオフの範囲の外）・手で書く profile を書き換えないこと。今ある原本（spec-loop の `external-profile.md`・screen-spec の `profiles.md`・platform-spec の `layers.md`）の事実と合う（関門の後に利用者が求めた。2026-11-27） | `references/outputs.md` の「ドキュメントのサイト」・`references/tree.md` の「モノレポで共存させる」 | 当て直しの Verifier が原本と照らす |
 | A9 | A1〜A8・A10・A11 を、Verifier と `/code-review` の両方に、1 パス目と 2 パス目（該当すれば）で渡す（4 つの受け渡し） | 関門 | 下の関門の記録 |
 
 この環境で証明できないもの（未証明）: 設計が実装で成り立つか（たとえば描画キットを screen-spec のモックに埋め込んで同じ入力から同じバイトになるか、DTCG の出力が実際のツールで読めるか）——設計の周なので実装は無い。子の Issue の受入基準に回す。
