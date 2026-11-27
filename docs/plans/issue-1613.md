@@ -135,6 +135,9 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 当て直し 2（Verifier・sonnet。`0abb3e2f..3fee47b6`）: 済み——**反証 1 件（軽微）**: 同じ 2 ファイルの中の正規表現（`formal-sync.py` 134 行の `BASE_README`・`rework-metrics.py` 127 行の `TABLE`）も `docs/` を決め打ちしていて、数え上げから漏れている。**直さずに人間に渡す**（狭いパスと同じ扱い）。A13 は文字どおりには満たしていない——マージするかは利用者が決める。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-2-20261127T095510Z.md`
 - ガイドのリポジトリの形への書き直し（A12 の直し・A14。利用者の求め、2026-11-27）: 起点 `2d9f0226` → 終点 `7ffde7c2`。`check-all.py` 緑。非公開のリポジトリの名前の grep 0 件
 - 当て直し 3（Verifier・sonnet。`2d9f0226..7ffde7c2`）: 済み——**反証 0 件**。注記 2 件（反証ではない。人間に渡す）: (1) 「spec-loop のフックの口はガイドには無い」は、`init-mkdocs.py --hook` が設定の在る根でも登録だけはする点と書き方が食い違う（呼び出し側が写されないので、登録しても呼ばれない——結論は同じ）。(2) `tree.md` の「直下の名前は spec-loop が使うものを避ける（`docs/` …）」と、ガイドのリポジトリの木で直下の `docs/` をガイドが使う形に緊張がある（後者は口 5 が前提）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-3-20261127T100514Z.md`
+- リポジトリはいつもガイドにする書き直し（A12・A14 の直し。利用者の求め、2026-11-27）: 起点 `0c38d35f` → 終点 `3b16c00f`。`check-all.py` 緑。非公開の名前の grep 0 件
+- 当て直し 4（Verifier・sonnet。`0c38d35f..3b16c00f`）: 済み——**反証 1 件**（カタログの description が書き直し前の「デザインシステム用のリポジトリ」のまま）→ 直した（`63c99330`。注記 N1 の Q&A 表の頁・N2 の雛形の段も一緒に）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-4-20261127T101658Z.md`
+- 当て直し 5（Verifier・sonnet。`3b16c00f..63c99330`）: 済み——**反証 1 件（軽微）**: README の 5 行目「人間がレビューするドキュメントのサイトを作ります」に旧い言い回しが残る（頁を差し込む形と食い違う）。**直さずに人間に渡す**（直すとまた当て直しが要る）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-5-20261127T102048Z.md`
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
@@ -147,6 +150,8 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 関門: 当て直し 4b21fe18e1cc467bc87e7704c43a585150c6aab6 0abb3e2f4bd5f42aaab8abb223e7a6f478642b90 反証=1
 関門: 当て直し 0abb3e2f4bd5f42aaab8abb223e7a6f478642b90 3fee47b64d933edbb1d140184e5295f84af82efb 反証=1
 関門: 当て直し 2d9f02265f682fdc9df6d546a28ec2e1cfdd17f5 7ffde7c2b71e8f3d53fd4f82cd2084e8fbec17b1 反証=0
+関門: 当て直し 0c38d35fe55ac8c8360bf0e1dedb60a5cbaa0986 3b16c00f48a4ca0ad3ec9a3cdab7d988544e68e4 反証=1
+関門: 当て直し 3b16c00f48a4ca0ad3ec9a3cdab7d988544e68e4 63c993307a5d9f33c41e9273f5b4db033a9d0152 反証=1
 受入基準: A1 満たす
 受入基準: A2 満たす
 受入基準: A3 満たす
