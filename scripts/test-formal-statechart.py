@@ -1220,6 +1220,38 @@ def reclaim_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> lis
     return problems
 
 
+# 片付けの途中に信号が届く形——本体を読み込み、最初の `shutil.rmtree`（TemporaryDirectory の片付け）の入口で自分に SIGTERM を送ってから本体を走らせる
+IN_CLEANUP = """import importlib.util, os, shutil, signal, sys
+spec = importlib.util.spec_from_file_location("formal_statechart", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real, fired = shutil.rmtree, []
+def rmtree(*a, **k):
+    if not fired:
+        fired.append(1)
+        os.kill(os.getpid(), signal.SIGTERM)
+    return real(*a, **k)
+shutil.rmtree = rmtree
+sys.exit(module.main(sys.argv[2:]))
+"""
+
+
+def cleanup_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """片付けの途中に信号が届いても、一時ディレクトリと .dot を残さない（#1594。1 パス目の /code-review の指摘）。"""
+    problems = []
+    for name in ("本体: 反例なし", "TLC が途中で止まる"):
+        repo, argv, env = setup(work, fake, fakebin, CASES[name])
+        wrapper = work / "in_cleanup.py"
+        wrapper.write_text(IN_CLEANUP, encoding="utf-8")
+        proc = subprocess.run([sys.executable, "-I", str(wrapper), str(script), str(repo), str(repo / T), *argv],
+                              capture_output=True, text=True, cwd=work, env=env, timeout=120)
+        if proc.returncode != 128 + signal.SIGTERM:
+            problems.append(f"{name}: 終了コード {proc.returncode}（期待 {128 + signal.SIGTERM}）: {(proc.stdout + proc.stderr)[-300:]!r}")
+        if leftovers(work):
+            problems.append(f"{name}: TMPDIR に残した: {leftovers(work)}")
+    return problems
+
+
 def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int) -> list[str]:
     """TLC が走っている間に信号を受けたら、TLC を止め、一時ディレクトリを消し、--out に触らず、128+信号で終わる（#1594）。"""
     case = (f"TLC の呼び方: {CALL}\n", target("Sleepy"), ["--out", OUT], 128 + sig, "", [])
@@ -1242,6 +1274,10 @@ def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: in
     except subprocess.TimeoutExpired:
         proc.kill()
         out, _ = proc.communicate()
+        try:  # 偽の TLC を置き去りにしない
+            os.kill(tlc_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         return [f"信号の後 30 秒で終わらない: {out[-300:]!r}"]
     problems = []
     if proc.returncode != 128 + sig:
@@ -1270,6 +1306,8 @@ SIGNAL_CASES = {f"信号: {sig.name}": sig for sig in (signal.SIGTERM, signal.SI
 def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
     if name == "回収":
         return reclaim_problems(script, work, fake, fakebin)
+    if name == "信号: 片付けの途中":
+        return cleanup_problems(script, work, fake, fakebin)
     return signal_problems(script, work, fake, fakebin, SIGNAL_CASES[name])
 
 
@@ -1312,7 +1350,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("活性の挙動グラフを消さない", '            (Path(tmp) / f"{name}.dump_liveness.dot").unlink(missing_ok=True)', "            pass", "PROPERTY のある本体と陽性対照（#1594）"),
     ("信号を例外にしない", "    for sig in SIGNALS:\n        signal.signal(sig, on_signal)", "    for sig in SIGNALS:\n        pass", "信号: SIGTERM"),
     ("SIGHUP を片付けない", "SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)", "SIGNALS = (signal.SIGTERM, signal.SIGINT)", "信号: SIGHUP"),
-    ("持ち主の居ないディレクトリを消さない", "        shutil.rmtree(path, ignore_errors=True)", "        pass", "回収"),
+    ("片付けの途中の信号の後に消し直さない", "        for path in Path(tempfile.gettempdir()).glob(f\"{PREFIX}{os.getpid()}-*\"):\n            shutil.rmtree(path, ignore_errors=True)\n", "", "信号: 片付けの途中"),
+    ("持ち主の居ないディレクトリを消さない", "        shutil.rmtree(path, ignore_errors=True)\n        if not path.exists():", "        pass\n        if not path.exists():", "回収"),
     ("持ち主の居るディレクトリも消す", "        if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):", "        if False:", "回収"),
     ("pid の無い古い名前も消す", "        if not found or path.is_symlink() or not path.is_dir():\n            continue\n        if int(",
      "        if path.is_symlink() or not path.is_dir():\n            continue\n        if not found:\n            shutil.rmtree(path)\n            continue\n        if int(", "回収"),
@@ -1323,8 +1362,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 
 # check-tlc.py（TLC の走らせ方）を壊す変異——(名前, 壊す前, 壊した後, 殺す試料)
 TLC_MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("信号で抜けても TLC を止めない", "        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）\n        with_group(proc, signal.SIGKILL)",
-     "        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）\n        pass", "信号: SIGTERM"),
+    # 節を丸ごと外す（#1594 より前の形）——`with_group` だけを外すと `proc.wait()` が眠る偽の TLC を待ち続け、時間切れでしか落ちない（1 パス目の /code-review の指摘）
+    ("信号で抜けても TLC を止めない", "    except BaseException:\n        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）\n        with_group(proc, signal.SIGKILL)\n        proc.wait()\n        raise\n",
+     "", "信号: SIGTERM"),
 ]
 
 
@@ -1372,10 +1412,10 @@ def main() -> int:
         print(f"  {len(CASES)} 件 OK（突き合わせの陽性対照 3 件）")
 
         print("片付け（#1594）")
-        for i, name in enumerate(["回収", *SIGNAL_CASES]):
+        for i, name in enumerate(["回収", "信号: 片付けの途中", *SIGNAL_CASES]):
             problems = special_problems(name, scripts / TARGET, root / f"s{i}", fake, fakebin)
             check(f"試料: {name}", not problems, "・".join(problems))
-        print(f"  {1 + len(SIGNAL_CASES)} 件 OK")
+        print(f"  {2 + len(SIGNAL_CASES)} 件 OK")
 
         print("変異テスト")
         rows = guard_rows(source)
@@ -1394,7 +1434,7 @@ def main() -> int:
             (mutated / "check-tlc.py").write_text(tlc_source.replace(before, after), encoding="utf-8")
             check(f"変異を殺す: {name} ← {killer}", killed(killer, mutated / TARGET, root / f"tw{index}", fake, fakebin))
         print(f"  変異 {len(MUTATIONS) + len(TLC_MUTATIONS)} 件 OK")
-    print(f"OK: 試料 {len(CASES) + 1 + len(SIGNAL_CASES)} 件・変異 {len(MUTATIONS) + len(TLC_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 2 + len(SIGNAL_CASES)} 件・変異 {len(MUTATIONS) + len(TLC_MUTATIONS)} 件")
     return 0
 
 

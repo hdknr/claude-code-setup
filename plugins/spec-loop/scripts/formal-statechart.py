@@ -577,6 +577,9 @@ def main(argv: list[str]) -> int:
     try:
         return run(args)
     except Interrupted as stop:
+        # 片付け（TemporaryDirectory の rmtree）の途中に届いた信号で、片付けが途切れていることがある——自分の pid のものを消し直す（信号はもう無視している）
+        for path in Path(tempfile.gettempdir()).glob(f"{PREFIX}{os.getpid()}-*"):
+            shutil.rmtree(path, ignore_errors=True)
         print(f"描かなかった: 信号 {signal.Signals(stop.signum).name} で止められた（TLC を止め、一時ディレクトリを消した）", file=sys.stderr)
         if args.out is not None:
             print(f"{args.out} には触っていない", file=sys.stderr)

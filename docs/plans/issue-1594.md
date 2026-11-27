@@ -82,11 +82,18 @@ dot を書くほかの入口: (g) Formal Checker の図の対応の確認（エ�
 - 周の在り処: ブランチ `issue/1594-statechart-dot-cleanup`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1594`、起点 `1af47399`（origin/main）、base（`origin/HEAD` → `1af473994d1a756440930ed38efb97ab881e1115`）
 - 直す線: 既定（出所: `.claude/dev-loop.md` に `直す線:` の行が無く、委譲の指示で AskUserQuestion を使わない——答えが返らないものとして既定）
 - 割り目（手順 4）: このまま続ける（委譲の指示。訊かない）
-- 関門: まだ
-- 交絡を潰した手順: まだ
+- 1 パス目の指摘対応の起点: `9558fd6e`（1 パス目の関門に渡した時点の HEAD）
+- 関門: Verifier 1 パス目 通した——反証 0 件（観察 5 件。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-taiheigroup-new-taihei-prm/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-verifier-1-20261127T015959Z.md`、終点 9558fd6e）。/code-review 1 パス目 通した——指摘 9 件（直す 2・残課題 7。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-taiheigroup-new-taihei-prm/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-code-review-1-20261127T015959Z.md`、終点 9558fd6e）
+- 手順 5 の反証による手順 4 への差し戻し: なし（Verifier の反証 0 件）。/code-review の指摘 2 件を 1 パス目の指摘対応で直した
+- 割り目（手順 6・2 パス目の前）: このまま続ける（委譲の指示。訊かない）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と /code-review 2 パス目の両方
+- 交絡を潰した手順: 本物の TLC での実測に陽性対照を取った——同じ試料を周の base の `formal-statechart.py` で走らせ、片付けが無いと出る形が出ることを見た
+  （小さい 4 モデル: 走っている間の .dot の最大が base 7 個 → 直した版 2 個（1 モデルの状態グラフと _liveness）。SIGTERM: base は java が残り TMPDIR に 55M のディレクトリと .dot が残った → 直した版は rc=143・java なし・残り 0）。
+  回帰テストの「前のモデルの .dot が残ったまま次を走らせた」の検出は、変異「状態グラフを読んでも消さない」が赤になることで陽性側を見た。観測窓: 見張りは 0.1 秒ごとに数えた（それより短く出て消えた .dot は数えていない）
 
 ```dev-loop-gates
 周の base: 1af473994d1a756440930ed38efb97ab881e1115
+関門: Verifier 1 9558fd6e 反証=0
+関門: /code-review 1 9558fd6e 指摘=9
 ```
 
 ## 既知の限界・決着済みの論点
@@ -97,6 +104,22 @@ dot を書くほかの入口: (g) Formal Checker の図の対応の確認（エ�
 | dot の大きさの上限 | 入れない | 「決めたこと」4。Issue の任意 |
 | 古い形の `spec-loop-statechart-*`（pid なし）を回収しない | 回収しない | 持ち主が分からず、並行する実行を壊しうる。PR に書く |
 | TLC が走っている間の 1 モデル分の dot | 残る | TLC が走りながら書く。上限は 4 |
+
+### 1 パス目の関門の指摘の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1 `nohup`・バックグラウンドで呼び出し元が付けた SIG_IGN を on_signal が上書きする（SIGHUP・SIGINT で止まる） | 示せる（`nohup` の下で getsignal が SIG_IGN。上書きはコードの通り） | 無し（受入基準は止められたときの片付け。止めないべき場面は基準に無い） | 残課題 |
+| CR1-2 TemporaryDirectory の rmtree の途中に信号が届くと一時ディレクトリと .dot が残り、「消した」と出る | 示せる（rmtree の入口で SIGTERM を送るラッパーで rc 143・ディレクトリが残った。/code-review が実行） | 4 | 直す——`except Interrupted` で自分の pid の一時ディレクトリを消し直す。試料「信号: 片付けの途中」と変異を足した |
+| CR1-3 Popen の前後・時間切れの節の数命令の窓に信号が届くと TLC が残る | 示せない（コードの読解のみ） | 4 | 残課題 |
+| CR1-4 TLC_MUTATIONS の変異が時間切れでしか落ちず、時間切れの経路で偽の TLC を置き去りにする | 示せる（変異で 30.2 秒の時間切れ・ppid 1 の偽の TLC が残った） | 4（証明手段の陽性対照が旧い挙動を作っていない） | 直す——変異を `except BaseException` の節ごと外す形にし、時間切れの経路で偽の TLC を止める |
+| CR1-5 communicate の OSError が戻り値でなく例外になった | 示せない（再現していない） | 無し | 残課題 |
+| CR1-6 SIGHUP で stderr が閉じていると print の OSError で 128+n にならない | 示せない | 無し | 残課題 |
+| CR1-7 PID 名前空間の違うコンテナと TMPDIR を共有すると reclaim が作業中のディレクトリを消しうる | 示せない | 無し | 残課題（既知の限界に足す） |
+| CR1-8 check-alloy.py の run_model も同じ形で Alloy を置き去りにする（周の前から） | 示せない | 無し | 残課題 |
+| CR1-9 非対話の実行で Formal Checker の `rm -rf` が権限で止まりうる | 示せない | 無し | 残課題 |
+| V1 観察 1〜5（rmtree 中の信号・名前空間・Popen の窓・`states/` が cwd に残る・macOS の mktemp） | 反証ではない（Verifier が観察として挙げた） | 無し | 1 は CR1-2 で直した。ほかは残課題 |
+| PID 名前空間の違う環境の reclaim | — | — | 既知の限界（CR1-7） |
 
 ## 手順 8 の記録
 
