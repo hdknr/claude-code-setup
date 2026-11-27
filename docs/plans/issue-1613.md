@@ -96,7 +96,10 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 
 ## 関門の進捗（再開点）
 
-- 実装: 未着手
+- 実装: 済み（`b078b5cd`）。`check-all.py` は緑（106 本中 19 本を回して失敗 0、87 本は CACHED）。`check-description-sync.py origin/main` 緑。A4 の grep は 0 件
+- 割り目（手順 4）: 利用者に訊いた（2026-11-27）——**ここで割る**を選んだ。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 1613`（手順 5 から）
+- 関門の記録はまだ無い（1 パス目の関門に渡すときに `dev-loop-gates` のブロックと 1 パス目の起点の SHA を書く）
+- 次: 手順 5（Verifier の 1 パス目）と手順 6（`/code-review` の 1 パス目）。どちらも未着手
 
 ## 既知の限界・決着済みの論点
 
