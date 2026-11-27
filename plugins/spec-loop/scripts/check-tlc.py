@@ -190,8 +190,9 @@ def after_key(line, key):
     return None
 
 
-def run_model(call, workdir, name, timeout):
-    """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。"""
+def run_model(call, workdir, name, timeout, started=None):
+    """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。
+    `started` があれば、起こした直後にそのプロセス（別のセッションのリーダー。pid がプロセスグループの番号）を渡して呼ぶ。"""
     try:
         proc = subprocess.Popen(["/bin/sh", "-c", f"{call} {name}.tla"], cwd=workdir, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
@@ -199,6 +200,8 @@ def run_model(call, workdir, name, timeout):
     except OSError as e:
         return None, f"起動できない: {e}"
     try:
+        if started is not None:
+            started(proc)
         out, _ = proc.communicate(timeout=timeout)
         return proc.returncode, out
     except subprocess.TimeoutExpired:

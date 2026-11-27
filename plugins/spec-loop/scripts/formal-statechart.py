@@ -86,7 +86,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 一時ディレクトリで走らせ、描けたときだけ `--out` の 1 ファイルを書く | 正本に `states/` や状態グラフが残る・描けなかったのに古い図が新しく見える |
 | モデルごとに、状態グラフを読んだら消し、`_liveness.dot` は TLC が走り終えたら消す（#1594） | 全部のモデルの状態グラフが 1 回の実行の中で溜まり、ディスクを使い切る |
 | SIGTERM・SIGINT・SIGHUP で、TLC のプロセスグループを止め、一時ディレクトリを消して 128+信号で終わる | 止められた実行が一時ディレクトリと java を残す |
-| 起動時に、持ち主の pid が居ない `spec-loop-statechart-<pid>-…` を消す（居る・分からない・pid の無い名前は消さない） | SIGKILL の残りが溜まり続ける・並行する実行の作業中のディレクトリを消す |
+| 起動時に、持ち主の pid が居ない `spec-loop-statechart-<pid>-…` を消す（居る・分からない・pid の無い名前は消さない）。そこで TLC（記録したプロセスグループ）がまだ走っていれば消さずにそう言う | SIGKILL の残りが溜まり続ける・並行する実行の作業中のディレクトリを消す・走り続ける TLC の書くファイルを見えなくして「消した」と言う |
 | 呼び方の行が無ければ 4（`PATH` の `tlc` で探さない） | `check-tlc.py` と違う探し方で走らせる |
 
 **守らないもの**:
@@ -101,7 +101,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | **TLC でないモデル**（Alloy・総当たり・Z3） | Issue の範囲の外。渡されたら TLC のモデルが無いとして 4 |
 | **TLC が走っている間の 1 モデル分の状態グラフの大きさ** | TLC が走りながら書く。大きさの上限で止める仕組みは無い（#1594 の任意の案。入れていない） |
 | **pid の無い古い名前の一時ディレクトリ**（`spec-loop-statechart-<ランダム>`。#1594 より前の版の残り） | 持ち主が分からないので消さない。手で消す |
-| **SIGKILL の直後のディスク** | 片付けは走らない。次の起動が消す（持ち主の pid が再使用されて居るように見える間は消さない） |
+| **SIGKILL の直後のディスク** | 片付けは走らず、別のセッションの TLC は走り続ける。次の起動は TLC が走っている間は消さずにプロセスグループの番号を言い、止まった後の起動が消す（持ち主の pid が再使用されて居るように見える間は消さない）。TLC を止めるのは人 |
 | **呼び方の安全** | 正本の `CLAUDE.md` の文字列をそのまま `sh` で走らせる（`check-tlc.py` と同じ） |
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う。
@@ -155,6 +155,8 @@ INITIAL = "by the initial state:"
 # 一時ディレクトリの名前の頭（後ろに持ち主の pid）と、片付ける信号（#1594）
 PREFIX = "spec-loop-statechart-"
 OWNED = re.compile(re.escape(PREFIX) + r"(\d+)-")
+# 一時ディレクトリに書く、いま走らせている TLC のプロセスグループの番号（SIGKILL の後も TLC は別のセッションで走り続ける）
+TLC_GROUP = ".tlc-group"
 SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
 
@@ -192,22 +194,36 @@ def alive(pid: int) -> bool:
 
 
 def reclaim(base: Path) -> list[Path]:
-    """持ち主の pid が居ない `spec-loop-statechart-<pid>-…` を消す（SIGKILL の残り）。消したディレクトリ。"""
-    gone = []
+    """持ち主の pid が居ない `spec-loop-statechart-<pid>-…` を消す（SIGKILL の残り）。(消したディレクトリ, TLC がまだ走っているので消さなかった (ディレクトリ, グループ))。"""
+    gone, kept = [], []
     try:
         entries = sorted(base.iterdir())
     except OSError:
-        return gone
+        return gone, kept
     for path in entries:
         found = OWNED.match(path.name)
         if not found or path.is_symlink() or not path.is_dir():
             continue
         if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):
             continue
+        group = running_group(path)
+        if group is not None:  # 持ち主が SIGKILL されても TLC は走り続け、ここに書いている——消しても空かず見えなくなるだけなので、消さずに言う
+            kept.append((path, group))
+            continue
         shutil.rmtree(path, ignore_errors=True)
         if not path.exists():
             gone.append(path)
-    return gone
+    return gone, kept
+
+
+def running_group(path: Path) -> int | None:
+    """そのディレクトリに書いた TLC のプロセスグループが、まだ居ればその番号。"""
+    try:
+        group = int((path / TLC_GROUP).read_text(encoding="utf-8").strip())
+        os.killpg(group, 0)
+    except (OSError, ValueError, OverflowError) as e:
+        return group if isinstance(e, PermissionError) else None
+    return group
 
 
 def unescape(text: str) -> str:
@@ -532,7 +548,8 @@ def draw(call: str, directory: Path, max_edges: int, timeout: int, controls: boo
             shutil.copyfile(directory / name, Path(tmp) / name)
         for name, kind in targets:
             dot_name = f"{name}.dump.dot"
-            rc, out = tlc.run_model(f"{call} -continue -dump dot,actionlabels {shlex.quote(dot_name)}", tmp, name, timeout)
+            rc, out = tlc.run_model(f"{call} -continue -dump dot,actionlabels {shlex.quote(dot_name)}", tmp, name, timeout,
+                                    started=lambda proc: (Path(tmp) / TLC_GROUP).write_text(str(proc.pid), encoding="utf-8"))
             dot_path = Path(tmp) / dot_name
             (Path(tmp) / f"{name}.dump_liveness.dot").unlink(missing_ok=True)  # 活性の挙動グラフ——図は読まない（#1594）
             if rc is None or not (tlc.GOOD_MARK in out or rerun.violated(out)) or not dot_path.is_file():
@@ -587,8 +604,12 @@ def main(argv: list[str]) -> int:
 
 
 def run(args) -> int:
-    for path in reclaim(Path(tempfile.gettempdir())):
+    gone, kept = reclaim(Path(tempfile.gettempdir()))
+    for path in gone:
         print(f"持ち主の居ない一時ディレクトリを消した: {path}", file=sys.stderr)
+    for path, group in kept:
+        print(f"持ち主の居ない一時ディレクトリだが、TLC（プロセスグループ {group}）がまだ書いているので消していない: {path}"
+              f"（止めるなら kill -9 -{group}。止めた後の起動が消す）", file=sys.stderr)
     try:
         call, _, note = tlc.read_declarations(args.root)
     except tlc.Unknown as e:

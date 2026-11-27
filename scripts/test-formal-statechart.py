@@ -1252,6 +1252,81 @@ def cleanup_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> lis
     return problems
 
 
+# 描いている途中の想定外の例外（経路 c）——本体を読み込み、render を例外にして main を呼び、`__main__` と同じく 2 で終わる
+UNEXPECTED = """import importlib.util, sys
+spec = importlib.util.spec_from_file_location("formal_statechart", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+def render(*a, **k):
+    raise RuntimeError("試料: 想定外の例外")
+module.render = render
+try:
+    sys.exit(module.main(sys.argv[2:]))
+except Exception as e:
+    print(f"想定外の例外: {e}", file=sys.stderr)
+    sys.exit(2)
+"""
+
+
+def unexpected_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """描いている途中の想定外の例外（2）でも、一時ディレクトリと .dot を残さない（#1594。2 パス目の /code-review の指摘）。"""
+    repo, argv, env = setup(work, fake, fakebin, CASES["陽性対照に印と経路（受入基準 2）"])
+    wrapper = work / "unexpected.py"
+    wrapper.write_text(UNEXPECTED, encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(wrapper), str(script), str(repo), str(repo / T), *argv],
+                          capture_output=True, text=True, cwd=work, env=env, timeout=120)
+    problems = []
+    if proc.returncode != 2 or "試料: 想定外の例外" not in proc.stderr:
+        problems.append(f"終了コード {proc.returncode}（期待 2）: {(proc.stdout + proc.stderr)[-300:]!r}")
+    if leftovers(work):
+        problems.append(f"TMPDIR に残した: {leftovers(work)}")
+    return problems
+
+
+def killed_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """SIGKILL の後も別のセッションの TLC が走っている間は、次の起動が一時ディレクトリを消さずにそう言い、止まった後の起動が消す（#1594。2 パス目の /code-review の指摘）。"""
+    repo, argv, env = setup(work, fake, fakebin, (f"TLC の呼び方: {CALL}\n", target("Sleepy"), [], 0, "", []))
+    proc = subprocess.Popen([sys.executable, "-I", str(script), str(repo), str(repo / T), *argv],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=work, env=env)
+    pid_file = work / "tlc.pid"
+    for _ in range(300):
+        if pid_file.is_file() and pid_file.read_text().strip():
+            break
+        time.sleep(0.05)
+    else:
+        proc.kill()
+        proc.wait()
+        return ["偽の TLC が起動しなかった（試料を組めない）"]
+    tlc_pid = int(pid_file.read_text())
+    proc.kill()
+    proc.wait()
+    problems = []
+    try:
+        left = [p for p in (work / "tmp").iterdir() if p.name.startswith("spec-loop-statechart-")]
+        if len(left) != 1:
+            return [f"SIGKILL の後の一時ディレクトリが 1 つでない: {left}"]
+        again = setup(work.with_name(work.name + "b"), fake, fakebin, CASES["本体: 反例なし"])
+        env2 = {**again[2], "TMPDIR": str(work / "tmp")}
+        run = subprocess.run([sys.executable, "-I", str(script), str(again[0]), str(again[0] / T)], capture_output=True, text=True, env=env2, timeout=120)
+        if run.returncode != 0 or not left[0].is_dir() or "がまだ書いているので消していない" not in run.stderr:
+            problems.append(f"TLC が走っている間に消した・言わない: rc {run.returncode}・在る {left[0].is_dir()}・{run.stderr[-300:]!r}")
+    finally:
+        try:
+            os.kill(tlc_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    for _ in range(100):
+        try:
+            os.kill(tlc_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    run = subprocess.run([sys.executable, "-I", str(script), str(again[0]), str(again[0] / T)], capture_output=True, text=True, env=env2, timeout=120)
+    if left[0].exists() or "持ち主の居ない一時ディレクトリを消した" not in run.stderr:
+        problems.append(f"TLC が止まった後に消さない: {run.stderr[-300:]!r}")
+    return problems
+
+
 def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int) -> list[str]:
     """TLC が走っている間に信号を受けたら、TLC を止め、一時ディレクトリを消し、--out に触らず、128+信号で終わる（#1594）。"""
     case = (f"TLC の呼び方: {CALL}\n", target("Sleepy"), ["--out", OUT], 128 + sig, "", [])
@@ -1301,6 +1376,7 @@ def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: in
 
 
 SIGNAL_CASES = {f"信号: {sig.name}": sig for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+SPECIAL = ["回収", "信号: 片付けの途中", "想定外の例外", "SIGKILL の後に TLC が走っている", *SIGNAL_CASES]
 
 
 def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
@@ -1308,6 +1384,10 @@ def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: P
         return reclaim_problems(script, work, fake, fakebin)
     if name == "信号: 片付けの途中":
         return cleanup_problems(script, work, fake, fakebin)
+    if name == "想定外の例外":
+        return unexpected_problems(script, work, fake, fakebin)
+    if name == "SIGKILL の後に TLC が走っている":
+        return killed_problems(script, work, fake, fakebin)
     return signal_problems(script, work, fake, fakebin, SIGNAL_CASES[name])
 
 
@@ -1333,7 +1413,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("待ちの残ったグラフに書かない", "    if queued and int(queued[-1]) != 0:", "    if False:", "途中で止まったグラフ・値に ->"),
     ("辺を節点より先に読む", "        node = NODE.fullmatch(line)", '        node = None if "->" in line else NODE.fullmatch(line)', "途中で止まったグラフ・値に ->"),
     ("大きいモデルも全部描く", "            drawn_edges = set(steps)", "            drawn_edges = view_edges", "大きいモデルは経路だけ"),
-    ("正本で走らせる", "{shlex.quote(dot_name)}\", tmp, name, timeout)", "{shlex.quote(dot_name)}\", str(directory), name, timeout)", "本体: 反例なし"),
+    ("正本で走らせる", "{shlex.quote(dot_name)}\", tmp, name, timeout,", "{shlex.quote(dot_name)}\", str(directory), name, timeout,", "本体: 反例なし"),
     ("呼び方が無ければ PATH の tlc を使う", "        if call is None:\n            raise Stop(",
      "        if call is None:\n            call = \"tlc\"\n        if False:\n            raise Stop(", "呼び方の行が無い"),
     ("描けなくても --out を書く", "        print(f\"描かなかった: {stop}\", file=sys.stderr)\n",
@@ -1351,6 +1431,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("信号を例外にしない", "    for sig in SIGNALS:\n        signal.signal(sig, on_signal)", "    for sig in SIGNALS:\n        pass", "信号: SIGTERM"),
     ("SIGHUP を片付けない", "SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)", "SIGNALS = (signal.SIGTERM, signal.SIGINT)", "信号: SIGHUP"),
     ("片付けの途中の信号の後に消し直さない", "        for path in Path(tempfile.gettempdir()).glob(f\"{PREFIX}{os.getpid()}-*\"):\n            shutil.rmtree(path, ignore_errors=True)\n", "", "信号: 片付けの途中"),
+    ("想定外の例外で一時ディレクトリを残す", '    with tempfile.TemporaryDirectory(prefix=f"{PREFIX}{os.getpid()}-") as tmp:',
+     '    for tmp in [tempfile.mkdtemp(prefix=f"{PREFIX}{os.getpid()}-")]:', "想定外の例外"),
+    ("TLC が走っていても消す", "        if group is not None:", "        if False:", "SIGKILL の後に TLC が走っている"),
+    ("TLC のグループを記録しない", "started=lambda proc: (Path(tmp) / TLC_GROUP)", "started=lambda proc: (Path(tmp) / \"unused\")", "SIGKILL の後に TLC が走っている"),
     ("持ち主の居ないディレクトリを消さない", "        shutil.rmtree(path, ignore_errors=True)\n        if not path.exists():", "        pass\n        if not path.exists():", "回収"),
     ("持ち主の居るディレクトリも消す", "        if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):", "        if False:", "回収"),
     ("pid の無い古い名前も消す", "        if not found or path.is_symlink() or not path.is_dir():\n            continue\n        if int(",
@@ -1412,10 +1496,10 @@ def main() -> int:
         print(f"  {len(CASES)} 件 OK（突き合わせの陽性対照 3 件）")
 
         print("片付け（#1594）")
-        for i, name in enumerate(["回収", "信号: 片付けの途中", *SIGNAL_CASES]):
+        for i, name in enumerate(SPECIAL):
             problems = special_problems(name, scripts / TARGET, root / f"s{i}", fake, fakebin)
             check(f"試料: {name}", not problems, "・".join(problems))
-        print(f"  {2 + len(SIGNAL_CASES)} 件 OK")
+        print(f"  {len(SPECIAL)} 件 OK")
 
         print("変異テスト")
         rows = guard_rows(source)
@@ -1434,7 +1518,7 @@ def main() -> int:
             (mutated / "check-tlc.py").write_text(tlc_source.replace(before, after), encoding="utf-8")
             check(f"変異を殺す: {name} ← {killer}", killed(killer, mutated / TARGET, root / f"tw{index}", fake, fakebin))
         print(f"  変異 {len(MUTATIONS) + len(TLC_MUTATIONS)} 件 OK")
-    print(f"OK: 試料 {len(CASES) + 2 + len(SIGNAL_CASES)} 件・変異 {len(MUTATIONS) + len(TLC_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + len(SPECIAL)} 件・変異 {len(MUTATIONS) + len(TLC_MUTATIONS)} 件")
     return 0
 
 
