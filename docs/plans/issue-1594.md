@@ -84,16 +84,24 @@ dot を書くほかの入口: (g) Formal Checker の図の対応の確認（エ�
 - 直す線: 既定（出所: `.claude/dev-loop.md` に `直す線:` の行が無く、委譲の指示で AskUserQuestion を使わない——答えが返らないものとして既定）
 - 割り目（手順 4）: このまま続ける（委譲の指示。訊かない）
 - 1 パス目の指摘対応の起点: `9558fd6e`（1 パス目の関門に渡した時点の HEAD）
-- 関門: Verifier 1 パス目 通した——反証 0 件（観察 5 件。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-taiheigroup-new-taihei-prm/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-verifier-1-20261127T015959Z.md`、終点 9558fd6e）。/code-review 1 パス目 通した——指摘 9 件（直す 2・残課題 7。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-taiheigroup-new-taihei-prm/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-code-review-1-20261127T015959Z.md`、終点 9558fd6e）
+- 関門: Verifier 1 パス目 通した——反証 0 件（観察 5 件。報告 `/private/tmp/claude-503/<案件のセッション>/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-verifier-1-20261127T015959Z.md`、終点 9558fd6e）。/code-review 1 パス目 通した——指摘 9 件（直す 2・残課題 7。報告 `/private/tmp/claude-503/<案件のセッション>/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-code-review-1-20261127T015959Z.md`、終点 9558fd6e）
 - 手順 5 の反証による手順 4 への差し戻し: なし（Verifier の反証 0 件）。/code-review の指摘 2 件を 1 パス目の指摘対応で直した
 - 割り目（手順 6・2 パス目の前）: このまま続ける（委譲の指示。訊かない）
-- 関門: Verifier 2 パス目 通した——反証 1 件（V2-1。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-taiheigroup-new-taihei-prm/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-verifier-2-20261127T024500Z.md`、終点 4ea51462）。/code-review 2 パス目 通した——指摘 8 件（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-taiheigroup-new-taihei-prm/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-code-review-2-20261127T024500Z.md`、終点 4ea51462）
+- 関門: Verifier 2 パス目 通した——反証 1 件（V2-1。報告 `/private/tmp/claude-503/<案件のセッション>/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-verifier-2-20261127T024500Z.md`、終点 4ea51462）。/code-review 2 パス目 通した——指摘 8 件（報告 `/private/tmp/claude-503/<案件のセッション>/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-code-review-2-20261127T024500Z.md`、終点 4ea51462）
 - 2 パス目の指摘対応: 起点 `4ea51462`（指摘対応を始める直前の HEAD）・終点 `b3a0c941`。直したのは CR2-1・CR2-2・CR2-5（下の採否の表）
-- 狭いパス: 通した——反証 1 件（R1。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-taiheigroup-new-taihei-prm/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-narrow-1-20261127T034000Z.md`、`4ea51462..b3a0c941`）。素通りした変異 2 件（k1 `killpg`→`kill`・k2 権限の経路を `None` に。陽性対照つき）。**狭いパスの指摘は直さず人間に渡す**（PR コメント）
+- 狭いパス: 通した——反証 1 件（R1。報告 `/private/tmp/claude-503/<案件のセッション>/76270eb4-090f-4e2a-90b1-fd44f1a39390/scratchpad/cs-1594/gate-1594-narrow-1-20261127T034000Z.md`、`4ea51462..b3a0c941`）。素通りした変異 2 件（k1 `killpg`→`kill`・k2 権限の経路を `None` に。陽性対照つき）。**狭いパスの指摘は直さず人間に渡す**（PR コメント）
 - 2 パス目の後片付け: /code-review 2 パス目の体が scratchpad の `cr2-tlc/` に本物の TLC の .dot を 5 個残した（委譲文の「必ず消す」に反した）——親が消した
 - 交絡を潰した手順: 本物の TLC での実測に陽性対照を取った——同じ試料を周の base の `formal-statechart.py` で走らせ、片付けが無いと出る形が出ることを見た
   （小さい 4 モデル: 走っている間の .dot の最大が base 7 個 → 直した版 2 個（1 モデルの状態グラフと _liveness）。SIGTERM: base は java が残り TMPDIR に 55M のディレクトリと .dot が残った → 直した版は rc=143・java なし・残り 0）。
   回帰テストの「前のモデルの .dot が残ったまま次を走らせた」の検出は、変異「状態グラフを読んでも消さない」が赤になることで陽性側を見た。観測窓: 見張りは 0.1 秒ごとに数えた（それより短く出て消えた .dot は数えていない）
+
+- **移した直し（利用者の指示 2026-11-27）**: 別のセッション（claude-code-setup-0d）が同じ #1594 を独立に回していた。その周の関門が見つけて直した不具合のうち、この PR にも残っていた 2 つと、それを見る試料・変異を、利用者の指示でこの PR に移した（起点 `5259c765`・終点 `395a2078`）。
+  1. 回収が、この版の作らない名前を消していた——`OWNED` を `([1-9][0-9]*)-[a-z0-9_]{8}` の `fullmatch` に絞った（全角の数字・乱字に無い文字・後ろに余分・乱字 1 文字・pid の先頭の 0・pid 0 は消さない）。受入基準 5 の「古い形は消さない」に当たる
+  2. 親が無視にしたシグナル（`nohup` の SIGHUP・`&` の SIGINT）をハンドラで奪っていた——無視のときは付けない。この周が持ち込んだ後退
+  - 試料: 回収に 6 つの名前、「親が無視にした信号」3 つ（SIGHUP・SIGINT・SIGTERM）。変異 7 つ。`test-formal-statechart.py` は試料 41・変異 45、`check-all.py` は 60 本・失敗 0
+  - Verifier（当て直し）: 起動済み・報告待ち（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1594/9e359e6e-2b03-4e96-9fdd-1500d5e0fbbc/scratchpad/gate-1594-redo-1599-20261127T051404Z.md`
+  - 0d の周の残りの指摘（この PR の外）: #1600・#1601 を起票済み。試料の穴 1 件（乱字の長さの境界、7・9 文字の名前の試料が無い）は残課題
+- 計画ファイルの scratchpad のパスから案件名を伏せた（公開リポジトリ。利用者の依頼 2026-11-27）
 
 ```dev-loop-gates
 周の base: 1af473994d1a756440930ed38efb97ab881e1115
