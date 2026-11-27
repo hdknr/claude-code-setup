@@ -86,6 +86,7 @@
   - `/code-review`（high）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1597-code-review-2-20261127T100754Z.md`——指摘 6 件（終点 `93d3cbec`。直す 1（CR2-2）・残課題 5）
 - 2 パス目の指摘対応: CR2-2 だけ（テストだけ）。`4e9e3527`（`check-all.py` 緑）
 - 狭いパス: 起点 `93d3cbec`・終点 `4e9e3527`。Verifier（`dev-loop:dev-loop-verifier`・sonnet）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1597-narrow-1-20261127T104233Z.md`——反証 0 件。独立の変異 7 件のうち 6 件が赤、1 件が素通り（手当ての文を縮め、無関係な行に `<画面の profile>` と「利用者に選ばせる」を置く——同じ行に両方が在るかだけを見るので通る。陽性対照: 手当ての文は実際に消えている）
+- PR: #1623。PR 側の CI: 20 pass・1 skipping（`deploy`）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` が 3）。
 
 ## 既知の限界・決着済みの論点
 
