@@ -17,7 +17,7 @@
 4. **`check-findings-csv.py` が `モデルの保存` の行を実行の行と読まない**（`抜けた` の行は読む——陽性対照）。
 5. **`cleanup`**（#1601）: 一時ディレクトリ（試料ごとに `TMPDIR` を差し替える）の下のディレクトリは消して 0（陽性対照）。**一時ディレクトリの外・そのもの・途中の symlink で外を指す先・
    相対パス・symlink・ファイル・リポジトリを含むもの・リポジトリの中（サブディレクトリから呼んでも根で決める）・`HOME` を含むもの・`HOME` の中**は消さずに名指しして 1、
-   消さないパスが混ざってもほかは消す、消し切れない（書けない親）は名指しして 1、無いパスは 0、パスを渡さなければ 2。**試料ごとに、走らせた後にどのパスが残ったかも突き合わせる**。
+   消さないパスが混ざってもほかは消す、消し切れない（書けない親）・在るのに辿れない（親が読めない）は名指しして 1、無いパスは 0、パスを渡さなければ 2。**試料ごとに、走らせた後にどのパスが残ったかも突き合わせる**。
 6. **想定外の例外は 2 で、トレースバックの 1 にしない。`-OO`（docstring が無い）で引数なしに呼んでも 2**（#286 と同じ形）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる（全部の試料がこの形で走る）。
 
@@ -237,6 +237,8 @@ CLEANUP_CASES: list[tuple[str, dict, int, tuple[str, ...]]] = [
      ("消さなかった: {K}/out/m", "消した: {K}/tmp/m", "[在る] out/m")),
     ("消せない", {"files": ["tmp/m/locked/x"], "locked": "tmp/m/locked", "args": ["{K}/tmp/m"], "watch": ["tmp/m/locked/x"]}, 1,
      ("消せなかった: {K}/tmp/m（", "[在る] tmp/m/locked/x")),
+    ("辿れない", {"files": ["tmp/p/m/states/x.st"], "locked": "tmp/p", "locked_mode": 0o000, "args": ["{K}/tmp/p/m"], "watch": ["tmp/p/m"]}, 1,
+     ("消せなかった: {K}/tmp/p/m（", "[在る] tmp/p/m")),
     ("パスが無い", {"args": [], "watch": []}, 2, ("the following arguments are required",)),
 ]
 
@@ -304,20 +306,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("README が無いのを 2 にしない", '    except FileNotFoundError:\n        raise Unjudged(f"{readme}: 無い")',
      "    except FileNotFoundError:\n        return {}, []", "README が無い"),
     # cleanup（#1601）
-    ("一時ディレクトリの外を消す", "            if temp not in real.parents:\n", "            if False:\n", "外のディレクトリ"),
-    ("一時ディレクトリそのものを消す", "            if temp not in real.parents:\n", "            if temp not in real.parents and real != temp:\n", "一時ディレクトリそのもの"),
-    ("実体のパスで判定しない", "            real = Path(os.path.realpath(path))\n", "            real = Path(os.path.abspath(path))\n", "途中の symlink で外を指す"),
+    ("一時ディレクトリの外を消す", "    if temp not in real.parents:\n", "    if False:\n", "外のディレクトリ"),
+    ("一時ディレクトリそのものを消す", "    if temp not in real.parents:\n", "    if temp not in real.parents and real != temp:\n", "一時ディレクトリそのもの"),
+    ("実体のパスで判定しない", "    real = Path(os.path.realpath(path))\n", "    real = Path(os.path.abspath(path))\n", "途中の symlink で外を指す"),
     ("相対パスを通す", "        if not path.is_absolute():\n", "        if False:\n", "相対パス"),
-    ("symlink を辿る", "        elif path.is_symlink():\n", "        elif False:\n", "symlink"),
-    ("ファイルを通す", "        elif not path.is_dir():\n", "        elif False:\n", "ファイル"),
+    ("symlink を辿る", "    if path.is_symlink():\n", "    if False:\n", "symlink"),
+    ("ファイルを通す", "    if not path.is_dir():\n", "    if False:\n", "ファイル"),
     ("リポジトリを含むものを消す", "_contains(real, repo_real) or _contains(repo_real, real)", "_contains(repo_real, real)", "リポジトリを含む"),
     ("リポジトリの中を消す", "_contains(real, repo_real) or _contains(repo_real, real)", "_contains(real, repo_real)", "リポジトリの中"),
     ("リポジトリの根を見ない", "        root = top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else str(repo)\n",
      "        root = str(repo)\n", "サブディレクトリから呼んでも根を守る"),
-    ("HOME を含むものを消す", "elif _contains(real, home_real) or _contains(home_real, real):", "elif _contains(home_real, real):", "HOME を含む"),
-    ("HOME の中を消す", "elif _contains(real, home_real) or _contains(home_real, real):", "elif _contains(real, home_real):", "HOME の中"),
+    ("HOME を含むものを消す", "if _contains(real, home_real) or _contains(home_real, real):", "if _contains(home_real, real):", "HOME を含む"),
+    ("HOME の中を消す", "if _contains(real, home_real) or _contains(home_real, real):", "if _contains(real, home_real):", "HOME の中"),
     ("消し切れないのを 0 にする", "        except OSError as e:\n            code = 1\n", "        except OSError as e:\n            code = 0\n", "消せない"),
     ("無いパスで止まる", '            lines.append(f"無かった: {raw}")\n', '            code = 1\n            lines.append(f"無かった: {raw}")\n', "無いパス"),
+    ("辿れないのを無かったにする", "                absent = _absent(path)\n            except OSError as e:", "                absent = not os.path.lexists(path)\n            except OSError as e:", "辿れない"),
     ("消さないパスで打ち切る", '            lines.append(f"消さなかった: {raw}（{reason}）")\n            continue\n',
      '            lines.append(f"消さなかった: {raw}（{reason}）")\n            break\n', "混ざる"),
 ]
@@ -436,7 +439,7 @@ def build_cleanup(root: Path, spec: dict, env: dict[str, str]) -> tuple[list[str
     cwd = root / spec.get("cwd", "repo")
     cwd.mkdir(parents=True, exist_ok=True)
     if "locked" in spec:
-        (root / spec["locked"]).chmod(0o500)
+        (root / spec["locked"]).chmod(spec.get("locked_mode", 0o500))
     case_env = dict(env, TMPDIR=str(root / "tmp"))
     if "home" in spec:
         case_env["HOME"] = str(root / spec["home"])
@@ -474,7 +477,7 @@ def run_all(scripts: Path, work: Path, env: dict[str, str], only: str | None = N
             proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), *args],
                                   capture_output=True, text=True, cwd=cwd, env=case_env)
         finally:
-            if "locked" in spec and (root / spec["locked"]).exists():
+            if "locked" in spec and os.path.lexists(root / spec["locked"]):
                 (root / spec["locked"]).chmod(0o700)  # 試料の後片付けのため
         output = proc.stdout + proc.stderr
         for form in (os.path.realpath(root), str(root)):

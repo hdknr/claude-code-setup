@@ -48,7 +48,7 @@ usage:
 - **リポジトリ（`--repo` の git の根。git でなければ `--repo` そのもの。既定は cwd）と `HOME` について、それを含むもの・その中のものは消さない**——正本と利用者の家を消さない
   （`TMPDIR` が `HOME` かその祖先を指す環境でも、家の中は消さない）。
 - 当たらないパスは**消さずに名指しする**（`消さなかった: <パス>（理由）`）。消し始めて消し切れなかったものも名指しする（`消せなかった: `）。ほかの渡したパスは消す。
-- **無いパスは `無かった: ` と言って 0 に数える**——消すものが無い（前の回が消した・判定役が作らなかった）。
+- **無いパスは `無かった: ` と言って 0 に数える**——消すものが無い（前の回が消した・判定役が作らなかった）。**在るのに辿れない（親が読めない）パスは無いと言わず、`消せなかった: ` で名指しする。**
 
 終了コード:
 
@@ -78,7 +78,7 @@ usage:
 | `cleanup` は一時ディレクトリの実体の下のディレクトリだけを消し、一時ディレクトリそのもの・外（途中の symlink で外を指す先を含む）は消さずに 1（#1601） | 報告のパスの誤りで、一時ディレクトリごと・正本や家のディレクトリを消す |
 | `cleanup` は相対パス・symlink・ディレクトリでないものを消さずに 1 | cwd の取り違えでリポジトリの中を消す・リンクの先を消す |
 | `cleanup` はリポジトリと `HOME` について、含むもの・その中のものを消さずに 1 | 一時ディレクトリの下に置いた正本（試料・clone）や家・家の中を消す（`TMPDIR` が家かその祖先を指す環境） |
-| `cleanup` は消し切れなかったパスを名指しして 1、無いパスは 0 に数える | 消せなかったものを「消した」と言う・前の回が消したもので毎回止まる |
+| `cleanup` は消し切れなかったパスを名指しして 1、無いパス（`lstat` が「無い」と言うもの）だけを 0 に数え、在るのに辿れないパスは名指しして 1 | 消せなかったものを「消した」と言う・前の回が消したもので毎回止まる・辿れないディレクトリを「無かった」と言って残す |
 
 **守らないもの**:
 
@@ -456,6 +456,31 @@ def _contains(outer: Path, inner: Path) -> bool:
     return outer == inner or outer in inner.parents
 
 
+def _absent(path: Path) -> bool:
+    """パスが無い（`lstat` が `FileNotFoundError`）。辿れない（権限など）は無いと言わず `OSError` を投げる（#1601 の 2 パス目）。"""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return True
+    return False
+
+
+def refusal(path: Path, temp: Path, repo_real: Path, home_real: Path) -> str | None:
+    """在る絶対パスを消してはならない理由（消してよければ None）。"""
+    if path.is_symlink():
+        return "symlink である"
+    if not path.is_dir():
+        return "ディレクトリでない"
+    real = Path(os.path.realpath(path))
+    if temp not in real.parents:
+        return f"一時ディレクトリ（{temp}）の下でない" if real != temp else "一時ディレクトリそのものである"
+    if _contains(real, repo_real) or _contains(repo_real, real):
+        return f"リポジトリ（{repo_real}）を含むか、その中にある"
+    if _contains(real, home_real) or _contains(home_real, real):
+        return f"HOME（{home_real}）を含むか、その中にある"
+    return None
+
+
 def cleanup(directories: list[str], repo: Path) -> tuple[int, list[str]]:
     """Formal Checker が報告したモデルのディレクトリを、消してよい形のものだけ消す（#1601）。"""
     temp = Path(os.path.realpath(tempfile.gettempdir()))
@@ -472,21 +497,17 @@ def cleanup(directories: list[str], repo: Path) -> tuple[int, list[str]]:
         reason = None
         if not path.is_absolute():
             reason = "絶対パスでない"
-        elif not os.path.lexists(path):
-            lines.append(f"無かった: {raw}")
-            continue
-        elif path.is_symlink():
-            reason = "symlink である"
-        elif not path.is_dir():
-            reason = "ディレクトリでない"
         else:
-            real = Path(os.path.realpath(path))
-            if temp not in real.parents:
-                reason = f"一時ディレクトリ（{temp}）の下でない" if real != temp else "一時ディレクトリそのものである"
-            elif _contains(real, repo_real) or _contains(repo_real, real):
-                reason = f"リポジトリ（{repo_real}）を含むか、その中にある"
-            elif _contains(real, home_real) or _contains(home_real, real):
-                reason = f"HOME（{home_real}）を含むか、その中にある"
+            try:
+                absent = _absent(path)
+            except OSError as e:  # 在るかを決められない（親を辿れない）——無かったと言わない
+                code = 1
+                lines.append(f"消せなかった: {raw}（辿れない: {e.strerror or e}）")
+                continue
+            if absent:
+                lines.append(f"無かった: {raw}")
+                continue
+            reason = refusal(path, temp, repo_real, home_real)
         if reason:
             code = 1
             lines.append(f"消さなかった: {raw}（{reason}）")
@@ -497,7 +518,11 @@ def cleanup(directories: list[str], repo: Path) -> tuple[int, list[str]]:
             code = 1
             lines.append(f"消せなかった: {raw}（{e.strerror or e}）")
             continue
-        if os.path.lexists(path):
+        try:
+            gone = _absent(path)
+        except OSError:
+            gone = False
+        if not gone:
             code = 1
             lines.append(f"消せなかった: {raw}（消した後も残っている）")
         else:
