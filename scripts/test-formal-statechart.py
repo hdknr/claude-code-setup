@@ -888,7 +888,7 @@ if "-dump" in args:
 if module == "Slow":
     sys.stdout.flush(); import time; time.sleep(5)
 if module == "Sleepy":
-    open(os.environ["FAKE_TLC_PID"], "w").write(str(os.getpid())); import time; time.sleep(60)
+    open(os.environ["FAKE_TLC_PID"], "w").write(str(os.getpid())); import time; time.sleep(float(os.environ.get("FAKE_TLC_SLEEP", "60")))
 sys.stdout.write(case["stdout"])
 sys.exit(case["rc"])
 """
@@ -1207,16 +1207,22 @@ def dead_pid() -> int:
 
 
 def reclaim_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
-    """SIGKILL の残り（持ち主の居ない pid つき）だけを消し、持ち主の居るもの・pid の無い古い名前を消さない（#1594）。"""
-    dead, live, legacy = f"spec-loop-statechart-{dead_pid()}-abc", f"spec-loop-statechart-{os.getpid()}-abc", "spec-loop-statechart-zzflmv9r"
-    code, out, _ = run_one(script, work, fake, fakebin, CASES["本体: 反例なし"], seed=(dead, live, legacy))
+    """SIGKILL の残り（持ち主の居ない pid つき）だけを消し、持ち主の居るもの・この版が作る形でない名前を消さない（#1594）。"""
+    pid = dead_pid()
+    dead, live, legacy = f"spec-loop-statechart-{pid}-abcd1234", f"spec-loop-statechart-{os.getpid()}-abcd1234", "spec-loop-statechart-zzflmv9r"
+    full = str(pid)[0] + str(pid)[1:].translate({ord(c): ord(c) + 0xFEE0 for c in "0123456789"})  # 2 桁目から全角
+    # 持ち主の pid は居ないが、この版が作る形（`<pid>-<乱字 8 文字>`）でない名前——どれも消さない
+    odd = {"全角の数字": f"spec-loop-statechart-{full}-abcd1234", "乱字に無い文字": f"spec-loop-statechart-{pid}-abcd12\u00e94",
+           "後ろに余分": f"spec-loop-statechart-{pid}-abcd1234-keep", "乱字が 1 文字": f"spec-loop-statechart-{pid}-a",
+           "pid の先頭の 0": f"spec-loop-statechart-00{pid}-abcd1234", "pid が 0": "spec-loop-statechart-0-abcd1234"}
+    code, out, _ = run_one(script, work, fake, fakebin, CASES["本体: 反例なし"], seed=(dead, live, legacy, *odd.values()))
     problems = [] if code == 0 else [f"終了コード {code}: {out[-300:]!r}"]
     tmp = work / "tmp"
     if (tmp / dead).exists() or "持ち主の居ない一時ディレクトリを消した" not in out:
         problems.append(f"持ち主の居ないディレクトリを消していない: {out[-300:]!r}")
-    for name in (live, legacy):
+    for name in (live, legacy, *odd.values()):
         if not (tmp / name / "x.dump.dot").is_file():
-            problems.append(f"消してはならないディレクトリを消した: {name}")
+            problems.append(f"消してはならないディレクトリを消した: {name!r}")
     return problems
 
 
@@ -1375,8 +1381,43 @@ def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: in
     return problems
 
 
+def ignored_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int) -> list[str]:
+    """親が無視にした信号（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま——TLC が走っている間に受けても止まらず、描き切る（#1594）。"""
+    case = (f"TLC の呼び方: {CALL}\n", target("Sleepy"), ["--out", OUT], 0, "", [])
+    repo, argv, env = setup(work, fake, fakebin, case)
+    env = {**env, "FAKE_TLC_SLEEP": "3"}
+    proc = subprocess.Popen([sys.executable, "-I", str(script), str(repo), str(repo / T), *argv],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=work, env=env,
+                            preexec_fn=lambda: signal.signal(sig, signal.SIG_IGN))
+    pid_file = work / "tlc.pid"
+    for _ in range(300):
+        if pid_file.is_file() and pid_file.read_text().strip():
+            break
+        time.sleep(0.05)
+    else:
+        proc.kill()
+        proc.communicate()
+        return ["偽の TLC が起動しなかった（試料を組めない）"]
+    proc.send_signal(sig)
+    try:
+        out, _ = proc.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out, _ = proc.communicate()
+        return [f"60 秒で終わらない: {out[-300:]!r}"]
+    problems = []
+    if proc.returncode != 0:
+        problems.append(f"終了コード {proc.returncode}（期待 0——親が無視にした信号で止まった）: {out[-300:]!r}")
+    if (repo / T / "statechart.md").read_text(encoding="utf-8") == OLD:
+        problems.append(f"--out を書かなかった: {out[-300:]!r}")
+    if leftovers(work):
+        problems.append(f"TMPDIR に残した: {leftovers(work)}")
+    return problems
+
+
 SIGNAL_CASES = {f"信号: {sig.name}": sig for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
-SPECIAL = ["回収", "信号: 片付けの途中", "想定外の例外", "SIGKILL の後に TLC が走っている", *SIGNAL_CASES]
+IGNORED_CASES = {f"親が無視にした信号: {sig.name}": sig for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)}
+SPECIAL = ["回収", "信号: 片付けの途中", "想定外の例外", "SIGKILL の後に TLC が走っている", *SIGNAL_CASES, *IGNORED_CASES]
 
 
 def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
@@ -1388,6 +1429,8 @@ def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: P
         return unexpected_problems(script, work, fake, fakebin)
     if name == "SIGKILL の後に TLC が走っている":
         return killed_problems(script, work, fake, fakebin)
+    if name in IGNORED_CASES:
+        return ignored_problems(script, work, fake, fakebin, IGNORED_CASES[name])
     return signal_problems(script, work, fake, fakebin, SIGNAL_CASES[name])
 
 
@@ -1428,7 +1471,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("行き止まりを先へ進める状態とまとめても通す", "(lab in broken or n in moving)", "(lab in broken)", "行き止まりと先へ進める状態をまとめる"),
     ("状態グラフを読んでも消さない", "            dot_path.unlink()  # 読んだら消す", "            pass  # 読んだら消す", "陽性対照に印と経路（受入基準 2）"),
     ("活性の挙動グラフを消さない", '            (Path(tmp) / f"{name}.dump_liveness.dot").unlink(missing_ok=True)', "            pass", "PROPERTY のある本体と陽性対照（#1594）"),
-    ("信号を例外にしない", "    for sig in SIGNALS:\n        signal.signal(sig, on_signal)", "    for sig in SIGNALS:\n        pass", "信号: SIGTERM"),
+    ("信号を例外にしない", "            signal.signal(sig, on_signal)", "            pass", "信号: SIGTERM"),
     ("SIGHUP を片付けない", "SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)", "SIGNALS = (signal.SIGTERM, signal.SIGINT)", "信号: SIGHUP"),
     ("片付けの途中の信号の後に消し直さない", "        for path in Path(tempfile.gettempdir()).glob(f\"{PREFIX}{os.getpid()}-*\"):\n            shutil.rmtree(path, ignore_errors=True)\n", "", "信号: 片付けの途中"),
     ("想定外の例外で一時ディレクトリを残す", '    with tempfile.TemporaryDirectory(prefix=f"{PREFIX}{os.getpid()}-") as tmp:',
@@ -1439,6 +1482,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("持ち主の居るディレクトリも消す", "        if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):", "        if False:", "回収"),
     ("pid の無い古い名前も消す", "        if not found or path.is_symlink() or not path.is_dir():\n            continue\n        if int(",
      "        if path.is_symlink() or not path.is_dir():\n            continue\n        if not found:\n            shutil.rmtree(path)\n            continue\n        if int(", "回収"),
+    ("全角の数字を pid と読む", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9]\\d*)-[a-z0-9_]{8}")', "回収"),
+    ("pid の先頭の 0 と pid 0 を読む", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([0-9]+)-[a-z0-9_]{8}")', "回収"),
+    ("乱字に無い文字の名前を消す", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9][0-9]*)-[^-]{8}")', "回収"),
+    ("乱字の長さを見ない", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9][0-9]*)-[a-z0-9_]+")', "回収"),
+    ("名前の後ろの余分を見ない", "        found = OWNED.fullmatch(path.name)", "        found = OWNED.match(path.name)", "回収"),
+    ("親が無視にした信号を奪う", "        if signal.getsignal(sig) is not signal.SIG_IGN:", "        if True:", "親が無視にした信号: SIGHUP"),
+    ("無視の確認を SIGHUP だけに効かせる", "        if signal.getsignal(sig) is not signal.SIG_IGN:",
+     "        if sig != signal.SIGHUP or signal.getsignal(sig) is not signal.SIG_IGN:", "親が無視にした信号: SIGINT"),
     ("使えない文字を通す", "    if bad:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}", "    if False:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}",
      "使えない文字"),
 ]

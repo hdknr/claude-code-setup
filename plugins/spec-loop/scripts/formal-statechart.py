@@ -28,8 +28,8 @@ Formal Checker が組んだモデルは `spec/formal/<対象>/` に残るが、�
 - **状態グラフのファイルは使い終わったら消す**（#1594。数 GB になり、一時ディレクトリに溜まってディスクを使い切った）——モデルごとに、TLC が走り終えたら
   `<名前>.dump_liveness.dot`（cfg に `PROPERTY`／`PROPERTIES` があると TLC が書く活性の挙動グラフ。図は読まない）を、状態グラフは読み込んだ直後に消す。
   溜まる量は 1 モデル分（TLC が走っている間に書くもの）までになる。**cfg から `PROPERTY` は外さない**——外すと時相の性質の反例（1）と陽性対照の違反（4）の判定が、検査と別のモデルで決まる。
-- **止められても片付ける**: SIGTERM・SIGINT・SIGHUP を受けたら、TLC のプロセスグループを止め（`check-tlc.py` の `run_model`）、一時ディレクトリを消して、128+信号の番号で終わる（`--out` には触らない）。
-  一時ディレクトリの名前は `spec-loop-statechart-<pid>-…` で、**起動時に、その pid のプロセスが居ないもの**（SIGKILL で片付けが走らなかった残り）を消す。
+- **止められても片付ける**: SIGTERM・SIGINT・SIGHUP を受けたら（親が無視にしたシグナルは無視のまま——`nohup` で起こした実行を端末を閉じただけで止めない）、TLC のプロセスグループを止め（`check-tlc.py` の `run_model`）、一時ディレクトリを消して、128+信号の番号で終わる（`--out` には触らない）。
+  一時ディレクトリの名前は `spec-loop-statechart-<pid>-<乱字 8 文字>` で、**起動時に、名前がこの形どおりで、その pid のプロセスが居ないもの**（SIGKILL で片付けが走らなかった残り）を消す。
 - **状態**: 状態グラフの節点。対応で同じ言葉になる状態は 1 つにまとめる（ビュー）。初めの状態（`style = filled`）に `[*]` からの矢印を付ける。
 - **遷移**: 状態グラフの辺を、行為の名前を対応の言葉に替えて描く（まとめた結果が同じ遷移は 1 本）。対応の `skip` の行為は、まとめた後で同じ状態に戻る辺に限って描かない。
 - **印**: TLC の出力の反例（`is violated`・`Deadlock reached`。初めの状態が破る `is violated by the initial state:` の形も）の最後の状態を、規則を破る状態として `⚠` を付けて描く（`classDef violated` も付ける）。
@@ -86,7 +86,8 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 一時ディレクトリで走らせ、描けたときだけ `--out` の 1 ファイルを書く | 正本に `states/` や状態グラフが残る・描けなかったのに古い図が新しく見える |
 | モデルごとに、状態グラフを読んだら消し、`_liveness.dot` は TLC が走り終えたら消す（#1594） | 全部のモデルの状態グラフが 1 回の実行の中で溜まり、ディスクを使い切る |
 | SIGTERM・SIGINT・SIGHUP で、TLC のプロセスグループを止め、一時ディレクトリを消して 128+信号で終わる | 止められた実行が一時ディレクトリと java を残す |
-| 起動時に、持ち主の pid が居ない `spec-loop-statechart-<pid>-…` を消す（居る・分からない・pid の無い名前は消さない）。そこで TLC（記録したプロセスグループ）がまだ走っていれば消さずにそう言う | SIGKILL の残りが溜まり続ける・並行する実行の作業中のディレクトリを消す・走り続ける TLC の書くファイルを見えなくして「消した」と言う |
+| 親が無視にしたシグナル（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま | `nohup` で起こした実行が、端末を閉じただけで止まる |
+| 起動時に、持ち主の pid が居ない `spec-loop-statechart-<pid>-<乱字 8 文字>` を消す（居る・分からない pid と、この形でない名前——pid の無い名前・全角の数字・pid の先頭の 0・乱字に無い文字・乱字が 8 文字でない・後ろに余分——は消さない）。そこで TLC（記録したプロセスグループ）がまだ走っていれば消さずにそう言う | SIGKILL の残りが溜まり続ける・並行する実行の作業中のディレクトリを消す・走り続ける TLC の書くファイルを見えなくして「消した」と言う |
 | 呼び方の行が無ければ 4（`PATH` の `tlc` で探さない） | `check-tlc.py` と違う探し方で走らせる |
 
 **守らないもの**:
@@ -100,7 +101,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | **最初の反例のほかの反例の経路** | 印は全部の反例の最後の状態に付けるが、経路は最初の 1 つだけ描く |
 | **TLC でないモデル**（Alloy・総当たり・Z3） | Issue の範囲の外。渡されたら TLC のモデルが無いとして 4 |
 | **TLC が走っている間の 1 モデル分の状態グラフの大きさ** | TLC が走りながら書く。大きさの上限で止める仕組みは無い（#1594 の任意の案。入れていない） |
-| **pid の無い古い名前の一時ディレクトリ**（`spec-loop-statechart-<ランダム>`。#1594 より前の版の残り） | 持ち主が分からないので消さない。手で消す |
+| **この版が作る形でない名前の一時ディレクトリ**（`spec-loop-statechart-<ランダム>` の #1594 より前の版の残りや、手で作った名前） | 持ち主が分からないので消さない。手で消す |
 | **SIGKILL の直後のディスク** | 片付けは走らず、別のセッションの TLC は走り続ける。次の起動は TLC が走っている間は消さずにプロセスグループの番号を言い、止まった後の起動が消す（持ち主の pid が再使用されて居るように見える間は消さない）。TLC を止めるのは人 |
 | **呼び方の安全** | 正本の `CLAUDE.md` の文字列をそのまま `sh` で走らせる（`check-tlc.py` と同じ） |
 
@@ -154,7 +155,7 @@ BEHAVIOR = ("Error: The behavior up to this point is:", "Error: The following be
 INITIAL = "by the initial state:"
 # 一時ディレクトリの名前の頭（後ろに持ち主の pid）と、片付ける信号（#1594）
 PREFIX = "spec-loop-statechart-"
-OWNED = re.compile(re.escape(PREFIX) + r"(\d+)-")
+OWNED = re.compile(re.escape(PREFIX) + r"([1-9][0-9]*)-[a-z0-9_]{8}")  # この版が作る形だけを丸ごと（pid は先頭が 0 でない 10 進、乱字は `tempfile` の英小文字・数字・`_` のちょうど 8 文字）。`\d`・前方だけの一致は作っていない名前まで消す
 # 一時ディレクトリに書く、いま走らせている TLC のプロセスグループの番号（SIGKILL の後も TLC は別のセッションで走り続ける）
 TLC_GROUP = ".tlc-group"
 SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
@@ -201,7 +202,7 @@ def reclaim(base: Path) -> list[Path]:
     except OSError:
         return gone, kept
     for path in entries:
-        found = OWNED.match(path.name)
+        found = OWNED.fullmatch(path.name)
         if not found or path.is_symlink() or not path.is_dir():
             continue
         if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):
@@ -590,7 +591,8 @@ def main(argv: list[str]) -> int:
         print(f"--out の親のディレクトリが無い: {args.out.parent}", file=sys.stderr)
         return EXIT_USAGE
     for sig in SIGNALS:
-        signal.signal(sig, on_signal)
+        if signal.getsignal(sig) is not signal.SIG_IGN:  # 親が無視にしたもの（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま
+            signal.signal(sig, on_signal)
     try:
         return run(args)
     except Interrupted as stop:
