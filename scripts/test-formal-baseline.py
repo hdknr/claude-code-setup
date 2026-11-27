@@ -17,7 +17,7 @@
 4. **`check-findings-csv.py` が `モデルの保存` の行を実行の行と読まない**（`抜けた` の行は読む——陽性対照）。
 5. **`cleanup`**（#1601）: 一時ディレクトリ（試料ごとに `TMPDIR` を差し替える）の下のディレクトリは消して 0（陽性対照）。**一時ディレクトリの外・そのもの・途中の symlink で外を指す先・
    相対パス・symlink・ファイル・リポジトリを含むもの・リポジトリの中（サブディレクトリから呼んでも根で決める）・`HOME` を含むもの・`HOME` の中**は消さずに名指しして 1、
-   消さないパスが混ざってもほかは消す、消し切れない（書けない親）・在るのに辿れない（親が読めない）は名指しして 1、無いパスは 0、パスを渡さなければ 2。**試料ごとに、走らせた後にどのパスが残ったかも突き合わせる**。
+   消さないパスが混ざってもほかは消す、消し切れない（書けない親）・在るのに辿れない（親が読めない）は名指しして 1、無いパス（途中が通常のファイルのパスを含む）は 0、パスを渡さなければ 2。**試料ごとに、走らせた後にどのパスが残ったかも突き合わせる**。
 6. **想定外の例外は 2 で、トレースバックの 1 にしない。`-OO`（docstring が無い）で引数なしに呼んでも 2**（#286 と同じ形）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる（全部の試料がこの形で走る）。
 
@@ -239,6 +239,7 @@ CLEANUP_CASES: list[tuple[str, dict, int, tuple[str, ...]]] = [
      ("消せなかった: {K}/tmp/m（", "[在る] tmp/m/locked/x")),
     ("辿れない", {"files": ["tmp/p/m/states/x.st"], "locked": "tmp/p", "locked_mode": 0o000, "args": ["{K}/tmp/p/m"], "watch": ["tmp/p/m"]}, 1,
      ("消せなかった: {K}/tmp/p/m（", "[在る] tmp/p/m")),
+    ("ファイルの下のパス", {"files": ["tmp/file"], "args": ["{K}/tmp/file/m"], "watch": ["tmp/file"]}, 0, ("無かった: {K}/tmp/file/m", "[在る] tmp/file")),
     ("パスが無い", {"args": [], "watch": []}, 2, ("the following arguments are required",)),
 ]
 
@@ -321,6 +322,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("消し切れないのを 0 にする", "        except OSError as e:\n            code = 1\n", "        except OSError as e:\n            code = 0\n", "消せない"),
     ("無いパスで止まる", '            lines.append(f"無かった: {raw}")\n', '            code = 1\n            lines.append(f"無かった: {raw}")\n', "無いパス"),
     ("辿れないのを無かったにする", "                absent = _absent(path)\n            except OSError as e:", "                absent = not os.path.lexists(path)\n            except OSError as e:", "辿れない"),
+    ("ファイルの下のパスを辿れないにする", "    except (FileNotFoundError, NotADirectoryError):\n        return True", "    except FileNotFoundError:\n        return True", "ファイルの下のパス"),
     ("消さないパスで打ち切る", '            lines.append(f"消さなかった: {raw}（{reason}）")\n            continue\n',
      '            lines.append(f"消さなかった: {raw}（{reason}）")\n            break\n', "混ざる"),
 ]
