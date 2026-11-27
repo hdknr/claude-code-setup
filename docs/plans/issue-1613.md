@@ -109,14 +109,32 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 残っている関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。どちらも未着手
 - 割り目（手順 6・2 パス目の前）: 利用者に訊いた（2026-11-27）——**ここで割る**を選んだ。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 1613`（Verifier 2 パス目と `/code-review` 2 パス目から。差分の base は周の base のまま、2 パス目の対象は 1 パス目の指摘対応 `7b419007..c550ffb6`）
 - 再開（2026-11-27、2 つ目の割り目の `/clear` の後）: `find-cycle.py` は 1（当たった）。ブランチ・HEAD（`cd36a3ec`）が周の在り処と一致。base `0c824eac` は HEAD の祖先
-- Verifier 2 パス目: 起動（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-verifier-2-20261127T091442Z.md`）
-- `/code-review` 2 パス目: 起動（報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-code-review-2-20261127T091442Z.md`）
+- Verifier 2 パス目: 済み——**反証 2 件**（`dev-loop:dev-loop-verifier`・sonnet。終点 `c550ffb6`（HEAD は計画ファイルだけのコミット `cd36a3ec`）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-verifier-2-20261127T091442Z.md`）
+- `/code-review` 2 パス目: 済み——**指摘 10 件**（high。important 6・nit 4。終点 `c550ffb6`。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-code-review-2-20261127T091442Z.md`）
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `cd32a0565d9784852bed8551c1c0de3cb0315a63`
+- 2 パス目の指摘対応: 採否の表（2 パス目）の「直す」12 行を直した。終点（指摘対応の最後のコミット）: `0ac8fe9ddbeffe078e31edf50149944c60604179`。`check-all.py` 緑（16/106 を回して失敗 0、90 は CACHED）。A4 の grep は 0 件
+- 狭いパス（Verifier）: 済み——**反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。素通りした変異: 読解の変異 (a) 旧名の残り——対象が 0 件で届かない。注意 1: V2-R1 の根拠は monorepo.md の解釈に依る——人間が決める。`cd32a056..0ac8fe9d` の 2 点。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-narrow-1-20261127T092505Z.md`）
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
 周の base: 0c824eace80033e869325f8fd757fb58bc766376
 関門: Verifier 1 7b419007 反証=2
 関門: /code-review 1 7b419007 指摘=9
+関門: Verifier 2 c550ffb6 反証=2
+関門: /code-review 2 c550ffb6 指摘=10
+関門: 狭いパス cd32a0565d9784852bed8551c1c0de3cb0315a63 0ac8fe9ddbeffe078e31edf50149944c60604179 反証=0
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+受入基準: A7 満たす
+受入基準: A8 満たす
+受入基準: A9 満たす
+受入基準: A10 満たす
+受入基準: A11 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
 
 ## 既知の限界・決着済みの論点
@@ -142,6 +160,23 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 | CR6 | 口 1 の `ROW_TABLES` を読む一覧が screen-spec の `build-mock.py` を落とし、画面の表として読む箇所を絞る必要を書いていない | 示せる——`versions.md` 129 行・`build-mock.py` 411 行・`screen-gate.py` 116 行 | A3 | 直す |
 | CR8 | コントラスト比の基準を規則の表で決めるとするが、規則の表に値の列が無い | 示せる——`tree.md` の規則の表の列 | A1（決めずに残したものの名指し） | 直す（`tree.md` の「決めていないこと」に足した） |
 | CR9 | 「記事」の出所がプラグインの中に無い | 示せる——`spec-loop.md` 28 行・`tree.md` 73・106 行 | A7 | 直す（`README.md` に「出所」） |
+
+採否の表（2 パス目。直す線: 既定。どれも実物を開いて確かめた）:
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V2-R1 | CR1 の直しが `monorepo.md` の「build/ を分けない」をサイトの置き場所の根拠にしたが、その節は直下の `build/` を spec-loop に任せる決まり | 示せる——`monorepo.md` 50〜52 行 | A3・A7 | 直す（根拠を screen-spec の `build/mock/` の前例にし、monorepo.md が締め出すのは実装の出力だと書いた） |
+| V2-R2 | 記事の出所を「#1613 の本文」とするが、URL は #1609 の本文にしかない | 示せる——`gh issue view 1613` の本文に http が 0 件・#1609 の 3 行目 | A3 | 直す（親 #1609） |
+| CR2-1 | 表のパス `requirements/design-system/data/` を `ROW_TABLES` に登録すると spec-loop が `design-system` の名前を持つ | 示せる——`merge-versions.py` 118〜124 行の `SCREENS_DATA` がパスを持つ・`spec-loop.md` の口 3 と依存の向き | A1・A6（Issue の「spec-loop に名前を持ち込まない」） | 直す（`requirements/design/` に改名し、理由を `tree.md` に書いた） |
+| CR2-2 | CR5 の直しが表の行には誤った版を指す（v2 の表は変えた行だけ） | 示せる——`versions.md` の行の単位で重ねる表 | A3 | 直す（散文はファイルの版、表は行の版） |
+| CR2-3 | 「検査を通らない表から作らない」と作業中の版の `--check`・サイトが両立しない | 示せる——`outputs.md` 19〜22・78 行と `review.md` の終了コード 3 | A1 | 直す（1 だけで止め、3 では作る。印のあるセルの出し方は「決めていないこと」） |
+| CR2-4 | 「指すトークンが変わった」が別名をたどるかを決めていない | 示せる——`tree.md` の `層` と `値` の別名の例 | A1 | 直す（別名を解いた値で比べる） |
+| CR2-5 | `ROW_TABLES`・`ROW_KINDS` を画面として読む箇所の数え落とし（4 か所）、連鎖が画面に固定 | 示せる——`merge-versions.py` 645 行・`diff-versions.py` 166〜180 行・`build-proposal.py` 391 行・`check-signoff.py` 300 行 | A3 | 直す |
+| CR2-6 | 既存 UI の棚卸し（Issue の利用のイメージの 2）の行き先が無い | 示せる——#1613 本文 18・41 行 | A1・A6 | 直す（`spec-loop.md` の「決めていないこと」と README の段 2） |
+| CR2-7 | 口 4 の注記を口 2 と一緒に決めるのに段が分かれている。リンクの文が「モック:」に固定 | 示せる——README の段 1・5、`qa-to-pptx.py` 308 行 | A3・A1 | 直す（口 4 を段 1 に寄せ、ラベルの口を足した） |
+| CR2-8 | 束でもタグの接頭辞を `ui-v<n>`・`infra-v<n>` に分けると読める | 示せる——screen-spec の `profiles.md` 120〜126 行（同じタグで読む） | A10・A11 | 直す（束では 1 つの系列） |
+| CR2-9 | トークンの鍵の決まり（英小文字）と例 `color.blue.600` が食い違う | 示せる——`tree.md` 57・63 行 | A1 | 直す（数字と `-` を許す） |
+| CR2-10 | Issue の表の一覧（文言の表）から変えた理由が無い | 示せる——#1613 本文 37 行と `tree.md` の 5 つの表 | A1・A6 | 直す（理由を表の節に書いた） |
 
 - 効いた行（Verifier）: V1 は「主張する事実の真偽」の行、V2 も同じ（台帳の ID は手順 8 で引く）
 
