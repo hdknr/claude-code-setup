@@ -92,11 +92,18 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 - 1 パス目の指摘対応の起点: `c757bbc4a0b17bb2951839be2c18e44b41edf282`
 - Verifier 1 パス目: 起動（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1600-verifier-1-20261127T082846Z.md`
 - /code-review 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1600-code-review-1-20261127T082846Z.md`
+- Verifier 1 パス目: 反証 0 件（観察 2 件。採否の表）。終点 `c757bbc4`
+- /code-review 1 パス目: 指摘 5 件（important 2・nit 3）。終点 `c757bbc4`
+- 1 パス目の指摘対応: `31f421f9`（直す 3 行）。`check-all.py`（run-serial 越し）: 緑（59 本を回し失敗 0）。指摘対応の差分は 0 行でない（`git diff c757bbc4 -- ':(top)' ':(top,exclude)docs/plans/issue-1600.md'` が空でない）ので 2 パス目を回す
+- 割り目（手順 6）: 割らない（cruise の周）
+- Verifier 2 パス目・/code-review 2 パス目: 報告のファイル `…/scratchpad/gate-1600-verifier-2-<時刻>.md`・`…/scratchpad/gate-1600-code-review-2-<時刻>.md`（下に書き足す）
 - 1 回目の `check-all.py` は `( … ) &` で起こしたので SIGINT が無視の状態で走り、既存の `test-formal-statechart.py` の「信号: SIGINT」が落ちた（交絡。前景で回すと緑、`run_in_background` では SIGINT は既定のまま——実測）。2 回目は `run_in_background` で回して緑
 - 交絡を潰した手順: 陽性対照は base の木をリポジトリの外に取り出して走らせた（新しい実装と同じ試料・同じ手順で比べる）
 
 ```dev-loop-gates
 周の base: 0c824eace80033e869325f8fd757fb58bc766376
+関門: Verifier 1 c757bbc4a0b17bb2951839be2c18e44b41edf282 反証=0
+関門: /code-review 1 c757bbc4a0b17bb2951839be2c18e44b41edf282 指摘=5
 ```
 
 ## 既知の限界・決着済みの論点
