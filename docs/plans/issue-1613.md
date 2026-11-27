@@ -114,6 +114,8 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `cd32a0565d9784852bed8551c1c0de3cb0315a63`
 - 2 パス目の指摘対応: 採否の表（2 パス目）の「直す」12 行を直した。終点（指摘対応の最後のコミット）: `0ac8fe9ddbeffe078e31edf50149944c60604179`。`check-all.py` 緑（16/106 を回して失敗 0、90 は CACHED）。A4 の grep は 0 件
 - 狭いパス（Verifier）: 済み——**反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。素通りした変異: 読解の変異 (a) 旧名の残り——対象が 0 件で届かない。注意 1: V2-R1 の根拠は monorepo.md の解釈に依る——人間が決める。`cd32a056..0ac8fe9d` の 2 点。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-narrow-1-20261127T092505Z.md`）
+- PR: #1615。PR 側の CI 20 pass・1 skipping（deploy）。外部レビュー: 該当なし（`.claude/dev-loop.md` に宣言が無い）。関門の記録を PR コメントに書いた
+- マージ: しない——2026-11-27 に AskUserQuestion で訊いたが答えが無く、承認待ちで止めた
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
@@ -182,4 +184,4 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 
 ## 手順 8
 
-- この周の起票: 0 件（手順 8 で利用者に起票を訊いてから書き直す）
+- この周の起票: 0 件（2026-11-27 に AskUserQuestion で訊いたが 300 秒で答えが無く、起票しない側に倒した。README の子の Issue 6 件は後で利用者が起票する）
