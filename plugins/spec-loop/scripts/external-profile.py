@@ -21,7 +21,8 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 
 使う側が読み込む関数: `find_clone`・`resolve_tag`・`read_profile`・`read_layer`・`check_links`・`diff_layers`・`in_range`・`parse_version`。
 判定できなかったときは `Undetermined`、求めた層が profile に無いときは `LayerMissing` を投げる。
-そのうち、タグの時点の層のファイルの中身が決まりに合わないときは `Undetermined` の下位の `LayerContent` を投げる（#1589）——
+そのうち、タグの時点の profile の中身が決まりに合わないとき（`profile.csv` の中身・層の `ファイル` の当たり先・形式の版が読めない形か下限より下）は
+`Undetermined` の下位の `ProfileContent` を（#1597）、そのうち層のファイルの中身が決まりに合わないときは `ProfileContent` の下位の `LayerContent` を投げる（#1589）——
 同じタグを名指し直しても止まるので、使う側が clone・タグの不在と案内を言い分けるのに使う（捕まえ方は `Undetermined` のままでよい）。
 
 ## 終了コード
@@ -69,7 +70,10 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **層の表の見出しに同じ列の名前が 2 つあれば 4**——後ろの列が前の列（`リンク` を含む）を黙って上書きしない。
 - **ID が空なら 4。**
 - **ID が同じ層の中で重なれば 4**（層のファイルが複数でも、層の中で重なれば 4）。
-- **層のファイルの中身が決まりに合わない（UTF-8・CSV として読めない・先頭 3 列・見出しの同じ名前・列の数・空の ID・重なった ID）なら、`Undetermined` の下位の `LayerContent` を投げる**——clone・タグ・`profile.csv`・形式の版・`ファイル` の当たり先で判定できないのは `Undetermined` のまま（終了コードはどちらも 4。#1589）。
+- **タグの時点の profile の中身が決まりに合わない——`profile.csv` の中身（UTF-8・CSV として読めない・見出し・列の数・空の層・同じ層が 2 行）・層の `ファイル` の当たり先（profile の外・どのファイルにも当たらない）・形式の版（読めない形・下限より下）——なら、`Undetermined` の下位の `ProfileContent` を投げる**（#1597）。
+  clone・タグが無い・`profile.csv` がその時点に無い・profile の名前の形で判定できないのは `Undetermined` のまま（終了コードはどれも 4）。
+- **形式の版が上限と同じか上なら、素の `Undetermined`**——使う側を上げれば読めるので `ProfileContent` にしない（下限より下は `ProfileContent`。#1597）。
+- **層のファイルの中身が決まりに合わない（UTF-8・CSV として読めない・先頭 3 列・見出しの同じ名前・列の数・空の ID・重なった ID）なら、`ProfileContent` の下位の `LayerContent` を投げる**（#1589）。
 - **列の数が見出しと合わない行があれば 4。**
 - **`ファイル` がどのファイルにも当たらなければ 4。**
 - **`ファイル` が profile のディレクトリの外を指すなら 4**（そこに表が在っても読まない）。
@@ -154,7 +158,11 @@ class Undetermined(Exception):
     """判定できなかった（4）。"""
 
 
-class LayerContent(Undetermined):
+class ProfileContent(Undetermined):
+    """タグの時点の profile の中身（`profile.csv`・層の `ファイル` の当たり先・形式の版が読めない形か下限より下）が決まりに合わない（4。#1597）——同じタグを名指し直しても止まる。"""
+
+
+class LayerContent(ProfileContent):
     """タグの時点の層のファイルの中身が決まりに合わない（4。#1589）——同じタグを名指し直しても止まる。"""
 
 
@@ -320,18 +328,18 @@ def read_profile(clone: Path, commit: str, name: str) -> dict[str, ProfileRow]:
     files = list_files(clone, commit)
     if where not in files:
         raise Undetermined(f"{where} がその時点に無い（profile の名前かタグが違う）")
-    rows = _csv_rows(read_blob(clone, commit, where), where)
+    rows = _csv_rows(read_blob(clone, commit, where), where, ProfileContent)
     if not rows or tuple(rows[0]) != PROFILE_COLUMNS:
-        raise Undetermined(f"{where} の見出しが `{','.join(PROFILE_COLUMNS)}` でない: {rows[0] if rows else '（空）'}")
+        raise ProfileContent(f"{where} の見出しが `{','.join(PROFILE_COLUMNS)}` でない: {rows[0] if rows else '（空）'}")
     out: dict[str, ProfileRow] = {}
     for i, r in enumerate(rows[1:], start=2):
         if len(r) != len(PROFILE_COLUMNS):
-            raise Undetermined(f"{where} の {i} 行目の列の数が {len(r)}（見出しは {len(PROFILE_COLUMNS)}）")
+            raise ProfileContent(f"{where} の {i} 行目の列の数が {len(r)}（見出しは {len(PROFILE_COLUMNS)}）")
         layer, version, file, base = (c.strip() for c in r)
         if not layer:
-            raise Undetermined(f"{where} の {i} 行目の層が空")
+            raise ProfileContent(f"{where} の {i} 行目の層が空")
         if layer in out:
-            raise Undetermined(f"{where} に層 {layer} が 2 行ある")
+            raise ProfileContent(f"{where} に層 {layer} が 2 行ある")
         out[layer] = ProfileRow(layer, version, file, base)
     return out
 
@@ -357,6 +365,13 @@ def in_range(version: str, low: str, high: str) -> bool:
     return lo <= v < hi
 
 
+def below(version: str, low: str) -> bool:
+    """下限より下か。足りない桁は 0 として比べる。"""
+    v, lo = parse_version(version), parse_version(low)
+    n = max(len(v), len(lo))
+    return _pad(v, n) < _pad(lo, n)
+
+
 # ---- 層の表
 
 
@@ -369,17 +384,26 @@ def _safe_rel(path: str) -> str | None:
 
 
 def read_layer(clone: Path, commit: str, name: str, layer: str, low: str, high: str) -> Layer:
-    """層の表を読む。形式の版が範囲の外なら Undetermined、層のファイルの中身が決まりに合わなければ LayerContent（Undetermined の下位）、層が無ければ LayerMissing。"""
+    """層の表を読む。層が無ければ LayerMissing。
+
+    profile の中身が決まりに合わなければ ProfileContent（Undetermined の下位。#1597）——`profile.csv`・`ファイル` の当たり先・形式の版が読めない形か下限より下。
+    そのうち層のファイルの中身なら LayerContent（ProfileContent の下位。#1589）。形式の版が上限と同じか上なら素の Undetermined（使う側を上げれば読める）。
+    """
     profile = read_profile(clone, commit, name)
     if layer not in profile:
         raise LayerMissing(f"層 {layer} が {_profile_dir(name)}/{PROFILE_FILE} に無い（在る層: {', '.join(profile) or 'なし'}）")
     row = profile[layer]
+    try:
+        parse_version(row.version)
+    except Undetermined as e:  # profile の欠陥——使う側を上げても読めない（#1597）
+        raise ProfileContent(str(e)) from None
     if not in_range(row.version, low, high):
-        raise Undetermined(f"層 {layer} の形式の版 {row.version} が、受け付ける範囲（{low} 以上 {high} 未満）の外")
+        stop = ProfileContent if below(row.version, low) else Undetermined  # 下限より下は profile の欠陥、上限と同じか上は使う側を上げれば読める（#1597）
+        raise stop(f"層 {layer} の形式の版 {row.version} が、受け付ける範囲（{low} 以上 {high} 未満）の外")
     base_dir = _profile_dir(name)
     rel = _safe_rel(row.file) if row.file and not row.file.startswith("/") else None
     if not rel:
-        raise Undetermined(f"層 {layer} の `ファイル` がリポジトリの profile の中を指していない: {row.file!r}")
+        raise ProfileContent(f"層 {layer} の `ファイル` がリポジトリの profile の中を指していない: {row.file!r}")
     pattern = f"{base_dir}/{rel}"
     files = list_files(clone, commit)
     if any(ch in rel for ch in "*?["):
@@ -388,7 +412,7 @@ def read_layer(clone: Path, commit: str, name: str, layer: str, low: str, high: 
     else:
         matched = [pattern] if pattern in files else []
     if not matched:
-        raise Undetermined(f"層 {layer} の `ファイル` {row.file} に当たるファイルがその時点に無い")
+        raise ProfileContent(f"層 {layer} の `ファイル` {row.file} に当たるファイルがその時点に無い")
     result = Layer(layer, row.version, row.base, matched)
     for path in matched:
         rows = _csv_rows(read_blob(clone, commit, path), path, LayerContent)

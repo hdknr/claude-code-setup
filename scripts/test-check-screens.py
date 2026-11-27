@@ -514,6 +514,13 @@ EXT_CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     # #1589: 層のファイルの中身の欠陥（ID が 2 行）は LayerRule になるが、検査の出力（4 と「を読めない: …」）は今までと同じ
     ("ext-layer-dup-id", ext(), prof({"v1": guide(rows=L_ROWS + L_STD.replace("standard", "wide"))}), [], 4,
      f"止めた: {EXT_LABEL} を読めない: 層 画面 に ID L-STD が 2 行ある", "違反"),
+    # #1597: profile の中身の欠陥（profile.csv の中身・ファイルの当たり先・形式の版の下限より下）も LayerRule になるが、検査の出力（4 と「を読めない: …」）は今までと同じ
+    ("ext-profile-dup-layer", ext(), prof({"v1": guide(profile=GUIDE_PROFILE + "画面,1,screens/*.csv,web-spa\n")}), [], 4,
+     f"止めた: {EXT_LABEL} を読めない: {GUIDE_DIR}/profile.csv に層 画面 が 2 行ある", "違反"),
+    ("ext-file-missing", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace("screens/*.csv", "missing/*.csv"))}), [], 4,
+     f"止めた: {EXT_LABEL} を読めない: 層 画面 の `ファイル` missing/*.csv に当たるファイルがその時点に無い", "違反"),
+    ("ext-version-low", ext(), prof({"v1": guide(profile=GUIDE_PROFILE.replace("画面,1,", "画面,0.9,"))}), [], 4,
+     f"止めた: {EXT_LABEL} を読めない: 層 画面 の形式の版 0.9 が、受け付ける範囲（1 以上 2 未満）の外", "違反"),
     ("ext-tag-missing", ext(SETTINGS=WEB_SPA + "外部の profile,org/guide org v9\n"), prof(), [], 4, "タグ v9 が無い", "違反"),
     ("ext-layer-missing", ext(), prof({"v1": {f"{GUIDE_DIR}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n",
                                               f"{GUIDE_DIR}/infra.csv": "ID,要約,リンク\n"}}), [], 4, "層 画面 が", "違反"),

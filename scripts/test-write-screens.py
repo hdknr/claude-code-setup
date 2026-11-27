@@ -25,7 +25,9 @@ spec-loop のスクリプトを読み込むので、一時ディレクトリに 
    **名指した画面の層の行が決まりに合わない（#1571・#1581 の形）とき、`hint` と引数なしの `init` は、同じ外部の profile を明示しても止まることと、
    外部の profile を直してタグを付け設定のタグをそれにするか `--profile web-spa --external なし` を渡す案内を出し、案内どおりに渡せば書けて検査が 0（#1582）**。
    **タグを変える道には、`shared/` の変更なので承認を取り直すことと、`shared/` を触らずに直したタグを `--external` で明示する道も添え、
-   直したタグを明示すれば書けて検査が 0（陽性対照。#1590）**。**層のファイルの中身の欠陥（ID が 2 行。spec-loop の `LayerContent`）も同じに言い分ける（#1589）**。読めないときは今までどおり「読めない」。
+   直したタグを明示すれば書けて検査が 0（陽性対照。#1590）**。**層のファイルの中身の欠陥（ID が 2 行。spec-loop の `LayerContent`）も同じに言い分ける（#1589）**。
+   **profile の中身の欠陥（`profile.csv` の中身・画面の層の `ファイル` の当たり先・形式の版が読めない形か下限より下。spec-loop の `ProfileContent`）も同じに言い分け、`profile.csv` の欠陥では案内の `--profile` を `<画面の profile>` にする（#1597）**。
+   読めないとき（clone・タグ・`profile.csv` がその時点に無い・形式の版が上限と同じか上）は今までどおり「読めない」。
    この言い分けは `check-screens.py` の `LayerRule` に乗るので、`check-screens.py` を壊す変異（`CHECK_MUTATIONS`）も当てる。
 9. **platform-spec を読み込まない（#1460 の A5）**——試料の置き方に platform-spec は無く、プラグインの隣に**読み込まれたら印を書く偽の platform-spec**を置いて、
    どの試料の後にも印が無いことを見る。写した設定の置き場所・見出し・項目名が platform-spec の `check-infra-profile.py` の定数と一致すること（崩すと落ちることも）。
@@ -144,6 +146,30 @@ LAYER_ADVICE = ("外部の profile を直してタグを付け、shared/platform
                 "--profile web-spa --external なし を渡す")
 LAYER_HINT = f"——init の引数を省いても、同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）"
 LAYER_INIT = f"——同じ外部の profile を --external で明示して渡しても止まる（{LAYER_ADVICE}）——書いていない"
+# profile.csv の中身の欠陥（#1597）——重ねる先が読めないので、案内の --profile は <画面の profile>
+PROFILE_ADVICE = LAYER_ADVICE.replace("--profile web-spa", "--profile <画面の profile>")
+PROFILE_HINT = f"——init の引数を省いても、同じ外部の profile を --external で明示して渡しても止まる（{PROFILE_ADVICE}）"
+PROFILE_INIT = f"——同じ外部の profile を --external で明示して渡しても止まる（{PROFILE_ADVICE}）——書いていない"
+GUIDE_LABEL = "外部の profile org/guide の org（タグ v1） を読めない: "
+BASE_LABEL = "基盤の profile org/guide の org（タグ v1） を読めない: "
+
+
+def dead_end(name: str, profile: str, reason: str, broken_profile_csv: bool = False) -> tuple:
+    """#1597: 基盤の profile が名指す外部の profile の中身の欠陥で、hint と引数なしの init が「明示して渡す」だけの行き止まりを案内しない試料。
+
+    Issue の再現の手順（hint → 引数なしの init は 4 → 同じ外部の profile を明示した init も 4）と、案内どおり --external なし を渡せば書けて検査が 0（陽性対照）。
+    `broken_profile_csv` は profile.csv の中身の欠陥（base_initial の read_profile で止まる）——言い方と案内の --profile が変わる。
+    """
+    head = (f"基盤の profile: profile.csv が決まりに合わない（{BASE_LABEL}{reason}" if broken_profile_csv
+            else f"基盤の profile: 画面の層が決まりに合わない（{GUIDE_LABEL}{reason}")
+    return (name, {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
+        (["hint"], 0, head),
+        (["hint"], 0, PROFILE_HINT if broken_profile_csv else LAYER_HINT),
+        (["init"], 4, PROFILE_INIT if broken_profile_csv else LAYER_INIT),
+        (["init", "--profile", "web-spa", "--external", "org/guide org v1"], 4, reason),
+        (["init", "--profile", "web-spa", "--external", "なし"], 0, "profile: web-spa）"),
+    ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES,
+     {SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"), SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n")}, guide(profile))
 
 # (名前, 正本のファイル, 手順 [(write-screens の引数, 終了コード, 出力に在る文字列)], 検査（check-screens の終了コード, 出力に在る文字列）か None,
 #  書いてよいファイル（全手順の後に変わったファイルの全部。None なら見ない）, 中身 {パス: 在る文字列}[, 基盤の profile のリポジトリ（guide()）])
@@ -311,6 +337,20 @@ CASES: list[tuple] = [
         (["init", "--profile", "web-spa", "--external", "なし"], 0, "profile: web-spa）"),
     ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), INIT_FILES,
      {SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"), SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n")}, GUIDE_DUP),
+    # #1597: profile.csv の中身・画面の層の ファイル の当たり先・形式の版が読めない形か下限より下でも、同じに言い分ける
+    dead_end("base-profile-dup-layer", GUIDE_PROFILE + "画面,1,screens/*.csv,web-spa\n", f"{GUIDE_DIR}/profile.csv に層 画面 が 2 行ある", True),
+    dead_end("base-profile-bad-head", GUIDE_PROFILE.replace("層,形式の版,", "層,版,"), f"{GUIDE_DIR}/profile.csv の見出しが", True),
+    dead_end("base-screen-file-missing", GUIDE_PROFILE.replace("screens/*.csv", "missing/*.csv"), "層 画面 の `ファイル` missing/*.csv に当たるファイルがその時点に無い"),
+    dead_end("base-screen-file-outside", GUIDE_PROFILE.replace("screens/*.csv", "../x.csv"), "層 画面 の `ファイル` がリポジトリの profile の中を指していない"),
+    dead_end("base-screen-version-low", GUIDE_PROFILE.replace("画面,1,", "画面,0.9,"), "層 画面 の形式の版 0.9 が、受け付ける範囲（1 以上 2 未満）の外"),
+    dead_end("base-screen-version-unreadable", GUIDE_PROFILE.replace("画面,1,", "画面,1a,"), "形式の版が数字を `.` で区切った形でない: '1a'"),
+    dead_end("base-screen-version-wide-digit", GUIDE_PROFILE.replace("画面,1,", "画面,１,"), "形式の版が数字を `.` で区切った形でない: '１'"),
+    # #1597: profile.csv がその時点に無い（profile の名前が違う）のは今までどおり「読めない——明示して渡す」
+    ("base-profile-missing", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("profile,org", "profile,other")}, [
+        (["hint"], 0, "基盤の profile: 読めない（"),
+        (["hint"], 0, "——init の引数を省くと止まる（--profile と --external を明示して渡す）"),
+        (["init"], 4, "spec-profile/other/profile.csv がその時点に無い"),
+    ], None, [], {}, guide()),
     ("base-layer-status-vocab-disjoint", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 画面の層が決まりに合わない（外部の profile org/guide の org（タグ v1） の行 S-1: 列 ステータス の語彙（完了）が決まった値"),
         (["hint"], 0, LAYER_HINT),
@@ -344,6 +384,7 @@ CASES: list[tuple] = [
      {"guide": {"v1": {"spec-profile/my org/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1,infra.csv,\n", "spec-profile/my org/infra.csv": GUIDE_INFRA}}, "env": True}),
     ("base-screen-layer-version-out-of-range", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [
         (["hint"], 0, "基盤の profile: 読めない（"),
+        (["hint"], 0, "——init の引数を省くと止まる（--profile と --external を明示して渡す）"),
         (["init"], 4, "形式の版 2"),
     ], None, [], {}, guide(GUIDE_PROFILE.replace("画面,1,", "画面,2,"))),
     ("base-alone", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init", "<alone>"], 0, "外部の profile: org/guide org v1")], None, INIT_FILES,
@@ -846,6 +887,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "base-layer-status-vocab-disjoint"),
     ("引数なしの init の止めた理由に案内を入れない", "        super().__init__(f\"{reason}——同じ外部の profile",
      "        super().__init__(reason)\n        (f\"{reason}——同じ外部の profile", "base-layer-status-vocab-disjoint"),
+    # #1597: profile.csv の中身の欠陥の言い分け
+    ("profile.csv の中身の欠陥を読めないと同じに案内する", '    except getattr(ext, "ProfileContent", ()) as e:  # profile.csv', '    except ZeroDivisionError as e:  # profile.csv',
+     "base-profile-dup-layer"),
+    ("profile.csv の欠陥を画面の層の欠陥と言う", ', "profile.csv が決まりに合わない") from None', ") from None", "base-profile-bad-head"),
+    ("hint の言い方を固定する", 'print(f"基盤の profile: {e.what}（', 'print(f"基盤の profile: 画面の層が決まりに合わない（', "base-profile-dup-layer"),
+    ("profile.csv の欠陥の案内に読めていない重ねる先を書く", 'PROFILE_UNKNOWN = "<画面の profile>"', 'PROFILE_UNKNOWN = "web-spa"', "base-profile-dup-layer"),
     ("platform-spec を読み込む", "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n",
      "def platform_settings(docs: Docs) -> tuple[str, str, str] | None:\n    _load(\"trap\", PLUGIN_ROOT.parent / \"platform-spec\" / \"scripts\" / \"check-infra-profile.py\")\n",
      "base-names-screen"),
@@ -856,7 +903,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 CHECK_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("層の行の決まりを LayerRule にしない", "        except Stop as e:  # 行の決まり（#1582）——読めないのと分けて名指す\n            raise LayerRule(str(e)) from None",
      "        except Stop as e:  # 行の決まり（#1582）——読めないのと分けて名指す\n            raise", "base-layer-default-outside-vocab"),
-    ("層のファイルの中身の欠陥を LayerRule にしない", "        except getattr(ext, \"LayerContent\", ()) as e:", "        except ZeroDivisionError as e:", "base-layer-dup-id"),
+    ("層のファイルの中身の欠陥を LayerRule にしない", "        except getattr(ext, \"ProfileContent\", getattr(ext, \"LayerContent\", ())) as e:", "        except ZeroDivisionError as e:", "base-layer-dup-id"),
+    ("profile の中身の欠陥を LayerRule にしない（#1597）", "        except getattr(ext, \"ProfileContent\", getattr(ext, \"LayerContent\", ())) as e:",
+     "        except getattr(ext, \"LayerContent\", ()) as e:", "base-screen-version-low"),
     ("読めないのも LayerRule にする", "        except (ext.Undetermined, ext.LayerMissing) as e:\n            raise Stop(",
      "        except (ext.Undetermined, ext.LayerMissing) as e:\n            raise LayerRule(", "base-screen-layer-version-out-of-range"),
 ]
