@@ -4,6 +4,9 @@ r"""Alloy（権限・ロールの検査器）が、正本リポジトリの `CLA
     python3 <spec-loop の根>/scripts/check-alloy.py <正本リポジトリの根>
 
 **読むだけ**——正本リポジトリにも設定にも書かない。モデルは一時ディレクトリに書いて走らせ、終わったら消す。
+**止められても片付ける**（#1600）——SIGTERM・SIGINT・SIGHUP を受けたら Alloy のプロセスグループを止め、一時ディレクトリを消して 128+信号の番号で終わる。
+一時ディレクトリの名前は `spec-loop-check-alloy-<pid>-<乱字 8 文字>` で、起動時に持ち主の居ない残り（SIGKILL で片付けが走らなかったもの）を回収する。
+信号と回収の決まり（親が無視にした信号・回収する名前の形・Alloy が走り続けているとき）は同梱の `check-tlc.py` の「一時ディレクトリと信号の部品」を正とする（読み込んで使う——写さない）。
 
 ## なぜ在るのか（#922）
 
@@ -54,6 +57,7 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 | 0 | 呼び方が通った |
 | 1 | Alloy が無い——呼び方の行が無い（`CLAUDE.md` が無いを含む）か、呼び方が通らない（時間切れを含む） |
 | 2 | 引数が違う |
+| 128+信号の番号 | SIGTERM（143）・SIGINT（130）・SIGHUP（129）で止められた——確かめていない。Alloy を止め、一時ディレクトリを消した（#1600） |
 | 4 | 判定できなかった——`CLAUDE.md` を読めない、同じ行が 2 行以上、呼び方が空、呼び方が 1 つのコマンドの形でない（シェルの組み立て・シェルの組み込みかシェルで始まる・語に割れない）か、語 `exec` が無いか `gui` が在る（どれも走らせていない） |
 
 ## 何を守り、何を守らないか
@@ -77,6 +81,12 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 - **走らせる環境の `JAVA_TOOL_OPTIONS` に `-Djava.awt.headless=true` を足す**——前から在る値は残す。
 - **時間切れで待ち続けない**——1 回の検査を `PROBE_TIMEOUT` 秒で止め（プロセスグループごと）、1。
 - **正本で走らせない**——モデルは一時ディレクトリに書いて、そこで走らせる（`exec` の出力の `<名前>/` も一時ディレクトリにできる）。
+- **SIGTERM・SIGINT・SIGHUP で止められても、一時ディレクトリを残さず 128+信号で終わる**（#1600。親が無視にした信号は無視のまま——`check-tlc.py` の部品）。
+- **待っている間の例外（信号）でも、Alloy のプロセスグループを止める**——別のセッションで起こした java を置き去りにしない。
+- **片付けの途中に届いた信号の後も、自分の pid の一時ディレクトリを消し直す。**
+- **起動時に、持ち主の居ない `spec-loop-check-alloy-<pid>-<乱字 8 文字>` を回収する**——SIGKILL の残りを溜め続けない。
+- **Alloy のプロセスグループを一時ディレクトリに記録する**——SIGKILL の後も走り続ける Alloy のディレクトリを、次の起動が消さずに言う。
+- **同じプロセスで `main` を呼んだ後、信号の扱いを元に戻す。**
 
 守らない:
 
@@ -95,6 +105,8 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 - **呼び方が、Formal Checker が書く大きいモデルを検査できるか**（メモリ・時間・スコープ）——小さいモデル 2 つを検査できることだけを見る。
 - **呼び方の安全**——正本の `CLAUDE.md` に書いた文字列をそのまま `sh` で走らせる（正本の `CLAUDE.md` は利用者が書くもので、Formal Checker も同じ文字列を走らせる）。
 - **子孫のプロセスが自分で別のプロセスグループに移ったとき**——時間切れで止めるのはプロセスグループまで。
+- **pid の無い古い名前の一時ディレクトリ**（`spec-loop-check-alloy-<乱字>`。#1600 より前の版の残り）——持ち主が分からないので回収しない。手で消す。
+- **SIGKILL の直後のディスク**——片付けは走らず、Alloy は別のセッションで走り続ける。次の起動は Alloy が走っている間は消さずにプロセスグループの番号を言う。Alloy を止めるのは人。
 - **autopilot の起動時の点検**——Alloy は必須の前提ではないので、`autopilot-check.py check` は Alloy を点検しない。autopilot の各起動は spec-review の手順 3 のとおり
   このスクリプトで確かめ、足りなければ止まる（spec-review が訊く場面なので）。
 """
@@ -106,12 +118,14 @@ import re
 import shlex
 import signal
 import subprocess
-import tempfile
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CALL_KEY = "Alloy の呼び方:"
 PROBE_TIMEOUT = 120
+# 一時ディレクトリの名前の頭（後ろに持ち主の pid。#1600）
+PREFIX = "spec-loop-check-alloy-"
 HEADLESS = "-Djava.awt.headless=true"
 # `sh` に渡すと語の並びと実際に起こす形が食い違う文字（区切り・パイプ・リダイレクト・置き換え・コメント・改行・ブレースとグロブの展開）
 SHELL_SPECIAL = set(";&|<>()$`#\n\\{}*?[]")
@@ -197,20 +211,29 @@ def probe_env():
     return env
 
 
-def run_model(call, workdir, name, timeout):
-    """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。"""
+def run_model(call, workdir, name, timeout, started=None):
+    """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。
+    `started` があれば、起こした直後にそのプロセス（別のセッションのリーダー。pid がプロセスグループの番号）を渡して呼ぶ。"""
     try:
         proc = subprocess.Popen(["/bin/sh", "-c", f"{call} {name}.als"], cwd=workdir, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
                                 start_new_session=True, env=probe_env())
+    except OSError as e:
+        return None, f"起動できない: {e}"
+    try:
+        if started is not None:
+            started(proc)
         out, _ = proc.communicate(timeout=timeout)
         return proc.returncode, out
     except subprocess.TimeoutExpired:
         TLC.with_group(proc, signal.SIGKILL)
         out, _ = proc.communicate()
         return None, (out or "") + f"\n（{timeout} 秒で時間切れ）"
-    except OSError as e:
-        return None, f"起動できない: {e}"
+    except BaseException:
+        # 待っている間の例外（信号を例外にした main・Ctrl-C）でも、別のセッションで起こした Alloy を置き去りにしない（#1600）
+        TLC.with_group(proc, signal.SIGKILL)
+        proc.wait()
+        raise
 
 
 def results(out):
@@ -227,16 +250,17 @@ def unmet(expect, out):
 def probe(call, timeout=None):
     """呼び方が Alloy として通るか。(通ったか, 説明)。"""
     timeout = PROBE_TIMEOUT if timeout is None else timeout
-    with tempfile.TemporaryDirectory(prefix="spec-loop-check-alloy-") as tmp:
+    with TLC.owned_dir(PREFIX) as tmp:  # 名前に持ち主の pid を入れる——SIGKILL の残りを次の起動が回収する（#1600）
+        group = TLC.record_group(tmp)  # SIGKILL の後も走り続ける Alloy を、回収が消さずに言えるように
         for name, body in (GOOD_MODEL, BROKEN_MODEL):
             (Path(tmp) / f"{name}.als").write_text(body, encoding="utf-8")
-        rc, out = run_model(call, tmp, GOOD_MODEL[0], timeout)
+        rc, out = run_model(call, tmp, GOOD_MODEL[0], timeout, started=group)
         if rc != 0:
             return False, f"通るモデルを検査できなかった（終了コード {rc}）: {TLC.tail(out)}"
         missed = unmet(GOOD_EXPECT, out)
         if missed:
             return False, f"通るモデルの結果が違う（{'・'.join(missed)}）: {TLC.tail(out)}"
-        rc, out = run_model(call, tmp, BROKEN_MODEL[0], timeout)
+        rc, out = run_model(call, tmp, BROKEN_MODEL[0], timeout, started=group)
         missed = unmet(BROKEN_EXPECT, out)
         if missed:
             return False, f"違反するモデルで反例を出さなかった（{'・'.join(missed)}。終了コード {rc}。Alloy として検査していない）: {TLC.tail(out)}"
@@ -268,7 +292,17 @@ def main(argv=None):
         args = p.parse_args(argv)
     except SystemExit as exc:
         return EXIT_USAGE if exc.code else EXIT_OK
-    code, lines = judge(args.root)
+    for line in TLC.reclaim_lines(*TLC.reclaim(PREFIX)):
+        print(line, file=sys.stderr)
+    saved = TLC.catch_signals()
+    try:
+        code, lines = judge(args.root)
+    except TLC.Interrupted as stop:
+        TLC.sweep(PREFIX)  # 片付けの途中に届いた信号で、削除が途切れていることがある（信号はもう無視している）
+        print(f"確かめていない: 信号 {signal.Signals(stop.signum).name} で止められた（Alloy を止め、一時ディレクトリを消した）", file=sys.stderr)
+        return 128 + stop.signum
+    finally:
+        TLC.restore_signals(saved)
     for line in lines:
         print(line)
     return code

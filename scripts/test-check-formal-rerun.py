@@ -35,14 +35,17 @@ import os
 import re
 import textwrap
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 TARGET = "check-formal-rerun.py"
+PREFIX = "spec-loop-formal-rerun-"
 
 FAKE_TLC = f"""#!{sys.executable}
 import os, sys, time
@@ -85,6 +88,12 @@ if "FAKE:DEADLOCK" in text:
     print("Error: Deadlock reached."); sys.exit(11)
 if "FAKE:SILENT" in text:
     sys.exit(0)
+if "FAKE:SLEEPY" in text:  # 自分の pid を書いてから眠り、通る（信号で止める試料。#1600）
+    open(os.environ["FAKE_TLC_PID"], "w").write(str(os.getpid()))
+    time.sleep(float(os.environ.get("FAKE_TLC_SLEEP", "60")))
+    clean()
+    print("Model checking completed. No error has been found.")
+    print("5 states generated, 4 distinct states found, 0 states left on queue."); sys.exit(0)
 # 時間切れの前の進み具合の行の区切りは JVM のロケールで変わる（#1339 で本物の TLC 2.19 から取った形）
 for form, sep in (("SLEEPDE", "."), ("SLEEPFR", "\u202f"), ("SLEEPNB", "\u00a0"), ("SLEEPCH", "'")):
     if "FAKE:" + form in text:
@@ -210,11 +219,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("正本で走らせる", "            return where\n", "            return str(directory)\n", "満たす"),
     ("1 回ごとに分けない（1 つの一時ディレクトリで続けて走らせる）", "            where = tempfile.mkdtemp(dir=tmp)\n", "            where = tmp\n",
      "前の回の states に次の回がぶつからない"),
-    ("本体の回でディレクトリを分けない", "        for name in bodies:\n            rc, out, weight = timed(call, fresh(), name, timeout)\n",
-     "        shared = fresh()\n        for name in bodies:\n            rc, out, weight = timed(call, shared, name, timeout)\n",
+    ("本体の回でディレクトリを分けない", "        for name in bodies:\n            rc, out, weight = timed(call, fresh(), name, timeout, group)\n",
+     "        shared = fresh()\n        for name in bodies:\n            rc, out, weight = timed(call, shared, name, timeout, group)\n",
      "前の本体の states に次の本体がぶつからない"),
-    ("陽性対照が最後に作ったディレクトリを使い回す", "timed(call, fresh(), name, timeout)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
-     "timed(call, max(map(str, Path(tmp).iterdir()), key=lambda d: Path(d).stat().st_mtime_ns), name, timeout)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
+    ("陽性対照が最後に作ったディレクトリを使い回す", "timed(call, fresh(), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
+     "timed(call, max((str(d) for d in Path(tmp).iterdir() if d.is_dir()), key=lambda d: Path(d).stat().st_mtime_ns), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
      "本体の states に陽性対照がぶつからない"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),
@@ -228,8 +237,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("数の始まりを縛らない", "(?<![^ \\t:(\\n])", "", "知らない区切りの数は読まない"),
     ("本体の反例の行に重さの注記を付けない", "で反例が出た{weight}: ", "で反例が出た: ", "本体の反例の行にも重さの注記"),
     ("経過時間に 秒 を付けない", "{seconds:.1f} 秒）", "{seconds:.1f}）", "時間切れは進み具合の行の状態数"),
-    ("状態数が読めないと判定できなかったにする", "    return rc, out, measure(out, time.monotonic() - started)\n",
-     "    return (rc if DISTINCT.search(out or \"\") else None), out, measure(out, time.monotonic() - started)\n",
+    ("状態数が読めないと判定できなかったにする", "    return rc, out, measure(out, time.monotonic() - begun)\n",
+     "    return (rc if DISTINCT.search(out or \"\") else None), out, measure(out, time.monotonic() - begun)\n",
      "状態数が読めなくても判定を変えない"),
     ("陽性対照に重さの注記を付けない", "反例が出た（空振りでない）{weight}\")", "反例が出た（空振りでない）\")", "陽性対照の状態数も出す"),
     ("--timeout を使わない", "        verdict, lines = rerun(call, directory, int(args.timeout))\n", "        verdict, lines = rerun(call, directory, TIMEOUT)\n", "時間切れ"),
@@ -314,10 +323,22 @@ def run_one(script: Path, work: Path, fake: Path, fakebin: Path, case: tuple) ->
         (repo / rel).mkdir(parents=True)
         for name, body in files.items():
             (repo / rel / name).write_text(body, encoding="utf-8")
-    env = {**os.environ, "PATH": f"{fakebin}{os.pathsep}/usr/bin{os.pathsep}/bin"}
     proc = subprocess.run([sys.executable, "-I", str(script), str(repo), *[str(repo / rel) for rel in targets], *extra],
-                          capture_output=True, text=True, cwd=work, env=env, timeout=120)
+                          capture_output=True, text=True, cwd=work, env=env_of(work, fakebin), timeout=120)
     return proc.returncode, proc.stdout + proc.stderr, repo
+
+
+def env_of(work: Path, fakebin: Path) -> dict[str, str]:
+    """試料ごとの空の `TMPDIR`（#1600。走らせた後の残りを見る・利用者の `$TMPDIR` を回収させない）。"""
+    (work / "tmp").mkdir(parents=True, exist_ok=True)
+    return {**os.environ, "PATH": f"{fakebin}{os.pathsep}/usr/bin{os.pathsep}/bin", "TMPDIR": str(work / "tmp"),
+            "FAKE_TLC_PID": str(work / "tlc.pid")}
+
+
+def leftovers(work: Path) -> list[str]:
+    """`TMPDIR` に残った一時ディレクトリ（#1600）。"""
+    tmp = work / "tmp"
+    return sorted(p.name for p in tmp.iterdir() if p.name.startswith(PREFIX)) if tmp.is_dir() else []
 
 
 # 出力に当てる正規表現（終了コードと語に加えて見る試料）——経過時間は回ごとに変わるので語では見られない
@@ -326,8 +347,318 @@ PATTERN = {"時間切れは進み具合の行の状態数": r"本体 Order\.tla 
 
 def as_expected(name: str, case: tuple, result: tuple[int, str, Path]) -> bool:
     code, out, repo = result
-    return (code == case[3] and case[4] in out and (name not in POST or POST[name](repo))
+    return (code == case[3] and case[4] in out and (name not in POST or POST[name](repo)) and not leftovers(repo.parent)
             and (name not in PATTERN or re.search(PATTERN[name], out) is not None))
+
+
+# --- 信号と回収（#1600）——本体と check-tlc.py の部品を、子のプロセスで当てる ---
+SLEEPY = (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPY")}, [], 0, "")
+
+
+def setup(work: Path, fake: Path, fakebin: Path, case: tuple, seed: dict[str, bytes | None] | None = None) -> tuple[list[str], dict[str, str]]:
+    """正本を組み、(argv, env)。`seed` は `TMPDIR` に先に置くディレクトリ（中身は `.tool-group` の記録。None なら置かない）。"""
+    claude, targets, extra, _, _ = case
+    if work.exists():
+        shutil.rmtree(work)
+    repo = work / "repo"
+    repo.mkdir(parents=True)
+    assert_in_tmp(repo)
+    (repo / "CLAUDE.md").write_text(claude.replace(CALL, str(fake)), encoding="utf-8")
+    for rel, files in targets.items():
+        (repo / rel).mkdir(parents=True)
+        for name, body in files.items():
+            (repo / rel / name).write_text(body, encoding="utf-8")
+    env = env_of(work, fakebin)
+    for name, record in (seed or {}).items():
+        (work / "tmp" / name).mkdir()
+        (work / "tmp" / name / "keep").write_text("x", encoding="utf-8")
+        if record is not None:
+            (work / "tmp" / name / ".tool-group").write_bytes(record)
+    return [str(repo), *[str(repo / rel) for rel in targets], *extra], env
+
+
+def wait_pid(work: Path) -> int | None:
+    pid_file = work / "tlc.pid"
+    for _ in range(300):
+        if pid_file.is_file() and pid_file.read_text().strip():
+            return int(pid_file.read_text())
+        time.sleep(0.05)
+    return None
+
+
+def gone(pid: int) -> bool:
+    for _ in range(100):  # 親の居なくなった子は init が拾うまで少しかかる
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.05)
+    os.kill(pid, signal.SIGKILL)  # 偽の TLC を置き去りにしない
+    return False
+
+
+def dead_pid() -> int:
+    proc = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True, check=True)
+    pid = int(proc.stdout)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return pid
+    raise AssertionError(f"終わったはずのプロセス {pid} が居る（pid の再使用）——試料を組めない")
+
+
+def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int) -> list[str]:
+    """TLC が走っている間に信号を受けたら、TLC を止め、一時ディレクトリを消し、128+信号で終わる。"""
+    argv, env = setup(work, fake, fakebin, SLEEPY)
+    proc = subprocess.Popen([sys.executable, "-I", str(script), *argv], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            cwd=work, env=env, preexec_fn=lambda: signal.signal(sig, signal.SIG_DFL))  # 走らせる側が無視にしていても、試料は既定から始める
+    pid = wait_pid(work)
+    if pid is None:
+        proc.kill()
+        proc.communicate()
+        return ["偽の TLC が起動しなかった（試料を組めない）"]
+    proc.send_signal(sig)
+    try:
+        out, _ = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out, _ = proc.communicate()
+        gone(pid)
+        return [f"信号の後 30 秒で終わらない: {out[-300:]!r}"]
+    problems = []
+    if proc.returncode != 128 + sig:
+        problems.append(f"終了コード {proc.returncode}（期待 {128 + sig}）: {out[-300:]!r}")
+    if "信号" not in out:
+        problems.append(f"信号で止められたと言わない: {out[-300:]!r}")
+    if not gone(pid):
+        problems.append(f"TLC（偽の TLC。pid {pid}）が残った")
+    if leftovers(work):
+        problems.append(f"TMPDIR に残した: {leftovers(work)}")
+    return problems
+
+
+def ignored_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int) -> list[str]:
+    """親が無視にした信号は無視のまま——TLC が走っている間に受けても止まらず、判定し切る。"""
+    argv, env = setup(work, fake, fakebin, SLEEPY)
+    env["FAKE_TLC_SLEEP"] = "2"
+    proc = subprocess.Popen([sys.executable, "-I", str(script), *argv], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            cwd=work, env=env, preexec_fn=lambda: signal.signal(sig, signal.SIG_IGN))
+    if wait_pid(work) is None:
+        proc.kill()
+        proc.communicate()
+        return ["偽の TLC が起動しなかった（試料を組めない）"]
+    proc.send_signal(sig)
+    try:
+        out, _ = proc.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out, _ = proc.communicate()
+        return [f"60 秒で終わらない: {out[-300:]!r}"]
+    problems = [] if proc.returncode == 0 and "渡した 1 件とも満たす" in out else [f"終了コード {proc.returncode}（期待 0——親が無視にした信号で止まった）: {out[-300:]!r}"]
+    if leftovers(work):
+        problems.append(f"TMPDIR に残した: {leftovers(work)}")
+    return problems
+
+
+def reclaim_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """SIGKILL の残り（持ち主の居ない pid つき）だけを消し、持ち主の居るもの・分からないもの・この形でない名前・ほかの頭のものを消さない。"""
+    pid = dead_pid()
+    dead = f"{PREFIX}{pid}-abcd1234"
+    full = str(pid)[0] + str(pid)[1:].translate({ord(c): ord(c) + 0xFEE0 for c in "0123456789"})  # 2 桁目から全角
+    keep = {"持ち主が居る": f"{PREFIX}{os.getpid()}-abcd1234", "持ち主が分からない（pid 1。権限）": f"{PREFIX}1-abcd1234",
+            "pid の無い古い名前": f"{PREFIX}zzflmv9r", "全角の数字": f"{PREFIX}{full}-abcd1234", "乱字に無い文字": f"{PREFIX}{pid}-abcd12é4",
+            "後ろに余分": f"{PREFIX}{pid}-abcd1234-keep", "乱字が 1 文字": f"{PREFIX}{pid}-a", "pid の先頭の 0": f"{PREFIX}00{pid}-abcd1234",
+            "pid が 0": f"{PREFIX}0-abcd1234", "ほかの頭（Alloy）": f"spec-loop-check-alloy-{pid}-abcd1234",
+            "ほかの頭（状態遷移図）": f"spec-loop-statechart-{pid}-abcd1234"}
+    argv, env = setup(work, fake, fakebin, CASES["満たす"], {dead: None, **{name: None for name in keep.values()}})
+    proc = subprocess.run([sys.executable, "-I", str(script), *argv], capture_output=True, text=True, cwd=work, env=env, timeout=120)
+    out = proc.stdout + proc.stderr
+    problems = [] if proc.returncode == 0 else [f"終了コード {proc.returncode}: {out[-300:]!r}"]
+    if (work / "tmp" / dead).exists() or "持ち主の居ない一時ディレクトリを消した" not in out:
+        problems.append(f"持ち主の居ないディレクトリを消していない: {out[-300:]!r}")
+    for why, name in keep.items():
+        if not (work / "tmp" / name / "keep").is_file():
+            problems.append(f"消してはならないディレクトリを消した（{why}）: {name!r}")
+    return problems
+
+
+def unreadable_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """持ち主の居ない残りの `.tool-group` が読めない（権限・ASCII でない・数字でない・0 以下）とき、判定を止めず、その残りを消さずにそう言う。"""
+    pid = dead_pid()
+    contents = {"abcd1234": b"1", "efgh5678": b"\xff\xfe", "ijkl9012": b"abc", "mnop3456": b"0", "qrst7890": b"-1"}  # 最初のものは権限を外す
+    names = {f"{PREFIX}{pid}-{suffix}": body for suffix, body in contents.items()}
+    argv, env = setup(work, fake, fakebin, CASES["満たす"], names)
+    record = work / "tmp" / next(iter(names)) / ".tool-group"
+    record.chmod(0)
+    try:
+        if os.access(record, os.R_OK):
+            return ["権限を外しても読める（root で走っている？）——試料を組めない"]
+        proc = subprocess.run([sys.executable, "-I", str(script), *argv], capture_output=True, text=True, cwd=work, env=env, timeout=120)
+    finally:
+        if record.exists():  # 消された（変異）なら戻すものは無い
+            record.chmod(0o600)
+    out = proc.stdout + proc.stderr
+    problems = [] if proc.returncode == 0 else [f"終了コード {proc.returncode}（期待 0）: {out[-300:]!r}"]
+    for name, body in names.items():
+        if not (work / "tmp" / name).is_dir():
+            problems.append(f"記録の読めない残りを消した（中身 {body!r}。TLC が走っているかを決められないのに）")
+        elif not any(name in line and "読めない" in line and "消していない" in line for line in out.splitlines()):
+            problems.append(f"消していないことを言わない（中身 {body!r}）: {out[-300:]!r}")
+    return problems
+
+
+def killed_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """SIGKILL の後も別のセッションの TLC が走っている間は、次の起動が一時ディレクトリを消さずにそう言い、止まった後の起動が消す。"""
+    argv, env = setup(work, fake, fakebin, SLEEPY)
+    proc = subprocess.Popen([sys.executable, "-I", str(script), *argv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=work, env=env)
+    pid = wait_pid(work)
+    if pid is None:
+        proc.kill()
+        proc.wait()
+        return ["偽の TLC が起動しなかった（試料を組めない）"]
+    proc.kill()
+    proc.wait()
+    problems = []
+    other = setup(work / "next", fake, fakebin, CASES["満たす"])[0]  # 同じ TMPDIR で、別の正本を判定する
+    try:
+        first = subprocess.run([sys.executable, "-I", str(script), *other], capture_output=True, text=True, cwd=work, env=env, timeout=120)
+        out = first.stdout + first.stderr
+        left = leftovers(work)
+        if len(left) != 1 or not any(left[0] in line and "まだ書いている" in line and "消していない" in line for line in out.splitlines()):
+            problems.append(f"TLC が走っている間に消した・そう言わない（残り {left}）: {out[-300:]!r}")
+    finally:
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if not gone(pid):
+        problems.append("偽の TLC を止められない（試料を組めない）")
+    second = subprocess.run([sys.executable, "-I", str(script), *other], capture_output=True, text=True, cwd=work, env=env, timeout=120)
+    if leftovers(work):
+        problems.append(f"TLC が止まった後の起動が消さない: {leftovers(work)}: {(second.stdout + second.stderr)[-300:]!r}")
+    return problems
+
+
+# 片付けの途中に信号が届く形——本体を読み込み、`shutil.rmtree` の入口で自分に SIGTERM を送ってから本体を走らせる（`times` 回まで）。
+# 1 回目は正常に終わる回の TemporaryDirectory の片付け、2 回目は信号の後の消し直し
+IN_CLEANUP = """import importlib.util, os, shutil, signal, sys
+spec = importlib.util.spec_from_file_location("check_formal_rerun", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real, fired, times = shutil.rmtree, [], int(sys.argv[2])
+def rmtree(*a, **k):
+    if len(fired) < times:
+        fired.append(1)
+        os.kill(os.getpid(), signal.SIGTERM)
+    return real(*a, **k)
+shutil.rmtree = rmtree
+sys.exit(module.main(sys.argv[3:]))
+"""
+
+
+def cleanup_problems(script: Path, work: Path, fake: Path, fakebin: Path, times: int) -> list[str]:
+    """片付けの途中に信号が届いても（消し直しの途中の 2 回目も）、一時ディレクトリを残さず 128+信号で終わる。"""
+    argv, env = setup(work, fake, fakebin, CASES["満たす"])
+    wrapper = work / "in_cleanup.py"
+    wrapper.write_text(IN_CLEANUP, encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(wrapper), str(script), str(times), *argv],
+                          capture_output=True, text=True, cwd=work, env=env, timeout=120, preexec_fn=lambda: signal.signal(signal.SIGTERM, signal.SIG_DFL))
+    problems = []
+    if proc.returncode != 128 + signal.SIGTERM:
+        problems.append(f"終了コード {proc.returncode}（期待 {128 + signal.SIGTERM}）: {(proc.stdout + proc.stderr)[-300:]!r}")
+    if leftovers(work):
+        problems.append(f"TMPDIR に残した: {leftovers(work)}")
+    return problems
+
+
+# 同じプロセスで main を呼んだ後、信号の扱いが元に戻るか（formal-sync.py のように読み込んで使う側・テスト）
+RESTORE = """import importlib.util, signal, sys
+spec = importlib.util.spec_from_file_location("check_formal_rerun", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+sigs = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+before = [signal.getsignal(s) for s in sigs]
+rc = module.main(sys.argv[2:])
+print("戻った" if [signal.getsignal(s) for s in sigs] == before else "戻らない")
+sys.exit(rc)
+"""
+
+
+def restore_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    argv, env = setup(work, fake, fakebin, CASES["満たす"])
+    wrapper = work / "restore.py"
+    wrapper.write_text(RESTORE, encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(wrapper), str(script), *argv], capture_output=True, text=True, cwd=work, env=env, timeout=120)
+    out = proc.stdout + proc.stderr
+    return [] if proc.returncode == 0 and "戻った" in out else [f"信号の扱いが元に戻らない（終了コード {proc.returncode}）: {out[-300:]!r}"]
+
+
+SIGNAL_CASES = {f"信号: {sig.name}": sig for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
+IGNORED_CASES = {f"親が無視にした信号: {sig.name}": sig for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)}
+SPECIAL = [*SIGNAL_CASES, *IGNORED_CASES, "回収", "回収: 記録が読めない", "SIGKILL の後に TLC が走っている",
+           "信号: 片付けの途中", "信号: 片付けの途中に 2 回", "main の後に信号の扱いを戻す"]
+
+
+def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    if name in SIGNAL_CASES:
+        return signal_problems(script, work, fake, fakebin, SIGNAL_CASES[name])
+    if name in IGNORED_CASES:
+        return ignored_problems(script, work, fake, fakebin, IGNORED_CASES[name])
+    if name == "回収":
+        return reclaim_problems(script, work, fake, fakebin)
+    if name == "回収: 記録が読めない":
+        return unreadable_problems(script, work, fake, fakebin)
+    if name == "SIGKILL の後に TLC が走っている":
+        return killed_problems(script, work, fake, fakebin)
+    if name == "信号: 片付けの途中":
+        return cleanup_problems(script, work, fake, fakebin, 1)
+    if name == "信号: 片付けの途中に 2 回":
+        return cleanup_problems(script, work, fake, fakebin, 2)
+    return restore_problems(script, work, fake, fakebin)
+
+
+# 本体（check-formal-rerun.py）を壊す変異——(名前, 壊す前, 壊した後, 殺す試料)
+SPECIAL_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("信号を例外にしない", "    saved = tlc.catch_signals()\n", "    saved = {}\n", "信号: SIGTERM"),
+    ("片付けの途中の信号の後に消し直さない", "        tlc.sweep(PREFIX)  # 片付け", "        pass  # 片付け", "信号: 片付けの途中"),
+    ("起動時に回収しない", "    for line in tlc.reclaim_lines(*tlc.reclaim(PREFIX)):\n        print(line, file=sys.stderr)\n", "", "回収"),
+    ("TLC のグループを記録しない", "        group = tlc.record_group(tmp)", "        group = None", "SIGKILL の後に TLC が走っている"),
+    ("名前に pid を入れない", "    with tlc.owned_dir(PREFIX) as tmp:", "    with tempfile.TemporaryDirectory(prefix=PREFIX) as tmp:", "SIGKILL の後に TLC が走っている"),
+    ("信号の扱いを戻さない", "        tlc.restore_signals(saved)\n", "        pass\n", "main の後に信号の扱いを戻す"),
+]
+
+# check-tlc.py の部品を壊す変異——(名前, 壊す前, 壊した後, 殺す試料)
+TLC_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("親が無視にした信号を奪う", "        if old is not signal.SIG_IGN:", "        if True:", "親が無視にした信号: SIGHUP"),
+    ("無視の確認を SIGHUP だけに効かせる", "        if old is not signal.SIG_IGN:", "        if sig != signal.SIGHUP or old is not signal.SIG_IGN:", "親が無視にした信号: SIGINT"),
+    ("SIGHUP を片付けない", "SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)", "SIGNALS = (signal.SIGTERM, signal.SIGINT)", "信号: SIGHUP"),
+    ("1 回目の後に信号を無視しない", "    for sig in SIGNALS:  # 2 回目は無視する", "    for sig in ():  # 2 回目は無視する", "信号: 片付けの途中に 2 回"),
+    ("元の扱いに戻さない", "        signal.signal(sig, signal.SIG_DFL if old is None else old)", "        pass", "main の後に信号の扱いを戻す"),
+    ("待っている間の例外で TLC を止めない", "    except BaseException:\n        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）\n        with_group(proc, signal.SIGKILL)\n        proc.wait()\n        raise\n",
+     "", "信号: SIGTERM"),
+    ("消し直しで自分の pid を見ない", 'glob(f"{prefix}{os.getpid()}-*")', 'glob(f"{prefix}0-*")', "信号: 片付けの途中"),
+    ("持ち主の居ないディレクトリを消さない", "        shutil.rmtree(path, ignore_errors=True)\n        if not path.exists():", "        pass\n        if not path.exists():", "回収"),
+    ("持ち主の居るディレクトリも消す", "        if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):", "        if False:", "回収"),
+    ("分からない pid を居ないに倒す", "    except (OSError, OverflowError):\n        return True\n    return True", "    except (OSError, OverflowError):\n        return False\n    return True", "回収"),
+    ("ほかの頭のものも消す", "    return re.compile(re.escape(prefix) + r\"([1-9]", "    return re.compile(r\"spec-loop-[a-z-]*?-\" + r\"([1-9]", "回収"),
+    ("pid の無い古い名前も消す", "        if not found or path.is_symlink() or not path.is_dir():\n            continue\n        if int(",
+     "        if path.is_symlink() or not path.is_dir():\n            continue\n        if not found:\n            shutil.rmtree(path)\n            continue\n        if int(", "回収"),
+    ("全角の数字を pid と読む", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9]\\d*)-[a-z0-9_]{8}")', "回収"),
+    ("pid の先頭の 0 と pid 0 を読む", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([0-9]+)-[a-z0-9_]{8}")', "回収"),
+    ("乱字に無い文字の名前を消す", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9][0-9]*)-[^-]{8}")', "回収"),
+    ("乱字の長さを見ない", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9][0-9]*)-[a-z0-9_]+")', "回収"),
+    ("名前の後ろの余分を見ない", "        found = owned.fullmatch(path.name)", "        found = owned.match(path.name)", "回収"),
+    ("TLC が走っていても消す", "        if group is not None:  # 持ち主が SIGKILL", "        if False:  # 持ち主が SIGKILL", "SIGKILL の後に TLC が走っている"),
+    ("読めない記録の残りを消す", "    except OSError:  # 権限などで読めない\n        return UNREADABLE", "    except OSError:  # 権限などで読めない\n        return None", "回収: 記録が読めない"),
+    ("数字でない記録の残りを消す", "    except ValueError:  # ASCII でない（UnicodeDecodeError も ValueError）・数字でない\n        return UNREADABLE",
+     "    except ValueError:  # ASCII でない（UnicodeDecodeError も ValueError）・数字でない\n        return None", "回収: 記録が読めない"),
+    ("0 以下の記録をグループと読む", "    if group < 1:", "    if False:", "回収: 記録が読めない"),
+    ("読めない記録を黙る", "        if group == UNREADABLE:\n            lines.append(", "        if group == UNREADABLE:\n            continue\n            lines.append(", "回収: 記録が読めない"),
+]
+
+
+def special_killed(killer: str, script: Path, work: Path, fake: Path, fakebin: Path) -> bool:
+    return bool(special_problems(killer, script, work, fake, fakebin))
 
 
 def main() -> int:
@@ -367,6 +698,21 @@ def main() -> int:
                   f"{result[0]} {result[1][-300:]!r}")
         print(f"  変異 {len(MUTATIONS)} 件 OK")
 
+        print("信号と回収（#1600）")
+        for i, name in enumerate(SPECIAL):
+            problems = special_problems(name, scripts / TARGET, root / f"s{i}", fake, fakebin)
+            check(f"試料: {name}", not problems, "・".join(problems))
+        print(f"  {len(SPECIAL)} 件 OK")
+        tlc_source = (SCRIPTS / "check-tlc.py").read_text(encoding="utf-8")
+        for target_name, text, mutations in ((TARGET, source, SPECIAL_MUTATIONS), ("check-tlc.py", tlc_source, TLC_MUTATIONS)):
+            for index, (name, before, after, killer) in enumerate(mutations):
+                check(f"壊す箇所がちょうど 1 回: {name}", text.count(before) == 1, f"{text.count(before)} 回: {before!r}")
+                mutated = root / f"sm-{target_name}-{index}"
+                shutil.copytree(scripts, mutated)
+                (mutated / target_name).write_text(text.replace(before, after), encoding="utf-8")
+                check(f"変異を殺す: {name} ← {killer}", special_killed(killer, mutated / TARGET, root / f"smw-{target_name}-{index}", fake, fakebin))
+        print(f"  変異 {len(SPECIAL_MUTATIONS) + len(TLC_MUTATIONS)} 件 OK")
+
         print("CI の雛形（#1178）")
         block = ci_block(TREE.read_text(encoding="utf-8"))
         for i, (name, (targets, passes, word)) in enumerate(CI_CASES.items()):
@@ -378,7 +724,8 @@ def main() -> int:
             code, out = run_ci(block.replace(before, after), scripts, root / "cimut", fake, targets)
             check(f"雛形の変異を殺す: {name} ← {killer}", (code == 0) != passes, f"終了コード {code}: {out[-300:]!r}")
         print(f"  試料 {len(CI_CASES)} 件・変異 {len(CI_MUTATIONS)} 件 OK")
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・雛形の試料 {len(CI_CASES)} 件・雛形の変異 {len(CI_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・信号と回収の試料 {len(SPECIAL)} 件・変異 {len(SPECIAL_MUTATIONS) + len(TLC_MUTATIONS)} 件・"
+          f"雛形の試料 {len(CI_CASES)} 件・雛形の変異 {len(CI_MUTATIONS)} 件")
     return 0
 
 
