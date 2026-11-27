@@ -123,6 +123,9 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 狭いパス（Verifier）: 済み——**反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。素通りした変異: 読解の変異 (a) 旧名の残り——対象が 0 件で届かない。注意 1: V2-R1 の根拠は monorepo.md の解釈に依る——人間が決める。`cd32a056..0ac8fe9d` の 2 点。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-narrow-1-20261127T092505Z.md`）
 - PR: #1615。PR 側の CI 20 pass・1 skipping（deploy）。外部レビュー: 該当なし（`.claude/dev-loop.md` に宣言が無い）。関門の記録を PR コメントに書いた
 - マージ: しない——2026-11-27 に AskUserQuestion で訊いたが答えが無く、承認待ちで止めた
+- 関門の後の範囲の追加（A12・A13。利用者の求め、2026-11-27）: 起点 `4b21fe18`（計画ファイルだけのコミットの後）→ 終点 `0abb3e2f`。`check-all.py` 緑
+- 当て直し 1（Verifier・sonnet。`4b21fe18..0abb3e2f`）: 済み——**反証 1 件**（A13 の決め打ちの数え上げに dev-loop の 2 本が漏れた）→ 直した（`3fee47b6`）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-1-20261127T095131Z.md`
+- 当て直し 2（Verifier・sonnet。`0abb3e2f..3fee47b6`）: 済み——**反証 1 件（軽微）**: 同じ 2 ファイルの中の正規表現（`formal-sync.py` 134 行の `BASE_README`・`rework-metrics.py` 127 行の `TABLE`）も `docs/` を決め打ちしていて、数え上げから漏れている。**直さずに人間に渡す**（狭いパスと同じ扱い）。A13 は文字どおりには満たしていない——マージするかは利用者が決める。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-2-20261127T095510Z.md`
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
@@ -132,6 +135,8 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 関門: Verifier 2 c550ffb6 反証=2
 関門: /code-review 2 c550ffb6 指摘=10
 関門: 狭いパス cd32a0565d9784852bed8551c1c0de3cb0315a63 0ac8fe9ddbeffe078e31edf50149944c60604179 反証=0
+関門: 当て直し 4b21fe18e1cc467bc87e7704c43a585150c6aab6 0abb3e2f4bd5f42aaab8abb223e7a6f478642b90 反証=1
+関門: 当て直し 0abb3e2f4bd5f42aaab8abb223e7a6f478642b90 3fee47b64d933edbb1d140184e5295f84af82efb 反証=1
 受入基準: A1 満たす
 受入基準: A2 満たす
 受入基準: A3 満たす
@@ -141,6 +146,8 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 受入基準: A7 満たす
 受入基準: A8 満たす
 受入基準: A9 満たす
+受入基準: A12 満たす
+受入基準: A13 満たさない
 受入基準: A10 満たす
 受入基準: A11 満たす
 マージの反映: ドキュメントとプラグインの配布
