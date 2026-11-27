@@ -196,14 +196,20 @@ def run_model(call, workdir, name, timeout):
         proc = subprocess.Popen(["/bin/sh", "-c", f"{call} {name}.tla"], cwd=workdir, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
                                 start_new_session=True)
+    except OSError as e:
+        return None, f"起動できない: {e}"
+    try:
         out, _ = proc.communicate(timeout=timeout)
         return proc.returncode, out
     except subprocess.TimeoutExpired:
         with_group(proc, signal.SIGKILL)
         out, _ = proc.communicate()
         return None, (out or "") + f"\n（{timeout} 秒で時間切れ）"
-    except OSError as e:
-        return None, f"起動できない: {e}"
+    except BaseException:
+        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）
+        with_group(proc, signal.SIGKILL)
+        proc.wait()
+        raise
 
 
 def with_group(proc, sig):
