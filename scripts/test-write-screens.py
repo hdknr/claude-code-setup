@@ -921,10 +921,21 @@ HINT_HEADS = ["読めない", "画面の層が決まりに合わない", "profil
 INIT_SKILL = PLUGIN / "skills" / "init" / "SKILL.md"
 
 
+SKILL_CHOOSE = "利用者に選ばせる"  # `<画面の profile>` の置き場所を、スキルが利用者に選ばせる（#1597 の 2 パス目 CR2-2）
+
+
 def skill_problems(source: str, skill: str) -> list[str]:
-    """hint の言い方が本体に在り、init スキルの本文がその行（`基盤の profile: <言い方>（…）`）の手当てを書いているか。"""
+    """hint の言い方が本体に在り、init スキルの本文がその行（`基盤の profile: <言い方>（…）`）の手当てを書いているか。
+
+    `profile.csv` の行が出す `--profile` の置き場所の文字（本体の `PROFILE_UNKNOWN`）を、スキルが名指して利用者に選ばせているかも見る。
+    """
     problems = [f"本体に hint の言い方 {head!r} が無い" for head in HINT_HEADS if head not in source]
     problems += [f"init スキルに `基盤の profile: {head}（…）` の手当てが無い" for head in HINT_HEADS if f"`基盤の profile: {head}（…）`" not in skill]
+    unknown = re.search(r'^PROFILE_UNKNOWN = "([^"]+)"', source, re.M)
+    if not unknown:
+        problems.append("本体に PROFILE_UNKNOWN が無い")
+    elif not re.search(re.escape(f"`{unknown.group(1)}`") + r"[^\n]*" + re.escape(SKILL_CHOOSE), skill):
+        problems.append(f"init スキルが `{unknown.group(1)}` を名指して{SKILL_CHOOSE}手当てを書いていない")
     return problems
 
 
@@ -1024,6 +1035,9 @@ def main() -> int:
         check("init スキルが hint の行の手当てを書いていない（#1597）", not problems, "; ".join(problems))
         check("崩すと落ちる: init スキルから profile.csv の行の手当てを外す",
               bool(skill_problems(source, skill.replace("`基盤の profile: profile.csv が決まりに合わない（…）`", "`基盤の profile: …`"))))
+        choose = "。`profile.csv` の行は `重ねる先` を読めないので `<画面の profile>` と出る——このプラグインにある profile の一覧から、上の推し方で利用者に選ばせる"
+        check("崩す箇所が init スキルにちょうど 1 回現れる: <画面の profile> を選ばせる文", skill.count(choose) == 1)
+        check("崩すと落ちる: init スキルから <画面の profile> を選ばせる文を外す（#1597 の 2 パス目 CR2-2）", bool(skill_problems(source, skill.replace(choose, ""))))
 
         check_source = (PLUGIN / "scripts" / CHECK).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(CHECK_MUTATIONS):
