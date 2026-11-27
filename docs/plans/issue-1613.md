@@ -129,7 +129,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 2 パス目の指摘対応: 採否の表（2 パス目）の「直す」12 行を直した。終点（指摘対応の最後のコミット）: `0ac8fe9ddbeffe078e31edf50149944c60604179`。`check-all.py` 緑（16/106 を回して失敗 0、90 は CACHED）。A4 の grep は 0 件
 - 狭いパス（Verifier）: 済み——**反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。素通りした変異: 読解の変異 (a) 旧名の残り——対象が 0 件で届かない。注意 1: V2-R1 の根拠は monorepo.md の解釈に依る——人間が決める。`cd32a056..0ac8fe9d` の 2 点。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-narrow-1-20261127T092505Z.md`）
 - PR: #1615。PR 側の CI 20 pass・1 skipping（deploy）。外部レビュー: 該当なし（`.claude/dev-loop.md` に宣言が無い）。関門の記録を PR コメントに書いた
-- マージ: しない——2026-11-27 に AskUserQuestion で訊いたが答えが無く、承認待ちで止めた
+- マージ: 最初に訊いたときは答えが無く止めた。関門の後の書き直しを終えたあと、利用者の指示「マージして」（2026-11-27）でマージする（子の Issue の起票は決めていないので、件数の行は 0 件のまま）
 - 関門の後の範囲の追加（A12・A13。利用者の求め、2026-11-27）: 起点 `4b21fe18`（計画ファイルだけのコミットの後）→ 終点 `0abb3e2f`。`check-all.py` 緑
 - 当て直し 1（Verifier・sonnet。`4b21fe18..0abb3e2f`）: 済み——**反証 1 件**（A13 の決め打ちの数え上げに dev-loop の 2 本が漏れた）→ 直した（`3fee47b6`）。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-1-20261127T095131Z.md`
 - 当て直し 2（Verifier・sonnet。`0abb3e2f..3fee47b6`）: 済み——**反証 1 件（軽微）**: 同じ 2 ファイルの中の正規表現（`formal-sync.py` 134 行の `BASE_README`・`rework-metrics.py` 127 行の `TABLE`）も `docs/` を決め打ちしていて、数え上げから漏れている。**直さずに人間に渡す**（狭いパスと同じ扱い）。A13 は文字どおりには満たしていない——マージするかは利用者が決める。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/bd1212a6-503b-4ea8-a894-56eafb305470/scratchpad/gate-1613-redo-2-20261127T095510Z.md`
