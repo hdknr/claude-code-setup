@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.136.0 -->
-> **このスキルの版: 0.136.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.137.0 -->
+> **このスキルの版: 0.137.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -48,6 +48,11 @@ description: "仕様レビューのループを 1 回分進める。確定した
 - **判定役は、実装（このスキルを動かしているモデル）とは別のティアで呼ぶ。**
   `Agent` の `model` 引数を**毎回明示する**——省略すると親と同じモデルを継承し、盲点を共有する。
   判定役の定義は `model` を持たない（呼び出す側が選ぶ）。**要件は「違うティアであること」で、下げることではない。**
+  **書き手が Opus なら、判定役を `fable` に上げてもよい（任意）。書き手が Fable なら、判定役は Fable 以外にする**（同じティアは盲点を共有する）。
+  上げて得られるものは測った範囲までしか言えない——Formal Checker で、欠陥を仕込んだ小さい試料に 1 回だけ比べた。
+  仕込んだ欠陥の検出に差は出ず、Fable は仕込んでいない指摘を 1 件多く挙げ、
+  定義が無条件に求める手続き（図の対応・モデルの全文）を省かなかった。使ったトークンの合計は 2.2 倍（出力は 3.8 倍）・時間は 4 倍だった
+  （[#1586](https://github.com/hdknr/claude-code-setup/issues/1586)。欠陥の無い仕様（反例なしを出す経路）と Red Team・Domain Checker では測っていない）。
 - **`subagent_type` は名前空間つきで指定する**——`spec-loop:red-team`・`spec-loop:domain-checker`・
   `spec-loop:formal-checker`。名前空間を落とすと解決に失敗し、**書き込みツールを持つ汎用の agent に
   黙って落ちることがある**。**起動後、どの agent が動いたかを確かめる。**
