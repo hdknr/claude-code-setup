@@ -15,8 +15,11 @@
    名前の形・置き場所**は 1。ディレクトリが無い・`README.md` が無いは 2。
 3. **本体の記録の項目・`結果` と `前回のモデル` の値が `references/tree.md` の「形式検査のモデル」の表と一致する**（写しのずれ）。
 4. **`check-findings-csv.py` が `モデルの保存` の行を実行の行と読まない**（`抜けた` の行は読む——陽性対照）。
-5. **想定外の例外は 2 で、トレースバックの 1 にしない。`-OO`（docstring が無い）で引数なしに呼んでも 2**（#286 と同じ形）。
-6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる（全部の試料がこの形で走る）。
+5. **`cleanup`**（#1601）: 一時ディレクトリ（試料ごとに `TMPDIR` を差し替える）の下のディレクトリは消して 0（陽性対照）。**一時ディレクトリの外・そのもの・途中の symlink で外を指す先・
+   相対パス・symlink・ファイル・リポジトリを含むもの・リポジトリの中（サブディレクトリから呼んでも根で決める）・`HOME` を含むもの**は消さずに名指しして 1、
+   消さないパスが混ざってもほかは消す、消し切れない（書けない親）は名指しして 1、無いパスは 0、パスを渡さなければ 2。**試料ごとに、走らせた後にどのパスが残ったかも突き合わせる**。
+6. **想定外の例外は 2 で、トレースバックの 1 にしない。`-OO`（docstring が無い）で引数なしに呼んでも 2**（#286 と同じ形）。
+7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる（全部の試料がこの形で走る）。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに作り、`HOME` と `GIT_CONFIG_GLOBAL` を差し替えて利用者の git 設定を読まない。
 
@@ -204,6 +207,37 @@ CHECK_CASES: list[CheckCase] = [
     ("README が無い", GOOD_DIR, dict(MODEL_FILES), 2, "README.md: 無い"),
 ]
 
+# ---- cleanup の試料（#1601）。試料ごとの場所 K の下に tmp/（TMPDIR）・out/（一時ディレクトリの外）・repo/（git。既定の cwd）を作る。
+# 鍵: make 作るディレクトリ・files 作るファイル・links (リンク, 先)・cwd（K からの相対。git init する場所は repo）・home（HOME を差し替える）・
+# locked 書けなくするディレクトリ・args（`{K}` は K の絶対パス）・watch 走らせた後に在るかを見るパス。期待の文字列は全部が出力に含まれること。
+CLEANUP_CASES: list[tuple[str, dict, int, tuple[str, ...]]] = [
+    ("消せる", {"files": ["tmp/m1/states/x.st", "tmp/m2/trace.json"], "args": ["{K}/tmp/m1", "{K}/tmp/m2"], "watch": ["tmp/m1", "tmp/m2"]}, 0,
+     ("消した: {K}/tmp/m1", "消した: {K}/tmp/m2", "[在る] なし")),
+    ("外のディレクトリ", {"make": ["out/m"], "args": ["{K}/out/m"], "watch": ["out/m"]}, 1,
+     ("消さなかった: {K}/out/m（一時ディレクトリ（", "[在る] out/m")),
+    ("一時ディレクトリそのもの", {"args": ["{K}/tmp"], "watch": ["tmp"]}, 1, ("消さなかった: {K}/tmp（一時ディレクトリそのものである）", "[在る] tmp")),
+    ("途中の symlink で外を指す", {"make": ["out/sub"], "links": [("tmp/l", "out")], "args": ["{K}/tmp/l/sub"], "watch": ["out/sub"]}, 1,
+     ("消さなかった: {K}/tmp/l/sub（一時ディレクトリ（", "[在る] out/sub")),
+    ("相対パス", {"make": ["repo/rel"], "args": ["rel"], "watch": ["repo/rel"]}, 1, ("消さなかった: rel（絶対パスでない）", "[在る] repo/rel")),
+    ("symlink", {"files": ["tmp/real/x"], "links": [("tmp/ln", "tmp/real")], "args": ["{K}/tmp/ln"], "watch": ["tmp/real", "tmp/ln"]}, 1,
+     ("消さなかった: {K}/tmp/ln（symlink である）", "[在る] tmp/real,tmp/ln")),
+    ("ファイル", {"files": ["tmp/f"], "args": ["{K}/tmp/f"], "watch": ["tmp/f"]}, 1, ("消さなかった: {K}/tmp/f（ディレクトリでない）", "[在る] tmp/f")),
+    ("リポジトリを含む", {"git": "tmp/r/repo", "cwd": "tmp/r/repo", "args": ["{K}/tmp/r"], "watch": ["tmp/r/repo"]}, 1,
+     ("消さなかった: {K}/tmp/r（リポジトリ（", "[在る] tmp/r/repo")),
+    ("リポジトリの中", {"git": "tmp/r/repo", "cwd": "tmp/r/repo", "make": ["tmp/r/repo/sub"], "args": ["{K}/tmp/r/repo/sub"], "watch": ["tmp/r/repo/sub"]}, 1,
+     ("消さなかった: {K}/tmp/r/repo/sub（リポジトリ（", "[在る] tmp/r/repo/sub")),
+    ("サブディレクトリから呼んでも根を守る", {"git": "tmp/r/repo", "make": ["tmp/r/repo/a", "tmp/r/repo/b"], "cwd": "tmp/r/repo/a", "args": ["{K}/tmp/r/repo/b"],
+                         "watch": ["tmp/r/repo/b"]}, 1, ("消さなかった: {K}/tmp/r/repo/b（リポジトリ（", "[在る] tmp/r/repo/b")),
+    ("HOME を含む", {"make": ["tmp/h/home"], "home": "tmp/h/home", "args": ["{K}/tmp/h"], "watch": ["tmp/h/home"]}, 1,
+     ("消さなかった: {K}/tmp/h（HOME（", "[在る] tmp/h/home")),
+    ("無いパス", {"args": ["{K}/tmp/gone"], "watch": []}, 0, ("無かった: {K}/tmp/gone",)),
+    ("混ざる", {"make": ["out/m", "tmp/m"], "args": ["{K}/out/m", "{K}/tmp/m"], "watch": ["out/m", "tmp/m"]}, 1,
+     ("消さなかった: {K}/out/m", "消した: {K}/tmp/m", "[在る] out/m")),
+    ("消せない", {"files": ["tmp/m/locked/x"], "locked": "tmp/m/locked", "args": ["{K}/tmp/m"], "watch": ["tmp/m/locked/x"]}, 1,
+     ("消せなかった: {K}/tmp/m（", "[在る] tmp/m/locked/x")),
+    ("パスが無い", {"args": [], "watch": []}, 2, ("the following arguments are required",)),
+]
+
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("リリース済みでも書く", "    if number in released:\n", "    if False:\n", "リリース済みの v1"),
@@ -267,6 +301,22 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ディレクトリでないのを 2 にしない", "    if not directory.is_dir():\n        return 2", "    if False:\n        return 2", "ディレクトリが無い"),
     ("README が無いのを 2 にしない", '    except FileNotFoundError:\n        raise Unjudged(f"{readme}: 無い")',
      "    except FileNotFoundError:\n        return {}, []", "README が無い"),
+    # cleanup（#1601）
+    ("一時ディレクトリの外を消す", "            if temp not in real.parents:\n", "            if False:\n", "外のディレクトリ"),
+    ("一時ディレクトリそのものを消す", "            if temp not in real.parents:\n", "            if temp not in real.parents and real != temp:\n", "一時ディレクトリそのもの"),
+    ("実体のパスで判定しない", "            real = Path(os.path.realpath(path))\n", "            real = Path(os.path.abspath(path))\n", "途中の symlink で外を指す"),
+    ("相対パスを通す", "        if not path.is_absolute():\n", "        if False:\n", "相対パス"),
+    ("symlink を辿る", "        elif path.is_symlink():\n", "        elif False:\n", "symlink"),
+    ("ファイルを通す", "        elif not path.is_dir():\n", "        elif False:\n", "ファイル"),
+    ("リポジトリを含むものを消す", "_contains(real, repo_real) or _contains(repo_real, real)", "_contains(repo_real, real)", "リポジトリを含む"),
+    ("リポジトリの中を消す", "_contains(real, repo_real) or _contains(repo_real, real)", "_contains(real, repo_real)", "リポジトリの中"),
+    ("リポジトリの根を見ない", "        root = top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else str(repo)\n",
+     "        root = str(repo)\n", "サブディレクトリから呼んでも根を守る"),
+    ("HOME を含むものを消す", "            elif _contains(real, home_real):\n", "            elif False:\n", "HOME を含む"),
+    ("消し切れないのを 0 にする", "        except OSError as e:\n            code = 1\n", "        except OSError as e:\n            code = 0\n", "消せない"),
+    ("無いパスで止まる", '            lines.append(f"無かった: {raw}")\n', '            code = 1\n            lines.append(f"無かった: {raw}")\n', "無いパス"),
+    ("消さないパスで打ち切る", '            lines.append(f"消さなかった: {raw}（{reason}）")\n            continue\n',
+     '            lines.append(f"消さなかった: {raw}（{reason}）")\n            break\n', "混ざる"),
 ]
 
 # 想定外の例外は 2・-OO（docstring が無い）で引数なしに呼んでも想定外の例外にならない（#286）。(名前, 壊す前, 壊した後)
@@ -364,8 +414,36 @@ def build_check(root: Path, directory: str, files: dict[str, str | None] | None)
     return ["check", str(target)]
 
 
-def all_cases() -> list[tuple[str, int, str]]:
-    return [(c[0], c[2], c[3]) for c in TARGET_CASES] + [(c[0], c[3], c[4]) for c in CHECK_CASES]
+def build_cleanup(root: Path, spec: dict, env: dict[str, str]) -> tuple[list[str], Path, dict[str, str]]:
+    """cleanup の試料を root の下に作り、(引数, cwd, 環境) を返す。"""
+    assert_in_tmp(root)
+    for name in ("tmp", "out", "repo"):
+        (root / name).mkdir(parents=True)
+    run_git(root / "repo", env, "init", "-q")
+    for name in spec.get("make", []):
+        (root / name).mkdir(parents=True, exist_ok=True)
+    for name in spec.get("files", []):
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text("x", encoding="utf-8")
+    for link, dest in spec.get("links", []):
+        (root / link).symlink_to(root / dest)
+    if "git" in spec:
+        (root / spec["git"]).mkdir(parents=True, exist_ok=True)
+        run_git(root / spec["git"], env, "init", "-q")
+    cwd = root / spec.get("cwd", "repo")
+    cwd.mkdir(parents=True, exist_ok=True)
+    if "locked" in spec:
+        (root / spec["locked"]).chmod(0o500)
+    case_env = dict(env, TMPDIR=str(root / "tmp"))
+    if "home" in spec:
+        case_env["HOME"] = str(root / spec["home"])
+    # {K} は実体のパスで渡す——一時ディレクトリが symlink（macOS の /var）の下でも、途中の symlink の試料が実体での判定を判別するように
+    return ["cleanup", *(a.replace("{K}", os.path.realpath(root)) for a in spec["args"])], cwd, case_env
+
+
+def all_cases() -> list[tuple[str, int, str | tuple[str, ...]]]:
+    return ([(c[0], c[2], c[3]) for c in TARGET_CASES] + [(c[0], c[3], c[4]) for c in CHECK_CASES]
+            + [(c[0], c[2], c[3]) for c in CLEANUP_CASES])
 
 
 def run_all(scripts: Path, work: Path, env: dict[str, str], only: str | None = None) -> dict[str, tuple[int, str]]:
@@ -384,12 +462,29 @@ def run_all(scripts: Path, work: Path, env: dict[str, str], only: str | None = N
         proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), *args],
                               capture_output=True, text=True, cwd=work, env=env)
         results[name] = (proc.returncode, proc.stdout + proc.stderr)
+    for index, (name, spec, _, _) in enumerate(CLEANUP_CASES):
+        if only is not None and name != only:
+            continue
+        root = work / f"k{index}"
+        args, cwd, case_env = build_cleanup(root, spec, env)
+        try:
+            proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), *args],
+                                  capture_output=True, text=True, cwd=cwd, env=case_env)
+        finally:
+            if "locked" in spec and (root / spec["locked"]).exists():
+                (root / spec["locked"]).chmod(0o700)  # 試料の後片付けのため
+        output = proc.stdout + proc.stderr
+        for form in (os.path.realpath(root), str(root)):
+            output = output.replace(form, "{K}")
+        present = [w for w in spec["watch"] if os.path.lexists(root / w)]
+        results[name] = (proc.returncode, output + f"\n[在る] {','.join(present) or 'なし'}\n")
     return results
 
 
 def as_expected(name: str, result: tuple[int, str]) -> bool:
     _, code, text = next(case for case in all_cases() if case[0] == name)
-    return result[0] == code and text in result[1]
+    texts = text if isinstance(text, tuple) else (text,)
+    return result[0] == code and all(t in result[1] for t in texts)
 
 
 def reference_mismatches(source: str, markdown: str) -> list[str]:
