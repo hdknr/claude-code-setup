@@ -50,7 +50,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - 外部の profile を読めない（spec-loop に `external-profile.py` が無い・clone が見つからない・タグが無い・画面の層が無い・形式の版が範囲の外）なら、検査の前に 4 で止める——外部の profile を外して検査を続けない
 - 画面の層の `重ねる先` が `settings.csv` の `profile`（`未設定` を含む）と違えば、検査の前に 4 で止める
 - 画面の層の行が決まりに合わない（後ろの列・`種類`・表・空の列・既に在る列を足す・語彙と既定の空の値・`screens.csv` でない既定・決まった種別でない既定・同じ列と種別の既定が 2 行・どこにも無い列の語彙と既定）なら 4。
-  行の決まりで止めたもの（この項と下の 2 項・既定の答えの行の決まり）は `LayerRule`（`Stop` の下位。終了コードと文言は同じ）で、読めないのと分けて名指す（#1582）
+  行の決まりで止めたもの（この項と下の 2 項・既定の答えの行の決まり）は `LayerRule`（`Stop` の下位。終了コードと文言は同じ）で、読めないのと分けて名指す（#1582）。
+  層のファイルの中身が決まりに合わない（spec-loop の `read_layer` の `LayerContent`——ID が 2 行・列の数など）のも `LayerRule` にする（#1589。文言は今までの「読めない」のまま。`LayerContent` を持たない古い spec-loop では読めないのと同じ）
 - 既定の値が、その列に書けない値なら 4（#1571）——同じ列の外部の profile の語彙（在れば）に無い・core の決まった値の列（`種別`・`ステータス`）の決まった値に無い・`種別` の列の既定がその行の種別と違う。
   語彙も決まった値も無い列の既定は照らさない。語彙の行と既定の行の順に依らない
 - 画面の表の決まった値の列（`種別`・`ステータス`）の外部の profile の語彙が、決まった値と 1 つも重ならなければ 4（#1581）——その列にはどの値も書けない
@@ -250,6 +251,7 @@ class Stop(Exception):
 
 class LayerRule(Stop):
     """外部の profile の画面の層を読めたが、行が決まりに合わない（4）——読めないのとは分ける（#1582）。
+    層のファイルの中身が決まりに合わない（spec-loop の `read_layer` の `LayerContent`——ID が 2 行・列の数など）のも、これにする（#1589）。
 
     同じ外部の profile を名指し直しても止まるので、`write-screens.py` の `hint` と引数を省いた `init` が案内を言い分けるのに使う。終了コードと文言は `Stop` と同じ。
     """
@@ -615,6 +617,8 @@ class Checker:
             clone, source = ext.find_clone(repo, project=self.docs.resolve().parent)
             commit = ext.resolve_tag(clone, tag)
             layer = ext.read_layer(clone, commit, name, EXTERNAL_LAYER, *EXTERNAL_RANGE)
+        except getattr(ext, "LayerContent", ()) as e:  # 層のファイルの中身の欠陥（#1589）——名指し直しても止まるので行の決まりと同じに分ける。古い spec-loop には無い
+            raise LayerRule(f"{label} を読めない: {e}") from None
         except (ext.Undetermined, ext.LayerMissing) as e:
             raise Stop(f"{label} を読めない: {e}") from None
         except Exception as e:  # noqa: BLE001 — git が無い・パスが読めないなど。外部の profile を外して検査を続けない
