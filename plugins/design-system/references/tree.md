@@ -26,6 +26,7 @@
 └── build/design-system/site/       # 生成物（コミットしない）——ドキュメントのサイト
 ```
 
+- **根の `docs/` は spec-loop の正本の決まり**（spec-loop の `references/versions.md`）。名前を `design-system/` に変えられるようにする口を spec-loop に足す（`references/spec-loop.md` の「spec-loop に要る口」の 5）——入るまでは `docs/`。
 - **版の中のディレクトリの名前にプラグインの名前を入れない**（`requirements/design/`）——spec-loop に表を行の単位で登録すると、spec-loop の `merge-versions.py` と `versions.md` が表のパスを持つ（今ある `requirements/screens/data/` と同じ。`references/spec-loop.md` の「spec-loop に要る口」の 1）。
   パスに `design-system` を入れると、spec-loop が design-system の名前を持つことになる（下の依存の向き——`references/spec-loop.md` の「依存の向き」）。
 - **表と散文は `requirements/` の中に置く**——spec-loop の 2 つのサインオフが比べる範囲（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）に入り、承認の対象になる。
@@ -154,7 +155,7 @@ screen-spec の初期値は基盤の profile 自身の `profile.csv` の層 `画
 | **生成器は自分の印のある `spec-profile/<名前>/` だけを書き、`--check` もそこだけを比べる。印の無いディレクトリが同じ名前で在れば、書かずに止める** | 手で書いた profile を上書きしない（spec-loop の `build-proposal.py` の印 `.build-proposal` と同じ考え方。印の名前は生成物の子の Issue で決める） |
 | **タグの接頭辞を、版を出すものごとに分ける**——デザインシステムは spec-loop の決まりで `release-v<n>`、ほかは `ui-v<n>`・`infra-v<n>` など。**束（下の「ガイドラインとして一括で渡す」）では、基盤・アーキテクチャ・開発の進め方・画面の層は 1 つの系列（`guide-v<n>` など）になる**——screen-spec は画面の層を基盤の profile と同じタグで読む（screen-spec の `references/profiles.md` の「基盤の profile から引く初期値」）ので、画面の層だけ別の系列にすると届かない | 版を別々に出せる。platform-spec の版の差分は、設定のタグと同じ名前の形（接頭辞・区切り・末尾が同じ）のタグだけを新しい版の候補にする（platform-spec の `scripts/check-profile-diff.py` の `name_shape`）ので、接頭辞の違うタグは混ざらない |
 | 1 つのタグで全部を出してもよい——UI プロファイルの設定のタグを `release-v<n>` にする | 版を揃えたいとき。デザインシステムを上げるたびに UI プロファイルも同じタグになる |
-| **手で書く profile の本文は `docs/` の外に置く**（例: `guides/`） | `docs/` は spec-loop の正本と MkDocs の `docs_dir` で、Markdown 以外もサイトに写る（spec-loop の `references/tree.md` の「デザインの正本の参照」の MkDocs の項）。profile の本文をサイトに載せたいなら、明示して足す |
+| **手で書く profile の本文は `docs/` の外に置く**（例: `guides/`） | `docs/` は spec-loop の正本と MkDocs の `docs_dir` で、Markdown 以外もサイトに写る（spec-loop の `references/tree.md` の「デザインの正本の参照」の MkDocs の項）。人が読む文書としては、design-system のドキュメントのサイトが `guides/` の本文と層の表を描く（`references/outputs.md` の「手で書く profile も同じサイトに載せる」） |
 | **リポジトリの直下の名前は spec-loop が使うものを避ける**（`docs/`・`scaffold/`・`spec-review/`・`build/`・`site/`・`hooks/`）——コミットしない design-system の生成物は spec-loop の `build/` の下の `build/design-system/` に置く（screen-spec の `build/mock/` と同じ形）。直下の `site/` は spec-loop の MkDocs の出力（雛形の `site_dir: site`）なので使わない | 前例は screen-spec（UI モックの出力が `build/mock/`——screen-spec の `references/mock.md`）。spec-loop の `references/monorepo.md` の「build/ を分けない」が直下の `build/` から締め出すのは**実装のビルドの出力**で、spec-loop を使うプラグインの出力の置き場所は決めていない——`build/design-system/` は同じ節が挙げる spec-loop の名前（`build/merged/` など）と重ならない |
 | **承認の範囲は版のディレクトリだけ**——2 つのサインオフはデザインシステムの表と散文を比べ、UI プロファイルと基盤の profile は比べない | spec-loop の照合は版のディレクトリの中しか見ない（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）。profile の変更は PR とタグで出す |
 | 使う側の手元の clone は 1 つでよい——案件の `CLAUDE.md` の `外部の profile の clone:` の行は、リポジトリごとに 1 行 | spec-loop の `references/external-profile.md` の「探し方」 |

@@ -34,11 +34,11 @@ design-system は spec-loop の決まりに従い、**spec-loop は design-syste
 | 2 | design-system: `init` のスキルと書き込み、表の形の確定、機械の検査（`references/tree.md`・`references/review.md` の「機械の検査」）。既存の UI の棚卸しを起こせるかもここで決める（`references/spec-loop.md` の「決めていないこと」） | 起票する |
 | 3 | design-system: 生成物——索引・DTCG のトークン・描画キットと `--check`（`references/outputs.md`）。索引の層 `規則` は #1605、層 `参照` は #1607 が使う側として確定させる | 起票する（#1605・#1607 はこの段の後） |
 | 4 | design-system: ドキュメントのサイト | #1611 |
-| 5 | spec-loop: 関門（`references/spec-loop.md` の「spec-loop に要る口」の 3） | 起票する |
+| 5 | spec-loop: 関門と、正本の根のディレクトリの名前を変える口（`references/spec-loop.md` の「spec-loop に要る口」の 3・5） | 起票する |
 | 6 | design-system: レビューのスキルと判定役（`references/review.md` の「判定役」） | 起票する |
 | 7 | design-system: UI プロファイルへの引き渡し（`references/handoff.md`）と、dev-loop が印を読むか | 起票する |
 | 8 | 雛形のリポジトリの原本と公開 | #1610 |
 
-デザインシステム・UI プロファイル・基盤の profile は 1 つのリポジトリに共存させてよく、組織のガイドラインの束として案件に一括で渡せる（`references/tree.md` の「モノレポで共存させる」）。
+デザインシステム・UI プロファイル・基盤の profile は 1 つのリポジトリに共存させてよく、組織のガイドラインの束として案件に一括で渡せる（`references/tree.md` の「モノレポで共存させる」）。そのときドキュメントのサイトは手で書く profile の文書も載せる（`references/outputs.md` の「手で書く profile も同じサイトに載せる」）。
 
 使う側（screen-spec）の Issue は #1606（案件がデザインシステムを名指す。束の基盤の profile から初期値を引く形もここ）・#1612（UI プロファイルとの対応）・#1614（UI モックを描画キットで描く）・#1608（版を上げたときの起票の候補）です。
