@@ -73,9 +73,10 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 検査器を一時ディレクトリで走らせるスクリプトが、止められても `$TMPDIR` に一時ディレクトリと検査器（java）を残さないための部品である。このスクリプトの CLI（`probe`）は使わない。
 
 - **名前**: `owned_dir(<頭>)` は `<頭><pid>-<乱字 8 文字>` の一時ディレクトリを作る（`tempfile.TemporaryDirectory`。抜けたら消す）。
-- **信号**: `catch_signals()` は SIGTERM・SIGINT・SIGHUP を例外 `Interrupted`（`BaseException` の子——途中の `except Exception` に呑ませず、`with` の片付けまで上げる）にする。
+- **信号**: `catch_signals(current_signals() の値)` は SIGTERM・SIGINT・SIGHUP を例外 `Interrupted`（`BaseException` の子——途中の `except Exception` に呑ませず、`with` の片付けまで上げる）にする。
   **親が無視にした信号は無視のまま**（`nohup` の SIGHUP・`&` の SIGINT）。1 回目を受けたら全部を無視にする（片付けの途中で止めない）。`restore_signals()` で入れる前に戻す。
-  例外が `run_model` の待ちの中で起きれば、`run_model` が検査器のプロセスグループを止めてから上げる。
+  入れるのは呼ぶ側の `try` の中で（入れた直後の信号を `try` の外で上げない）。`restore_signals` は戻す途中の信号を待たせ、戻した後の扱いで受ける。
+  例外が `run_model` の待ちの中で起きれば、`run_model` が検査器のプロセスグループを止めてから上げる。`run_model` は起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせ、検査器には待たせた分を引き継がない。
 - **消し直し**: `sweep(<頭>)` は自分の pid の `<頭><pid>-*` を消す——片付け（`TemporaryDirectory` の削除）の途中に届いた信号で、削除が途切れていることがある。
 - **回収**: `reclaim(<頭>)` は、名前が `<頭><pid>-<乱字 8 文字>` の形どおりで、その pid のプロセスが居ないもの（SIGKILL で片付けが走らなかった残り）を消す。
   その中に `record_group` で記録した検査器のプロセスグループ（`GROUP_FILE`）がまだ居れば・記録が読めなければ、消さずに返す（`reclaim_lines` が言う行を作る）。
@@ -86,7 +87,8 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 | 持ち主が居るか分からない（権限）pid は居るほうに倒す | 別の利用者の実行のディレクトリを消す |
 | 記録した検査器のグループがまだ居れば・記録が読めなければ（権限・ASCII でない・数字でない・0 以下）消さない | 走り続ける検査器の書くファイルを見えなくして「消した」と言う |
 | 親が無視にした信号は無視のまま、ほかは `Interrupted` にし、1 回目の後は全部を無視する | `nohup` で起こした実行が端末を閉じただけで止まる・片付けの途中の 2 回目で止まる |
-| `restore_signals` で入れる前の扱いに戻す | 同じプロセスで呼んだ後も、信号が例外のまま残る |
+| `restore_signals` で入れる前の扱いに戻し、戻す途中の信号は戻した後の扱いで受ける | 同じプロセスで呼んだ後も、信号が例外のまま残る・戻す途中の信号が捕まえられずに 1 で終わる |
+| `run_model` は、起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせ、検査器には待たせた分を引き継がない | 起こした直後に届いた信号で、検査器を止めずに抜ける・検査器が SIGTERM を受けられない |
 
 ## 何を守り、何を守らないか
 
@@ -215,15 +217,21 @@ def after_key(line, key):
 def run_model(call, workdir, name, timeout, started=None):
     """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。
     `started` があれば、起こした直後にそのプロセス（別のセッションのリーダー。pid がプロセスグループの番号）を渡して呼ぶ。"""
+    # 起こしてから止められる所（下の try）に入るまで——Popen の中を含む——に届いた信号を待たせる（#1600）。子には待たせた分を引き継がない
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
     try:
         proc = subprocess.Popen(["/bin/sh", "-c", f"{call} {name}.tla"], cwd=workdir, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
-                                start_new_session=True)
-    except OSError as e:
-        return None, f"起動できない: {e}"
+                                start_new_session=True, preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))
+    except BaseException as e:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+        if isinstance(e, OSError):
+            return None, f"起動できない: {e}"
+        raise
     try:
         if started is not None:
             started(proc)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # 待たせた信号はここで届き、下の枝で検査器を止める
         out, _ = proc.communicate(timeout=timeout)
         return proc.returncode, out
     except subprocess.TimeoutExpired:
@@ -235,6 +243,8 @@ def run_model(call, workdir, name, timeout, started=None):
         with_group(proc, signal.SIGKILL)
         proc.wait()
         raise
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # started が上げた例外の枝でも解く
 
 
 def with_group(proc, sig):
@@ -265,18 +275,26 @@ def _on_signal(signum, frame):
     raise Interrupted(signum)
 
 
-def catch_signals():
-    """SIGTERM・SIGINT・SIGHUP を `Interrupted` にする（親が無視にしたものは無視のまま）。戻り値を `restore_signals` に渡す。"""
-    saved = {sig: signal.getsignal(sig) for sig in SIGNALS}
+def current_signals():
+    """いまの扱い（`catch_signals` と `restore_signals` に渡す）。入れる前に取り、入れるのは呼ぶ側の try の中で——入れた直後の信号を try の外で上げない。"""
+    return {sig: signal.getsignal(sig) for sig in SIGNALS}
+
+
+def catch_signals(saved):
+    """SIGTERM・SIGINT・SIGHUP を `Interrupted` にする（`saved` で親が無視にしていたものは無視のまま）。"""
     for sig, old in saved.items():
         if old is not signal.SIG_IGN:  # 親が無視にしたもの（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま
             signal.signal(sig, _on_signal)
-    return saved
 
 
 def restore_signals(saved):
-    for sig, old in saved.items():
-        signal.signal(sig, signal.SIG_DFL if old is None else old)
+    # 戻す途中に届いた信号は待たせ、戻した後の扱いで受ける——1 つ目を戻した後の 2 つ目で `Interrupted` を try の外に上げない
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
+    try:
+        for sig, old in saved.items():
+            signal.signal(sig, signal.SIG_DFL if old is None else old)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
 
 
 def owned_pattern(prefix):

@@ -59,7 +59,9 @@ MUTATIONS = {
     "時間切れで止めない": [("        out, _ = proc.communicate(timeout=timeout)\n", "        out, _ = proc.communicate()\n")],
     "正本で走らせる": [("cwd=workdir,", "cwd=None,")],
     # 信号と回収（#1600）——観測は子のプロセスで取る（下の `signals`）
-    "信号で片付けない": [("    saved = TLC.catch_signals()\n", "    saved = {}\n")],
+    "信号で片付けない": [("        TLC.catch_signals(saved)\n", "        pass\n")],
+    "起こす間に信号を待たせない": [("    mask = signal.pthread_sigmask(signal.SIG_BLOCK, TLC.SIGNALS)\n", "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())\n")],
+    "Alloy に待たせた信号を引き継ぐ": [(", preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))", ")")],
     "待っている間の例外で Alloy を止めない": [("    except BaseException:\n        # 待っている間の例外（信号を例外にした main・Ctrl-C）でも、別のセッションで起こした Alloy を置き去りにしない（#1600）\n"
                                      "        TLC.with_group(proc, signal.SIGKILL)\n        proc.wait()\n        raise\n", "")],
     "片付けの途中の信号の後に消し直さない": [("        TLC.sweep(PREFIX)  # 片付け", "        pass  # 片付け")],
@@ -136,7 +138,9 @@ def make_tools(base: Path) -> dict:
         # 時間切れ（子のプロセスも残す——プロセスグループで止めないと出力の管が閉じない）
         "slow": write_exe(tools / "slow-alloy", "#!/bin/sh\nsleep 20 &\nwait\n"),
         # 自分の pid を書いて眠る（信号・SIGKILL の試料。#1600）
-        "sleepy": write_exe(tools / "sleepy-alloy", '#!/bin/sh\necho $$ > "$ALLOY_PID"\nexec sleep 60\n'),
+        "sleepy": write_exe(tools / "sleepy-alloy", f"#!{sys.executable}\nimport os, signal, time\n"
+                            "open(os.environ['ALLOY_MASK'], 'w').write(str(sorted(int(s) for s in signal.pthread_sigmask(signal.SIG_BLOCK, []))))\n"
+                            "open(os.environ['ALLOY_PID'], 'w').write(str(os.getpid()))\ntime.sleep(60)\n"),
         # 先頭が java の通る偽物（`java -jar <jar> exec` の形の陽性対照）
         "java": write_exe(tools / "java", fake_alloy(marker=True)),
         # 空白を含むパスの通る偽物（クォートはシェルの組み立てに数えない）
@@ -180,6 +184,26 @@ shutil.rmtree = rmtree
 sys.exit(module.main(sys.argv[2:]))
 """
 
+POPEN_WINDOW = """import importlib.util, os, signal, subprocess, sys, time
+spec = importlib.util.spec_from_file_location("check_alloy", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real = subprocess.Popen
+class Popen(real):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        open(sys.argv[2], "w").write(str(self.pid))
+        # 偽の検査器が起きて pid を書くまで待ってから送る——起きる前に作業ディレクトリが消えると、偽物は自分で死に（読めない・閉じた管に書いて SIGPIPE）、残る形と区別できない（実測の交絡）
+        for _ in range(300):
+            if os.path.exists(os.environ["ALLOY_PID"]):
+                break
+            time.sleep(0.02)
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(0.01)
+subprocess.Popen = Popen
+sys.exit(module.main(sys.argv[3:]))
+"""
+
 
 def dead_pid() -> int:
     proc = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True, check=True)
@@ -218,7 +242,8 @@ def signals(script: Path, work: Path, tools: dict) -> dict:
     root = work / "sigrepo"
     root.mkdir()
     pid_file = work / "alloy.pid"
-    env = {**os.environ, "TMPDIR": str(tmpdir), "ALLOY_PID": str(pid_file)}
+    mask_file = work / "alloy.mask"
+    env = {**os.environ, "TMPDIR": str(tmpdir), "ALLOY_PID": str(pid_file), "ALLOY_MASK": str(mask_file)}
 
     def left():
         return sorted(p.name for p in tmpdir.iterdir() if p.name.startswith(PREFIX))
@@ -246,7 +271,24 @@ def signals(script: Path, work: Path, tools: dict) -> dict:
         except subprocess.TimeoutExpired:
             proc.kill()
             out, _ = proc.communicate()
-        o["信号: SIGTERM"] = (proc.returncode, "信号" in out, gone(pid), left())
+        o["信号: SIGTERM"] = (proc.returncode, "信号" in out, gone(pid), left(), mask_file.read_text() if mask_file.is_file() else None)
+    wipe()
+    # 1b. 起こした直後（Popen の中）の SIGTERM——Popen が子を起こした後・返る前に信号を送り、関数を 1 つ呼んで待っていない信号の例外をその場で上げさせる
+    wrapper = work / "popen.py"
+    wrapper.write_text(POPEN_WINDOW, encoding="utf-8")
+    group_file = work / "popen.pid"
+    run_ = subprocess.run([sys.executable, "-I", str(wrapper), str(script), str(group_file), str(root)], capture_output=True, text=True, env=env,
+                          cwd=work, timeout=120, preexec_fn=lambda: signal.signal(signal.SIGTERM, signal.SIG_DFL))
+    group_alive = None
+    if group_file.is_file():
+        time.sleep(0.2)
+        try:
+            os.killpg(int(group_file.read_text()), 0)
+            group_alive = True
+            os.killpg(int(group_file.read_text()), signal.SIGKILL)
+        except ProcessLookupError:
+            group_alive = False
+    o["信号: 起こした直後"] = (run_.returncode, group_alive, left())
     wipe()
     # 2. 片付けの途中の信号（通る偽物で）
     (root / "CLAUDE.md").write_text(f"Alloy の呼び方: {tools['good']} exec\n", encoding="utf-8")
@@ -437,7 +479,8 @@ def main() -> int:
         check("時間切れ: 1 で、子のプロセスを待たずに早く返る", o["時間切れ"] == (missing, "早い"))
         check("引数なし: 2", o["引数なし"] == 2)
         check("信号: Alloy が走っている間の SIGTERM で 143・信号と言う・Alloy を止める・一時ディレクトリを残さない（#1600）",
-              o["信号: SIGTERM"] == (143, True, True, []))
+              o["信号: SIGTERM"] == (143, True, True, [], "[]"))
+        check("信号: 起こした直後（Popen の中）の SIGTERM でも 143 で Alloy を残さない", o["信号: 起こした直後"] == (143, False, []))
         check("信号: 片付けの途中の SIGTERM でも 143 で一時ディレクトリを残さない", o["信号: 片付けの途中"] == (143, []))
         check("回収: 持ち主の居ない pid つきだけを消し、居るもの・古い名前・ほかの頭は消さない",
               o["回収"] == (0, {"持ち主が居ない": False, "持ち主が居る": True, "古い名前": True, "ほかの頭": True}, True))

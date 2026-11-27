@@ -87,8 +87,12 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1600-tempdir-signal-cleanup`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1600`・起点 `0c824eac`・base は `origin/main`（`refs/remotes/origin/HEAD`）の merge-base `0c824eace80033e869325f8fd757fb58bc766376`
-- 実装: 未
+- 実装: 済（`c757bbc4`）。歯止め `check-all.py`（run-serial 越し）: 緑（19 本を回し 87 本 CACHED、失敗 0）
 - 割り目（手順 4）: 割らない（cruise の周）
+- 1 パス目の指摘対応の起点: `c757bbc4a0b17bb2951839be2c18e44b41edf282`
+- Verifier 1 パス目: 起動（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1600-verifier-1-20261127T082846Z.md`
+- /code-review 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1600-code-review-1-20261127T082846Z.md`
+- 1 回目の `check-all.py` は `( … ) &` で起こしたので SIGINT が無視の状態で走り、既存の `test-formal-statechart.py` の「信号: SIGINT」が落ちた（交絡。前景で回すと緑、`run_in_background` では SIGINT は既定のまま——実測）。2 回目は `run_in_background` で回して緑
 - 交絡を潰した手順: 陽性対照は base の木をリポジトリの外に取り出して走らせた（新しい実装と同じ試料・同じ手順で比べる）
 
 ```dev-loop-gates
@@ -96,6 +100,22 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 ```
 
 ## 既知の限界・決着済みの論点
+
+### 1 パス目の指摘と採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-観察1: `catch_signals()` の後から `try` までに届いた信号を取りこぼす（Verifier は反証に数えず） | 示せる——1 つ目を入れた直後に SIGTERM を送る形（`signal.signal` を包む）で `check-formal-rerun.py` が `Interrupted: 15` の未捕捉で終了コード 1 | 1 | 直す（`current_signals()` を取ってから、入れるのを `try` の中に移す） |
+| V1-観察2: `except Interrupted` の中の標準エラーへの出力が SIGHUP の後に `OSError` になりうる | 示せない（実験していない） | 無し | 残課題 |
+| CR1-1: 信号が `Popen` の中・`Popen` と `try` の間に届くと検査器を止めずに抜ける | 示せる——`run_model` を直に呼び、`Popen` の子を起こした後に SIGTERM を送ると、偽の検査器（`sleep`）が `Interrupted` の後も居た。CLI からの再現では偽物が自分で死んで残らなかった（起きる前に作業ディレクトリが消えると、偽物の sh が閉じた管に書いて SIGPIPE で死ぬ——実測の交絡。試料は偽物が pid を書くまで待ってから送る形にした） | 1・4 | 直す（`run_model` は起こしてから `try` の中まで信号を待たせ、子には `preexec_fn` で待たせた分を引き継がない。両スクリプト） |
+| CR1-2: `restore_signals` の途中（1 つ目を戻した後）の信号で `Interrupted` が `finally` から上がり終了コード 1 | 示せる——1 つ目を戻した直後に SIGHUP を送る形で `Interrupted: 1` の未捕捉・終了コード 1 | 1 | 直す（戻す間は信号を待たせ、戻した後の扱いで受ける——既定なら信号で終わる） |
+| CR1-3: `check-formal-rerun.py` の守らないの表の「次のこのスクリプトの起動が回収する」は、dev-loop の周で `formal-sync.py` だけを回す限り回収されない | 示せない（文面の読み方。`formal-sync.py` は走らせていない） | 無し（経路 g は受入基準 6 だけ） | 残課題 |
+| CR1-4: `check-alloy.py` の `__main__` に想定外の例外を 2 にする枝が無く、`.tool-group` が書けないとトレースバックで 1 | 示せない（実験していない） | 無し | 残課題 |
+| CR1-5: 持ち主の pid が再使用されている間は回収されないことが、部品の節の守らないに無い | 示せない（文面の欠け） | 無し | 残課題 |
+
+- 1 パス目の指摘対応のコミット: 下の「関門の進捗」。直した 3 行（V1-観察1・CR1-1・CR1-2）には試料を足した（「信号: 入れる途中」「信号: 起こした直後（Popen の中）」「信号: 戻す途中」と、検査器が待たされたまま起きないことの観測）と変異（`check-tlc.py` の 3 件・`check-formal-rerun.py` の 1 件・`check-alloy.py` の 2 件）。
+
+### 決着済み
 
 - `formal-statechart.py` は部品に寄せない（決めたこと 1）。寄せるまでは同じ規則の写しが 2 つある。
 - 古い形（pid の無い名前）の残りは回収しない——持ち主が分からない。手で消す。

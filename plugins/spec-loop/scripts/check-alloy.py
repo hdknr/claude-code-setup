@@ -83,6 +83,8 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 - **正本で走らせない**——モデルは一時ディレクトリに書いて、そこで走らせる（`exec` の出力の `<名前>/` も一時ディレクトリにできる）。
 - **SIGTERM・SIGINT・SIGHUP で止められても、一時ディレクトリを残さず 128+信号で終わる**（#1600。親が無視にした信号は無視のまま——`check-tlc.py` の部品）。
 - **待っている間の例外（信号）でも、Alloy のプロセスグループを止める**——別のセッションで起こした java を置き去りにしない。
+- **起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせる**——起こした直後の信号で Alloy を置き去りにしない。
+- **Alloy には待たせた信号を引き継がない**——Alloy が SIGTERM を受けられないまま起きない。
 - **片付けの途中に届いた信号の後も、自分の pid の一時ディレクトリを消し直す。**
 - **起動時に、持ち主の居ない `spec-loop-check-alloy-<pid>-<乱字 8 文字>` を回収する**——SIGKILL の残りを溜め続けない。
 - **Alloy のプロセスグループを一時ディレクトリに記録する**——SIGKILL の後も走り続ける Alloy のディレクトリを、次の起動が消さずに言う。
@@ -214,15 +216,21 @@ def probe_env():
 def run_model(call, workdir, name, timeout, started=None):
     """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。
     `started` があれば、起こした直後にそのプロセス（別のセッションのリーダー。pid がプロセスグループの番号）を渡して呼ぶ。"""
+    # 起こしてから止められる所（下の try）に入るまで——Popen の中を含む——に届いた信号を待たせる（#1600。`check-tlc.py` の `run_model` と同じ）。子には待たせた分を引き継がない
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, TLC.SIGNALS)
     try:
         proc = subprocess.Popen(["/bin/sh", "-c", f"{call} {name}.als"], cwd=workdir, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
-                                start_new_session=True, env=probe_env())
-    except OSError as e:
-        return None, f"起動できない: {e}"
+                                start_new_session=True, env=probe_env(), preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))
+    except BaseException as e:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+        if isinstance(e, OSError):
+            return None, f"起動できない: {e}"
+        raise
     try:
         if started is not None:
             started(proc)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # 待たせた信号はここで届き、下の枝で Alloy を止める
         out, _ = proc.communicate(timeout=timeout)
         return proc.returncode, out
     except subprocess.TimeoutExpired:
@@ -234,6 +242,8 @@ def run_model(call, workdir, name, timeout, started=None):
         TLC.with_group(proc, signal.SIGKILL)
         proc.wait()
         raise
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # started が上げた例外の枝でも解く
 
 
 def results(out):
@@ -294,8 +304,9 @@ def main(argv=None):
         return EXIT_USAGE if exc.code else EXIT_OK
     for line in TLC.reclaim_lines(*TLC.reclaim(PREFIX)):
         print(line, file=sys.stderr)
-    saved = TLC.catch_signals()
+    saved = TLC.current_signals()
     try:
+        TLC.catch_signals(saved)
         code, lines = judge(args.root)
     except TLC.Interrupted as stop:
         TLC.sweep(PREFIX)  # 片付けの途中に届いた信号で、削除が途切れていることがある（信号はもう無視している）

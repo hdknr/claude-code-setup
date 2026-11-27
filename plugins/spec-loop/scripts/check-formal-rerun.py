@@ -252,8 +252,9 @@ def main(argv: list[str]) -> int:
     for line in tlc.reclaim_lines(*tlc.reclaim(PREFIX)):
         print(line, file=sys.stderr)
     verdicts = []
-    saved = tlc.catch_signals()
+    saved = tlc.current_signals()
     try:
+        tlc.catch_signals(saved)
         for directory in args.targets:
             verdict, lines = rerun(call, directory, int(args.timeout))
             verdicts.append(verdict)
