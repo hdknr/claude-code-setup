@@ -23,10 +23,10 @@
 ├── spec-profile/<名前>/            # 生成物（コミット）——使う側が読む索引（`references/outputs.md`）
 ├── tokens/                         # 生成物（コミット）——DTCG のトークン
 ├── kit/                            # 生成物（コミット）——描画キット
-└── site/                           # 生成物（コミットしない）——ドキュメントのサイト
+└── build/design-system/site/       # 生成物（コミットしない）——ドキュメントのサイト
 ```
 
-- **表と散文は `requirements/` の中に置く**——spec-loop の 2 つのサインオフが比べる範囲（spec-loop の `references/signoff-tags.md` の「比べる場所」）に入り、承認の対象になる。
+- **表と散文は `requirements/` の中に置く**——spec-loop の 2 つのサインオフが比べる範囲（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）に入り、承認の対象になる。
 - **生成物は版のディレクトリの外**（リポジトリの根）——承認の対象ではなく、表から作り直せる。コミットする 3 つは `--check` で鮮度を見る（`references/outputs.md`）。
 - `spec/` には spec-loop の `qa-dev.csv` だけを置く。spec-loop の spec-review は使わない（`references/spec-loop.md` の「spec-loop のどの段を使うか」）ので、`spec/` に仕様は書かない。
 
@@ -70,7 +70,7 @@
 | `表示名` | 日本語の名前 |
 | `項目の種類` | screen-spec の項目の種類（screen-spec の `references/tables.md` の「項目の種類」）のうち、この部品で描けるもの。複数可 |
 | `目的` | 何のための部品か |
-| `使う場面`・`使わない場面` | 使い分け（記事の「NG 例」） |
+| `使う場面`・`使わない場面` | 使い分け（記事の「NG 例」。記事は `README.md` の「出所」） |
 | `根拠` | 上の決まり |
 
 ### 部品の仕様（`component-specs.csv`）
@@ -103,7 +103,7 @@
 
 ### 規則（`rules.csv`）
 
-原則・使い方の規則・文言の規則・アクセシビリティの規則（記事の「デザイン原則」「ドキュメント・運用ルール」）。
+原則・使い方の規則・文言の規則・アクセシビリティの規則（記事の「デザイン原則」「ドキュメント・運用ルール」。記事は `README.md` の「出所」）。
 
 | 列 | 書くもの |
 | --- | --- |
@@ -136,10 +136,13 @@
 │   └── <基盤の profile の名前>/           # 手で書く——platform-spec の profile（層 `基盤` など）
 ├── guides/<profile の名前>/                # 手で書く profile の本文（層の `リンク` の行き先）
 ├── tokens/・kit/                           # 生成物（design-system）
-└── site/                                   # 生成物（コミットしない）
+└── build/design-system/site/               # 生成物（コミットしない）
 ```
 
-UI プロファイルと基盤の profile は、1 つの `<名前>` に層をまとめても、別の `<名前>` に分けてもよい（spec-loop の決まり）。
+UI プロファイルと基盤の profile は、spec-loop の決まりでは 1 つの `<名前>` に層をまとめても、別の `<名前>` に分けてもよい。
+**ただし下の「ガイドラインとして一括で渡す」の束にするなら、基盤・アーキテクチャ・開発の進め方・画面の層を基盤の profile と同じ `<名前>` に置く**——
+screen-spec の初期値は基盤の profile 自身の `profile.csv` の層 `画面` の `重ねる先` を読み、外部の profile を同じリポジトリ・同じ名前・同じタグにする（screen-spec の `references/profiles.md` の「基盤の profile から引く初期値」）。
+`profile-layers.py` も、案件の設定の `profile` の名前からアーキテクチャと開発の進め方の層を読む。名前を分ける形は、束を使わない場合に限る。上の木は束を使わない形で描いてある。
 
 | 決まり | 理由 |
 | --- | --- |
@@ -148,8 +151,8 @@ UI プロファイルと基盤の profile は、1 つの `<名前>` に層をま
 | **タグの接頭辞を、版を出すものごとに分ける**——デザインシステムは spec-loop の決まりで `release-v<n>`、ほかは `ui-v<n>`・`infra-v<n>` など | 版を別々に出せる。platform-spec の版の差分は、設定のタグと同じ名前の形（接頭辞・区切り・末尾が同じ）のタグだけを新しい版の候補にする（platform-spec の `scripts/check-profile-diff.py` の `name_shape`）ので、接頭辞の違うタグは混ざらない |
 | 1 つのタグで全部を出してもよい——UI プロファイルの設定のタグを `release-v<n>` にする | 版を揃えたいとき。デザインシステムを上げるたびに UI プロファイルも同じタグになる |
 | **手で書く profile の本文は `docs/` の外に置く**（例: `guides/`） | `docs/` は spec-loop の正本と MkDocs の `docs_dir` で、Markdown 以外もサイトに写る（spec-loop の `references/tree.md` の「デザインの正本の参照」の MkDocs の項）。profile の本文をサイトに載せたいなら、明示して足す |
-| **リポジトリの直下の名前は spec-loop が使うものを避ける**（`docs/`・`scaffold/`・`spec-review/`・`build/`・`site/`・`hooks/`） | spec-loop の `references/monorepo.md` の「推奨のレイアウト」 |
-| **承認の範囲は版のディレクトリだけ**——2 つのサインオフはデザインシステムの表と散文を比べ、UI プロファイルと基盤の profile は比べない | spec-loop の照合は版のディレクトリの中しか見ない（spec-loop の `references/signoff-tags.md` の「比べる場所」）。profile の変更は PR とタグで出す |
+| **リポジトリの直下の名前は spec-loop が使うものを避ける**（`docs/`・`scaffold/`・`spec-review/`・`build/`・`site/`・`hooks/`）——コミットしない design-system の生成物は spec-loop の `build/` の下の `build/design-system/` に置く（screen-spec の `build/mock/` と同じ形）。直下の `site/` は spec-loop の MkDocs の出力（雛形の `site_dir: site`）なので使わない | spec-loop の `references/monorepo.md` の「推奨のレイアウト」と「build/ を分けない」 |
+| **承認の範囲は版のディレクトリだけ**——2 つのサインオフはデザインシステムの表と散文を比べ、UI プロファイルと基盤の profile は比べない | spec-loop の照合は版のディレクトリの中しか見ない（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）。profile の変更は PR とタグで出す |
 | 使う側の手元の clone は 1 つでよい——案件の `CLAUDE.md` の `外部の profile の clone:` の行は、リポジトリごとに 1 行 | spec-loop の `references/external-profile.md` の「探し方」 |
 
 ### ガイドラインとして一括で渡す
@@ -187,3 +190,4 @@ UI プロファイルと基盤の profile は、1 つの `<名前>` に層をま
 | 部品を消したとき、その部品の仕様の行も消したものとして扱うか | spec-loop の行の単位の表の登録の Issue（`references/spec-loop.md` の「spec-loop に要る口」の 1） |
 | `状態` の語彙を足す方法（部品に固有の状態） | 表と検査の子の Issue |
 | アイコン・画像・フォントのファイルの置き場所 | 生成物の子の Issue |
+| 機械の検査が使う基準の値（コントラスト比の閾値など）を置く場所——`rules.csv` に値の列を足すか、`settings.csv` の項目にするか（`規則` は自由な文なので、検査は文から数を読まない） | 表と検査の子の Issue（`references/review.md` の「機械の検査」） |

@@ -98,8 +98,19 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 
 - 実装: 済み（`b078b5cd`）。`check-all.py` は緑（106 本中 19 本を回して失敗 0、87 本は CACHED）。`check-description-sync.py origin/main` 緑。A4 の grep は 0 件
 - 割り目（手順 4）: 利用者に訊いた（2026-11-27）——**ここで割る**を選んだ。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 1613`（手順 5 から）
-- 関門の記録はまだ無い（1 パス目の関門に渡すときに `dev-loop-gates` のブロックと 1 パス目の起点の SHA を書く）
-- 次: 手順 5（Verifier の 1 パス目）と手順 6（`/code-review` の 1 パス目）。どちらも未着手
+- 再開（2026-11-27、`/clear` の後）: `find-cycle.py` は 1（当たった）。ブランチ・HEAD（`7b419007`）が周の在り処と一致
+- 1 パス目の起点（指摘対応の 0 行の判定に使う）: `7b419007`（成果物はコミット済み。この後の未コミットは計画ファイルだけ）
+- Verifier 1 パス目: 済み——**反証 2 件**（`dev-loop:dev-loop-verifier`・sonnet。終点 `7b419007`。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/11c8a260-cf14-46c5-ba2f-c9a98c61f4bf/scratchpad/gate-1613-verifier-1-20261127T085919Z.md`）
+- `/code-review` 1 パス目: 済み——**指摘 9 件**（high。終点 `7b419007`。報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1613/11c8a260-cf14-46c5-ba2f-c9a98c61f4bf/scratchpad/gate-1613-code-review-1-20261127T085919Z.md`）
+- D4 は両方の関門が挙げた。利用者に `AskUserQuestion` で確かめた（2026-11-27）——「自前の判定役で代える」。原本に選ばれた値と理由を書く
+- 1 パス目の指摘対応: 採否の表の「直す」10 行を直した（下の採否の表）。差し戻しは手順 4 への 1 回（この指摘対応）
+- 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
+
+```dev-loop-gates
+周の base: 0c824eace80033e869325f8fd757fb58bc766376
+関門: Verifier 1 7b419007 反証=2
+関門: /code-review 1 7b419007 指摘=9
+```
 
 ## 既知の限界・決着済みの論点
 
@@ -108,6 +119,24 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 | 論点 | 決着 | 理由 |
 | --- | --- | --- |
 | spec-loop の `tree.md`（「画面の表」）と `screen-gate.py` は screen-spec の名前を持つ | 前例として、spec-loop 側の口（関門）だけが design-system の名前を持つ形を子の Issue で採ってよい。この周（A4）は spec-loop を触らないので名前を持たない | screen-spec の前例。platform-spec は `profile-gate.py` だけが名前を持つ（`test-check-infra-csv.py` が見る） |
+| D4 の形（spec-review そのものではなく自前の判定役） | 採った——利用者に確かめた（2026-11-27、`AskUserQuestion`「自前の判定役で代える」）。原本（`review.md` の「判定役」・`spec-loop.md` の表）に選ばれた値と代えた理由を書いた | spec-review の抜ける条件と中間表現がデザインシステムの表に合わない |
+
+採否の表（1 パス目。直す線: 既定）:
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1・CR7 | D4 の値「spec-review も通す」と原本の「spec-review: 使わない」が食い違い、原本はそれを書いていない | 示せる——計画の D4 の行と `spec-loop.md` 30 行・`review.md` 47 行 | A6 | 直す（利用者に確かめて形は据え置き、原本に値と理由を書く） |
+| V2 | feasibility を使わない正本で、予算側のタグが何に合意するかが無い | 示せる——`check-signoff.py` 384〜399 行が 2 つのタグを求める・`signoff-tags.md` の budget の定義 | A1（決めずに残したものの名指し） | 直す（`spec-loop.md` に「決めていないこと」を足した） |
+| CR1 | サイトを直下の `site/` に置くが、同じファイルが `site/` を避けると言い、spec-loop の MkDocs も `site/` を使う | 示せる——spec-loop の `templates/mkdocs/mkdocs.yml` 4 行・`gitignore` 2 行・`tree.md` 151 行 | A10・A3 | 直す（`build/design-system/site/` に） |
+| CR2 | 口 4 は `qa-to-pptx.py --links` で足りる見込みとするが、`--links` で表紙に「見た目は確かめる対象ではない」が必ず出る | 示せる——`qa-to-pptx.py` 35〜36・109 行 | A3 | 直す |
+| CR3 | 束の「入口は 1 つ」は、層を別の `<名前>` に分けると成り立たない | 示せる——screen-spec の `profiles.md` 118〜126 行（同じ名前・同じタグ） | A11・A3 | 直す（束なら同じ `<名前>` に置くと決めた） |
+| CR4 | 「`signoff-tags.md` の「比べる場所」」の見出しが無い（2 か所） | 示せる——`signoff-tags.md` の見出しは「2 つの承認が同じ範囲を見ていたか」 | A7 | 直す |
+| CR5 | 索引のリンクを「行を最後に置いた版」の散文にすると、散文がその版に無いことがある | 示せる——表は行の単位・散文はファイルの単位（`versions.md`）、`external-profile.py` の `check_links` はタグの時点のファイルの在否を見る | A3 | 直す（ファイルを最後に置いた版） |
+| CR6 | 口 1 の `ROW_TABLES` を読む一覧が screen-spec の `build-mock.py` を落とし、画面の表として読む箇所を絞る必要を書いていない | 示せる——`versions.md` 129 行・`build-mock.py` 411 行・`screen-gate.py` 116 行 | A3 | 直す |
+| CR8 | コントラスト比の基準を規則の表で決めるとするが、規則の表に値の列が無い | 示せる——`tree.md` の規則の表の列 | A1（決めずに残したものの名指し） | 直す（`tree.md` の「決めていないこと」に足した） |
+| CR9 | 「記事」の出所がプラグインの中に無い | 示せる——`spec-loop.md` 28 行・`tree.md` 73・106 行 | A7 | 直す（`README.md` に「出所」） |
+
+- 効いた行（Verifier）: V1 は「主張する事実の真偽」の行、V2 も同じ（台帳の ID は手順 8 で引く）
 
 ## 手順 8
 

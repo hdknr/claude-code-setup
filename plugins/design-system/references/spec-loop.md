@@ -25,10 +25,10 @@ design-system は表の形と検査・生成・引き渡しを持つ（`referenc
 | spec-loop の段 | デザインシステムのリポジトリで | 理由 |
 | --- | --- | --- |
 | req-loop（Q&A 表・レビュー会・回答の反映） | **使う** | design-system の検査が出す起票の候補に番号を振り、レビュー会で回答をもらう（`references/review.md` の「1 周」） |
-| 2 つのサインオフ・照合 | **使う** | 承認の運用（記事の「誰が変更を承認するか」）。比べる範囲に表が入る（`requirements/` の中——`references/tree.md`） |
+| 2 つのサインオフ・照合 | **使う** | 承認の運用（記事の「誰が変更を承認するか」。記事は `README.md` の「出所」）。比べる範囲に表が入る（`requirements/` の中——`references/tree.md`）。予算側のタグ（`budget-<k>`）が何に合意するか（feasibility を使わない正本で）は下の「決めていないこと」 |
 | リリースのタグと凍結 | **使う** | 使う側が名指すのは `release-v<n>`（`references/outputs.md` の「使う側が読む時点」） |
-| spec-review | **使わない**（design-system が自分のレビューを持つ） | 抜ける条件（`spec/` のチェックリスト・テストケース・形式検査）と中間表現が、デザインシステムの表に合わない。部品の状態とアクセシビリティは design-system の判定役が突く（`references/review.md` の「判定役」） |
-| feasibility・proposal | 使わない（使ってもよい） | デザインシステムの成果物は提案書ではなくドキュメントのサイト（`references/outputs.md`）。予算の合意は予算側のサインオフのタグで足りる |
+| spec-review | **使わない**（design-system が自分のレビューを持つ。利用者が #1613 の D4 で選んだ「spec-review も通す」を、この形で代えた——利用者に確かめた。`references/review.md` の「判定役」） | 抜ける条件（`spec/` のチェックリスト・テストケース・形式検査）と中間表現が、デザインシステムの表に合わない。部品の状態とアクセシビリティは design-system の判定役が突く（`references/review.md` の「判定役」） |
+| feasibility・proposal | 使わない（使ってもよい） | デザインシステムの成果物は提案書ではなくドキュメントのサイト（`references/outputs.md`）。ただし照合（`check-signoff.py`）は要求確定と予算の 2 つのタグを求める——予算側のタグが何に合意するかは下の「決めていないこと」 |
 | scaffold | **使わない** | 引き渡しの相手は UI プロファイルのリポジトリで、design-system が自分で作る（`references/handoff.md`） |
 | autopilot | 使わない | 回すのは spec-review と feasibility で、上のとおり使わない |
 
@@ -65,10 +65,16 @@ design-system でも次の口が要る。**どれも spec-loop の側の Issue �
 
 | # | 口 | 要る理由 | 案 |
 | --- | --- | --- | --- |
-| 1 | **行の単位で重ねる表の登録** | 利用者と決めた（#1613 の D2）——v2 以降に変えた行だけを置き、版の差分に「どのトークン・部品が変わったか」を出す。サイトの変更の印と引き渡しの Issue がこれに乗る | `versions.md` の「行の単位で重ねる表」と `merge-versions.py` の `KINDS`・`ROW_TABLES` に、`references/tree.md` の 5 つの表を種類（`トークン`・`部品`・`部品の仕様`・`パターン`・`規則`）つきで足す。今ある種類と重ねない。`ROW_TABLES` を読むスクリプト（`diff-versions.py`・`check-signoff.py`・`build-proposal.py`・`screen-gate.py`）も見直す（`versions.md` が求める）。部品を消したらその部品の仕様の行も消したものとして扱うか（画面と項目の前例）を決める |
+| 1 | **行の単位で重ねる表の登録** | 利用者と決めた（#1613 の D2）——v2 以降に変えた行だけを置き、版の差分に「どのトークン・部品が変わったか」を出す。サイトの変更の印と引き渡しの Issue がこれに乗る | `versions.md` の「行の単位で重ねる表」と `merge-versions.py` の `KINDS`・`ROW_TABLES` に、`references/tree.md` の 5 つの表を種類（`トークン`・`部品`・`部品の仕様`・`パターン`・`規則`）つきで足す。今ある種類と重ねない。`ROW_TABLES` を読むスクリプト（`diff-versions.py`・`check-signoff.py`・`build-proposal.py`・`screen-gate.py` と、screen-spec の `build-mock.py`）も見直す（`versions.md` が求める）。**`screen-gate.py`（`TABLES = tuple(versions.ROW_TABLES)`）と `build-mock.py` は一覧の表を全部画面の表として読む**ので、そのまま足すとデザインシステムの表を画面の表として扱う——画面の表の意味で読む箇所を種類で絞る。部品を消したらその部品の仕様の行も消したものとして扱うか（画面と項目の前例）を決める |
 | 2 | **「見た目」の線** | spec-loop の `references/spec-scope.md` の「見た目」は、色・余白・フォントの指摘を共有の Q&A 表に起票しない。デザインシステムの表のセル（トークンの値・部品の状態）の質問がこれに当たって見送られる | 「表に列のある決定は見た目でない」と読める線にする——画面の表の項目が見た目でないのと同じ理屈（`spec-scope.md` の「見た目」は「画面の表にも仕様にも列や性質の無い描き方」と定義している）。表の名前は design-system の原本を指す |
 | 3 | **関門** | req-loop とサインオフの前の確かめが、デザインシステムの表の未決定の印と design-system の検査の結果を入れる（検査を飛ばしたまま承認しない） | `screen-gate.py` と同じ形——表があれば design-system の検査を子のプロセスで呼び、見つからなければ止める。spec-loop で design-system の名前を持つのはこのスクリプトだけにする（platform-spec の `profile-gate.py` と同じ形。テストが見る） |
-| 4 | **レビュー会の資料** | 質問の頁に、生成したサイトの該当の頁を載せる | 今の `qa-to-pptx.py --links`・`--groups`（JSON を外から受ける）で足りる見込み——design-system が JSON を作る。spec-loop を変えずに済むかを、spec-loop の側の Issue で確かめる。`review-meeting.py groups` は画面の表の逆引きなので使わない |
+| 4 | **レビュー会の資料** | 質問の頁に、生成したサイトの該当の頁を載せる `qa-to-pptx.py --links`・`--groups`（JSON を外から受ける）に design-system が JSON を渡す。**ただし今の `qa-to-pptx.py` は `--links` か `--groups` を渡すと表紙に「見た目は確かめる対象ではない」（`APPEARANCE_NOTE`）を必ず出す**——デザインシステムの会では見た目が範囲の中なので逆を伝える。注記を出さない口が要り、2 の「見た目」の線と一緒に決める。`review-meeting.py groups` は画面の表の逆引きなので使わない |
+
+## 決めていないこと
+
+| 事項 | どこで決めるか |
+| --- | --- |
+| feasibility を使わない正本で、予算側のサインオフのタグ（`budget-<k>`。spec-loop の `references/signoff-tags.md` では範囲・開発費・運用費・期間の合意）が何に合意するか——照合は 2 つのタグを求める | レビューのスキルの子の Issue（承認の運用を決めるところ） |
 
 ## 依存の向き
 

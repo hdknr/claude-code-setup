@@ -20,6 +20,10 @@ design-system は spec-loop の決まりに従い、**spec-loop は design-syste
 | `references/review.md` | 1 周の形・誰が決めるか・機械の検査・判定役 |
 | `references/handoff.md` | UI プロファイルへの引き渡しの Issue（単位・本文・印） |
 
+## 出所
+
+原本が「記事」と引くのは、デザインシステムの基本をまとめた記事 <https://hdknr.github.io/blogs/posts/2026/11/design-system-basics/> である（#1613 の本文が参考に挙げたもの）。
+
 ## 子の Issue
 
 設計（#1613）の後に、次の順で入れます。番号の無いものは、この設計の PR の後に起票します。
