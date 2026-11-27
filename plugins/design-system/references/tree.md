@@ -1,14 +1,27 @@
-# デザインシステムのリポジトリの木と表
+# ガイドのリポジトリの木と表
 
-デザインシステムのリポジトリに何を置くかの原本である（#1613）。表の列はこの設計の周で決めた**初めの形**で、検査（子の Issue）を書く周がこの原本を直して確定させる。
+デザインシステムを含めるガイドのリポジトリに何を置くかの原本である（#1613）。表の列はこの設計の周で決めた**初めの形**で、検査（子の Issue）を書く周がこの原本を直して確定させる。
 
-## 木
+## ガイドのリポジトリ
+
+**デザインシステムを置くリポジトリは、組織のシステム構築ガイドの文書のリポジトリである**（利用者の求め。#1613、2026-11-27）。
+ガイドの文書が開発の世界観——どう決め、どう作り、何を使うか——を説明し、その**構成要素**を持つ。**どの構成要素も任意で、ガイドに何を含めるかで決まる**——デザインシステムだけを定義するガイドも、profile だけのガイドもある。
+
+| 構成要素 | 置き場所 | 書く人・道具 | ガイドの文書との関係 |
+| --- | --- | --- | --- |
+| ガイドの文書（必ずある） | `docs/`（ガイドの MkDocs の `docs_dir`）と `mkdocs.yml` | 人 | 世界観と、含めた構成要素の使い方を説明する。**人が読む入口はガイドのサイト 1 つ** |
+| デザインシステム | spec-loop の正本（`design-system/v<n>/requirements/design/`）と生成物（`spec-profile/<デザインシステムの名前>/`・`tokens/`・`kit/`） | design-system と spec-loop | ガイドのサイトに頁を差し込む（`references/outputs.md` の「ドキュメントのサイト」） |
+| UI プロファイル | `spec-profile/<名前>/` の層 `画面`（#1612 で層を足す） | 人 | 層の表の `リンク` がガイドの文書の節を指す（本文はガイドに書く） |
+| 基盤・アーキテクチャ・開発の進め方の profile | `spec-profile/<名前>/` の層 `基盤` など | 人 | 同上 |
+| プラグイン（組織のスキルなど） | 任意 | 人 | ガイドの文書が使い方を説明する |
 
 ```text
-<デザインシステムのリポジトリ>/
-├── CLAUDE.md                       # spec-loop の正本の CLAUDE.md（spec-loop の決まり）
-├── docs/
-│   └── v<n>/                       # spec-loop の版のディレクトリ（`references/versions.md` は spec-loop の原本）
+<ガイドのリポジトリ>/
+├── CLAUDE.md                       # ガイドのリポジトリの CLAUDE.md（デザインシステムを含めるなら spec-loop の正本の CLAUDE.md を兼ねる）
+├── mkdocs.yml                      # ガイドのサイトの設定（ガイドのもの）
+├── docs/                           # ガイドの文書（MkDocs の docs_dir）——世界観と各構成要素の説明。手で書く profile の本文もここ
+├── design-system/                  # デザインシステムの正本の根（spec-loop の正本。根の名前を変える口が入ってから——下）
+│   └── v<n>/                       # spec-loop の版のディレクトリ（spec-loop の `references/versions.md`）
 │       ├── shared/qa.csv           # 共有の Q&A 表（spec-loop。番号は req-loop が振る）
 │       ├── spec/qa-dev.csv         # 内部の Q&A 表（spec-loop。実装だけに効く決定）
 │       └── requirements/design/
@@ -20,15 +33,25 @@
 │           │   ├── patterns.csv
 │           │   └── rules.csv
 │           └── *.md                # 散文（原則・部品・パターンの説明。下の「散文」）
-├── spec-profile/<名前>/            # 生成物（コミット）——使う側が読む索引（`references/outputs.md`）
+├── spec-profile/
+│   ├── <デザインシステムの名前>/  # 生成物（コミット）——使う側が読む索引（`references/outputs.md`）
+│   └── <束の名前>/                 # 手で書く——基盤・画面などの層（下の「モノレポで共存させる」）
 ├── tokens/                         # 生成物（コミット）——DTCG のトークン
 ├── kit/                            # 生成物（コミット）——描画キット
-└── build/design-system/site/       # 生成物（コミットしない）——ドキュメントのサイト
+└── build/design-system/            # 生成物（コミットしない）——ガイドのサイトに差し込む頁の作業場所
 ```
 
-- **根の `docs/` は spec-loop の正本の決まり**（spec-loop の `references/versions.md`）。名前を `design-system/` に変えられるようにする口を spec-loop に足す（`references/spec-loop.md` の「spec-loop に要る口」の 5）——入るまでは `docs/`。
+含めない構成要素の行は木に現れない（デザインシステムだけのガイドなら `spec-profile/` の下は `<デザインシステムの名前>/` だけ）。
+
+- **ガイドの `docs/` と spec-loop の正本の `docs/` はぶつかる。** spec-loop は正本の根を `docs/` と決め打ちしている（spec-loop の `references/versions.md`。決め打ちの箇所は `references/spec-loop.md` の「spec-loop に要る口」の 5）ので、
+  今のままでは正本の版（`docs/v<n>/`）がガイドの `docs/` の中に入り、ガイドのサイトに Q&A 表や版のディレクトリがそのまま写る。
+  **正本の根を `design-system/` にする口 5 が、design-system を使う前提である**——口 5 が入るまで、ガイドにデザインシステムを含めない。
+- **spec-loop の MkDocs の雛形は使わない**——ガイドに `mkdocs.yml` が在れば spec-loop の `init-mkdocs.py` は何も写さない（その docstring）。
+  `--hook` の登録だけはするが、登録を呼ぶ spec-loop のフック（`hooks/spec_loop_pages.py`）が写らないので、登録しても呼ばれない（screen-spec はこの口で頁を足す——screen-spec の `references/mkdocs.md`）。
+  design-system がガイドのサイトに頁を差し込む形（ガイドの `mkdocs.yml` の `hooks:` に登録するフックなど）は #1611 で決める。
+- **ガイドの文書は design-system の外**——design-system は読まず、書き換えない。手で書く profile の本文もガイドの文書に書き、層の表の `リンク` で指す（spec-loop の `references/external-profile.md` の「`リンク` の書き方」）。
 - **版の中のディレクトリの名前にプラグインの名前を入れない**（`requirements/design/`）——spec-loop に表を行の単位で登録すると、spec-loop の `merge-versions.py` と `versions.md` が表のパスを持つ（今ある `requirements/screens/data/` と同じ。`references/spec-loop.md` の「spec-loop に要る口」の 1）。
-  パスに `design-system` を入れると、spec-loop が design-system の名前を持つことになる（下の依存の向き——`references/spec-loop.md` の「依存の向き」）。
+  パスに `design-system` を入れると、spec-loop が design-system の名前を持つことになる（`references/spec-loop.md` の「依存の向き」）。正本の根の名前（`design-system/`）は spec-loop の設定から読むので、spec-loop に名前を持ち込まない。
 - **表と散文は `requirements/` の中に置く**——spec-loop の 2 つのサインオフが比べる範囲（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）に入り、承認の対象になる。
 - **生成物は版のディレクトリの外**（リポジトリの根）——承認の対象ではなく、表から作り直せる。コミットする 3 つは `--check` で鮮度を見る（`references/outputs.md`）。
 - `spec/` には spec-loop の `qa-dev.csv` だけを置く。spec-loop の spec-review は使わない（`references/spec-loop.md` の「spec-loop のどの段を使うか」）ので、`spec/` に仕様は書かない。
@@ -132,44 +155,12 @@
 外部の profile はもともと 1 つのリポジトリに複数置け、1 つのタグに基盤と画面の層をまとめられる（spec-loop の `references/external-profile.md` の「置き場所」）。
 デザインシステムの索引もその形で書くので、同じ `spec-profile/` の下に並ぶ。
 
-### ガイドのリポジトリ（世界観を文書で説明する）
-
-**想定する形は、組織のシステム構築ガイドの文書のリポジトリである**（利用者の求め。#1613、2026-11-27）。
-ガイドの文書が開発の世界観——どう決め、どう作り、何を使うか——を説明し、その**構成要素**として次を持つ:
-
-| 構成要素 | 置き場所 | 書く人・道具 | ガイドの文書との関係 |
-| --- | --- | --- | --- |
-| ガイドの文書 | `docs/`（ガイドの MkDocs の `docs_dir`）と `mkdocs.yml` | 人 | 世界観と各構成要素の使い方を説明する。**人が読む入口はガイドのサイト 1 つ** |
-| デザインシステム | spec-loop の正本（版の中の `requirements/design/`）と生成物（`spec-profile/<デザインシステムの名前>/`・`tokens/`・`kit/`） | design-system と spec-loop | ガイドのサイトに頁を差し込む（`references/outputs.md` の「ドキュメントのサイト」） |
-| UI プロファイル | `spec-profile/<名前>/` の層 `画面`（#1612 で層を足す） | 人 | 層の表の `リンク` がガイドの文書の節を指す（本文はガイドに書く） |
-| 基盤・アーキテクチャ・開発の進め方の profile | `spec-profile/<名前>/` の層 `基盤` など | 人 | 同上 |
-| プラグイン（組織のスキルなど） | 任意 | 人 | ガイドの文書が使い方を説明する |
-
-```text
-<ガイドのリポジトリ>/
-├── mkdocs.yml                              # ガイドのサイトの設定（ガイドのもの）
-├── docs/                                   # ガイドの文書（MkDocs の docs_dir）——世界観と各構成要素の説明。手で書く profile の本文もここ
-├── design-system/v<n>/requirements/design/ # デザインシステムの正本（spec-loop の版）——**根の名前を変える口が入ってから**（下）
-├── spec-profile/
-│   ├── <デザインシステムの名前>/          # 生成物（design-system が書く）
-│   └── <束の名前>/                         # 手で書く——基盤・画面などの層（下の「ガイドラインとして一括で渡す」）
-├── tokens/・kit/                           # 生成物（design-system）
-└── build/design-system/                    # 生成物（コミットしない）——ガイドのサイトに差し込む頁の作業場所
-```
-
-- **ガイドの `docs/` と spec-loop の正本の `docs/` はぶつかる。** spec-loop は正本の根を `docs/` と決め打ちしている（`references/spec-loop.md` の「spec-loop に要る口」の 5）ので、
-  今のままでは正本の版（`docs/v<n>/`）がガイドの `docs/` の中に入り、ガイドのサイトに Q&A 表や版のディレクトリがそのまま写る。
-  **ガイドのリポジトリでデザインシステムを作るのは、口 5 が入って正本の根を `design-system/` にできてからにする。** 口 5 は、この使い方の前提である。
-- **spec-loop の MkDocs の雛形は写らない**——ガイドに `mkdocs.yml` が在れば spec-loop の `init-mkdocs.py` は何も写さない（その docstring）。
-  そのため spec-loop のフックの口（`hooks/spec_loop_plugins/`。screen-spec が頁を足すのに使う——screen-spec の `references/mkdocs.md`）もガイドには無い。
-  design-system がガイドのサイトに頁を差し込む形（ガイドの `mkdocs.yml` の `hooks:` に登録するフックなど）は #1611 で決める。
-- **ガイドの文書は design-system の外**——design-system は読まず、書き換えない。手で書く profile の本文もガイドの文書に書き、層の表の `リンク` で指す（spec-loop の `references/external-profile.md` の「`リンク` の書き方」）。
-- **ガイドの無いリポジトリ**（デザインシステムだけ・profile だけ）も作れる——そのときの木は上の「木」で、サイトは design-system が自分で作る（`references/outputs.md` の「ドキュメントのサイト」）。
+木は上の「ガイドのリポジトリ」のとおりで、束の形で描いてある。
 
 UI プロファイルと基盤の profile は、spec-loop の決まりでは 1 つの `<名前>` に層をまとめても、別の `<名前>` に分けてもよい。
 **ただし下の「ガイドラインとして一括で渡す」の束にするなら、基盤・アーキテクチャ・開発の進め方・画面の層を基盤の profile と同じ `<名前>` に置く**——
 screen-spec の初期値は基盤の profile 自身の `profile.csv` の層 `画面` の `重ねる先` を読み、外部の profile を同じリポジトリ・同じ名前・同じタグにする（screen-spec の `references/profiles.md` の「基盤の profile から引く初期値」）。
-`profile-layers.py` も、案件の設定の `profile` の名前からアーキテクチャと開発の進め方の層を読む。名前を分ける形は、束を使わない場合に限る。上のガイドのリポジトリの木は束の形で描いてある。
+`profile-layers.py` も、案件の設定の `profile` の名前からアーキテクチャと開発の進め方の層を読む。名前を分ける形は、束を使わない場合に限る。
 
 | 決まり | 理由 |
 | --- | --- |
@@ -177,8 +168,8 @@ screen-spec の初期値は基盤の profile 自身の `profile.csv` の層 `画
 | **生成器は自分の印のある `spec-profile/<名前>/` だけを書き、`--check` もそこだけを比べる。印の無いディレクトリが同じ名前で在れば、書かずに止める** | 手で書いた profile を上書きしない（spec-loop の `build-proposal.py` の印 `.build-proposal` と同じ考え方。印の名前は生成物の子の Issue で決める） |
 | **タグの接頭辞を、版を出すものごとに分ける**——デザインシステムは spec-loop の決まりで `release-v<n>`、ほかは `ui-v<n>`・`infra-v<n>` など。**束（下の「ガイドラインとして一括で渡す」）では、基盤・アーキテクチャ・開発の進め方・画面の層は 1 つの系列（`guide-v<n>` など）になる**——screen-spec は画面の層を基盤の profile と同じタグで読む（screen-spec の `references/profiles.md` の「基盤の profile から引く初期値」）ので、画面の層だけ別の系列にすると届かない | 版を別々に出せる。platform-spec の版の差分は、設定のタグと同じ名前の形（接頭辞・区切り・末尾が同じ）のタグだけを新しい版の候補にする（platform-spec の `scripts/check-profile-diff.py` の `name_shape`）ので、接頭辞の違うタグは混ざらない |
 | 1 つのタグで全部を出してもよい——UI プロファイルの設定のタグを `release-v<n>` にする | 版を揃えたいとき。デザインシステムを上げるたびに UI プロファイルも同じタグになる |
-| **手で書く profile の本文はガイドの文書に書く**（ガイドの無いリポジトリでは、spec-loop の正本の `docs/` の版の外——たとえば `docs/dev/` のような版の外のディレクトリ） | 本文は人が読む世界観の一部で、ガイドのサイトに載る。spec-loop の正本の `docs/` は MkDocs の `docs_dir` で、版のディレクトリ（`docs/v<n>/`）の外なら重ね合わせとサインオフの範囲に入らない（spec-loop の `references/monorepo.md` の「開発用の文書」） |
-| **リポジトリの直下の名前は spec-loop が使うものを避ける**（`docs/`・`scaffold/`・`spec-review/`・`build/`・`site/`・`hooks/`）——コミットしない design-system の生成物は spec-loop の `build/` の下の `build/design-system/` に置く（screen-spec の `build/mock/` と同じ形）。直下の `site/` は spec-loop の MkDocs の出力（雛形の `site_dir: site`）なので使わない | 前例は screen-spec（UI モックの出力が `build/mock/`——screen-spec の `references/mock.md`）。spec-loop の `references/monorepo.md` の「build/ を分けない」が直下の `build/` から締め出すのは**実装のビルドの出力**で、spec-loop を使うプラグインの出力の置き場所は決めていない——`build/design-system/` は同じ節が挙げる spec-loop の名前（`build/merged/` など）と重ならない |
+| **手で書く profile の本文はガイドの文書に書く** | 本文は人が読む世界観の一部で、ガイドのサイトに載る。`spec-profile/` の層の表は `リンク` で指すだけ（上の「ガイドのリポジトリ」） |
+| **直下の名前を分ける**——ガイドが `docs/`・`mkdocs.yml`・`site/`（MkDocs の出力）を使い、デザインシステムの正本は `design-system/`、spec-loop の生成物は spec-loop の決まりの名前（`build/merged/` など）、コミットしない design-system の生成物は `build/design-system/` に置く | ガイドのサイトの出力と spec-loop の正本・生成物を混ぜない。`build/design-system/` の前例は screen-spec（UI モックの出力が `build/mock/`——screen-spec の `references/mock.md`）。spec-loop の `references/monorepo.md` の「build/ を分けない」が直下の `build/` から締め出すのは**実装のビルドの出力**で、spec-loop を使うプラグインの出力の置き場所は決めていない——`build/design-system/` は同じ節が挙げる spec-loop の名前と重ならない |
 | **承認の範囲は版のディレクトリだけ**——2 つのサインオフはデザインシステムの表と散文を比べ、UI プロファイルと基盤の profile は比べない | spec-loop の照合は版のディレクトリの中しか見ない（spec-loop の `references/signoff-tags.md` の「2 つの承認が同じ範囲を見ていたか」）。profile の変更は PR とタグで出す |
 | 使う側の手元の clone は 1 つでよい——案件の `CLAUDE.md` の `外部の profile の clone:` の行は、リポジトリごとに 1 行 | spec-loop の `references/external-profile.md` の「探し方」 |
 
