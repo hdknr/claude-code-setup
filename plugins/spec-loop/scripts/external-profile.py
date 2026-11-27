@@ -21,6 +21,8 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 
 使う側が読み込む関数: `find_clone`・`resolve_tag`・`read_profile`・`read_layer`・`check_links`・`diff_layers`・`in_range`・`parse_version`。
 判定できなかったときは `Undetermined`、求めた層が profile に無いときは `LayerMissing` を投げる。
+そのうち、タグの時点の層のファイルの中身が決まりに合わないときは `Undetermined` の下位の `LayerContent` を投げる（#1589）——
+同じタグを名指し直しても止まるので、使う側が clone・タグの不在と案内を言い分けるのに使う（捕まえ方は `Undetermined` のままでよい）。
 
 ## 終了コード
 
@@ -67,6 +69,7 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **層の表の見出しに同じ列の名前が 2 つあれば 4**——後ろの列が前の列（`リンク` を含む）を黙って上書きしない。
 - **ID が空なら 4。**
 - **ID が同じ層の中で重なれば 4**（層のファイルが複数でも、層の中で重なれば 4）。
+- **層のファイルの中身が決まりに合わない（UTF-8・CSV として読めない・先頭 3 列・見出しの同じ名前・列の数・空の ID・重なった ID）なら、`Undetermined` の下位の `LayerContent` を投げる**——clone・タグ・`profile.csv`・形式の版・`ファイル` の当たり先で判定できないのは `Undetermined` のまま（終了コードはどちらも 4。#1589）。
 - **列の数が見出しと合わない行があれば 4。**
 - **`ファイル` がどのファイルにも当たらなければ 4。**
 - **`ファイル` が profile のディレクトリの外を指すなら 4**（そこに表が在っても読まない）。
@@ -149,6 +152,10 @@ HEADING_RE = re.compile(r" {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*#*[ \t]*$")
 
 class Undetermined(Exception):
     """判定できなかった（4）。"""
+
+
+class LayerContent(Undetermined):
+    """タグの時点の層のファイルの中身が決まりに合わない（4。#1589）——同じタグを名指し直しても止まる。"""
 
 
 class LayerMissing(Exception):
@@ -289,15 +296,15 @@ def read_blob(clone: Path, commit: str, path: str) -> bytes:
     return proc.stdout
 
 
-def _csv_rows(raw: bytes, where: str) -> list[list[str]]:
+def _csv_rows(raw: bytes, where: str, error: type[Undetermined] = Undetermined) -> list[list[str]]:
     try:
         text = raw.decode("utf-8").removeprefix("\ufeff")
     except UnicodeDecodeError as e:
-        raise Undetermined(f"{where} が UTF-8 でない: {e}")
+        raise error(f"{where} が UTF-8 でない: {e}")
     try:
         rows = list(csv.reader(io.StringIO(text, newline="")))
     except csv.Error as e:
-        raise Undetermined(f"{where} を CSV として読めない: {e}")
+        raise error(f"{where} を CSV として読めない: {e}")
     return [r for r in rows if r]
 
 
@@ -362,7 +369,7 @@ def _safe_rel(path: str) -> str | None:
 
 
 def read_layer(clone: Path, commit: str, name: str, layer: str, low: str, high: str) -> Layer:
-    """層の表を読む。形式の版が範囲の外なら Undetermined、層が無ければ LayerMissing。"""
+    """層の表を読む。形式の版が範囲の外なら Undetermined、層のファイルの中身が決まりに合わなければ LayerContent（Undetermined の下位）、層が無ければ LayerMissing。"""
     profile = read_profile(clone, commit, name)
     if layer not in profile:
         raise LayerMissing(f"層 {layer} が {_profile_dir(name)}/{PROFILE_FILE} に無い（在る層: {', '.join(profile) or 'なし'}）")
@@ -384,20 +391,20 @@ def read_layer(clone: Path, commit: str, name: str, layer: str, low: str, high: 
         raise Undetermined(f"層 {layer} の `ファイル` {row.file} に当たるファイルがその時点に無い")
     result = Layer(layer, row.version, row.base, matched)
     for path in matched:
-        rows = _csv_rows(read_blob(clone, commit, path), path)
+        rows = _csv_rows(read_blob(clone, commit, path), path, LayerContent)
         if not rows or tuple(rows[0][:3]) != LAYER_HEAD:
-            raise Undetermined(f"{path} の先頭の列が `{','.join(LAYER_HEAD)}` でない: {rows[0][:3] if rows else '（空）'}")
+            raise LayerContent(f"{path} の先頭の列が `{','.join(LAYER_HEAD)}` でない: {rows[0][:3] if rows else '（空）'}")
         head = rows[0]
         if len(set(head)) != len(head):
-            raise Undetermined(f"{path} の見出しに同じ列の名前が 2 つある: {head}")
+            raise LayerContent(f"{path} の見出しに同じ列の名前が 2 つある: {head}")
         for i, r in enumerate(rows[1:], start=2):
             if len(r) != len(head):
-                raise Undetermined(f"{path} の {i} 行目の列の数が {len(r)}（見出しは {len(head)}）")
+                raise LayerContent(f"{path} の {i} 行目の列の数が {len(r)}（見出しは {len(head)}）")
             rid = r[0].strip()
             if not rid:
-                raise Undetermined(f"{path} の {i} 行目の ID が空")
+                raise LayerContent(f"{path} の {i} 行目の ID が空")
             if rid in result.rows:
-                raise Undetermined(f"層 {layer} に ID {rid} が 2 行ある（{path} の {i} 行目）")
+                raise LayerContent(f"層 {layer} に ID {rid} が 2 行ある（{path} の {i} 行目）")
             result.rows[rid] = dict(zip(head, r))
     return result
 
