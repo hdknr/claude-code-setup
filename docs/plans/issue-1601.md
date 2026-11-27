@@ -104,8 +104,9 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 - 当て直し: `5be8bd9d..bac8d63e` に別ティアの Verifier を 1 回。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1601-redo-1-20261127T103620Z.md`
 - 当て直し: 通した——反証 0 件（`dev-loop:dev-loop-verifier`・sonnet。テンプレート 260 行は一致。陽性対照を走らせ直し、起点 rc 1・終点「無かった」rc 0。基準 3 を満たすと判定。`test-formal-baseline.py` は `OK: 試料 87 件・変異 70 件`）。
   受入基準 3 は満たした（満たしていない受入基準を直した——当て直しで消えた）
-- 外部レビュー: PR を作った後に見る
-- 再開点: 関門は全部通した。残りは PR を作り、PR 側の CI を見るところまで（マージは親）
+- PR: #1616（2026-11-27 作成）。PR 側の CI（`301fc52d`）: 全部 pass（deploy は skipping）
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` が 3）
+- 再開点: PR を作り CI を見たところまで。マージは親（`マージ = 関門を通ればマージ`）
 
 ```dev-loop-gates
 周の base: 0c824eace80033e869325f8fd757fb58bc766376
