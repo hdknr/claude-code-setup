@@ -38,6 +38,9 @@ design-system が自分のレビューのスキルと、書き込みツールを
 続けて利用者が、組織のシステム構築ガイドの文書のリポジトリ（非公開。名前と中身は計画・原本・PR に書かない——利用者の指示）の中にデザインシステムと spec-profile を置く形を示した——
 「全体の世界観を文書で説明して、その構成要素でデザインシステムや UI プロファイルなどがある」。そのリポジトリは直下の `docs/` がガイドの MkDocs のサイトで、手で書いた profile を `spec-profile/<名前>/` に持つ。
 `AskUserQuestion` で確かめた: **この PR で書き直す**（プライベートリポジトリの情報は出さない）。A12 を「人が読む入口はガイドのサイト 1 つで、design-system は頁を差し込む」形に直し、`guides/` をやめ、口 5 をガイドのリポジトリで使う前提と書く。受入基準 A14 を足した。
+続けて利用者（2026-11-27）: 「ガイドの無いリポジトリ、の想定は不要で、ガイドに何を含めるかで決まる。人によってはガイドにデザインシステムだけを定義するかもしれない」——
+リポジトリはいつもガイドで、構成要素（デザインシステム・UI プロファイル・基盤の profile・プラグイン）はどれも任意にする。design-system が自分でサイトを作る形（`build/design-system/site/`）をやめ、人が読む入口はいつもガイドのサイト。口 5 は design-system を使う前提になる。
+A12・A14 をこの形に直した。当て直し 3 の注記 2 件（フックの口の書き方・直下の名前の行）もこの書き直しで直す。
 
 ## 変更範囲
 
@@ -88,9 +91,9 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 | A8 | 歯止めが全部緑 | リポジトリ全体 | `python3 scripts/check-all.py` |
 | A10 | デザインシステム・UI プロファイル・基盤の profile を 1 つのリポジトリに共存させる形が原本にあり、生成物が手で書いた profile を上書きしないこと・タグの系列が混ざらないこと・承認の範囲が書かれている（周の途中で利用者が求めた。2026-11-27） | `references/tree.md` の「モノレポで共存させる」 | Verifier が spec-loop の `external-profile.md`・platform-spec の `check-profile-diff.py` の `name_shape`・spec-loop の `monorepo.md`・`signoff-tags.md` と照らす（必要なら `name_shape` を走らせる） |
 | A11 | 束（基盤・アーキテクチャ・開発の進め方・画面の層とデザインシステム）を案件に一括で渡す形が原本にあり、入口が 1 つ（platform-spec の案件の設定）で、今ある口（`profile-layers.py`・screen-spec の基盤の profile から引く初期値）の事実と合い、デザインシステムを作業中の時点で読まない（周の途中で利用者が求めた。2026-11-27） | `references/tree.md` の「ガイドラインとして一括で渡す」 | Verifier が platform-spec の `references/infra-profile.md`・`layers.md`・`scripts/profile-layers.py`、screen-spec の `references/profiles.md` の「基盤の profile から引く初期値」と照らす |
-| A12 | 人が読む文書の入口が原本に決まっている——ガイドのリポジトリでは、ガイドの MkDocs のサイト 1 つが入口で、design-system はデザインシステムの頁と手で書く profile の層の表をそこへ差し込む（サイトを丸ごと作らない）。ガイドの無いリポジトリでは design-system が自分のサイトを作る。手で書く profile の本文はガイドの文書で、design-system は書き換えない。作業中かリリース済みかの示し方・profile のレビューと承認（サインオフの外）が書かれ、今ある原本（spec-loop の `external-profile.md`・`init-mkdocs.py`・screen-spec の `mkdocs.md`）の事実と合う（関門の後に利用者が求めた。2026-11-27） | `references/outputs.md` の「ドキュメントのサイト」・`references/tree.md` | 当て直しの Verifier が原本と照らす |
+| A12 | 人が読む文書の入口が原本に決まっている——人が読む入口はいつもガイドの MkDocs のサイト 1 つで、design-system はデザインシステムの頁と手で書く profile の層の表をそこへ差し込む（サイトを丸ごと作らない）。「ガイドの無いリポジトリ」の形を持たない。手で書く profile の本文はガイドの文書で、design-system は書き換えない。作業中かリリース済みかの示し方・profile のレビューと承認（サインオフの外）が書かれ、今ある原本（spec-loop の `external-profile.md`・`init-mkdocs.py`・screen-spec の `mkdocs.md`）の事実と合う（関門の後に利用者が求めた。2026-11-27） | `references/outputs.md` の「ドキュメントのサイト」・`references/tree.md` | 当て直しの Verifier が原本と照らす |
 | A13 | 正本の根の `docs/` の名前を変える口（spec-loop の子 Issue）が原本にあり、決め打ちしている箇所の数え上げが今の main の実物と合い、名前の候補が spec-loop の既存の名前（根の `design/sources.csv` など）とぶつからない。入るまでは `docs/` と書かれている（関門の後に利用者が求めた。2026-11-27） | `references/spec-loop.md` の「spec-loop に要る口」・`references/tree.md` の「木」・README | 当て直しの Verifier が spec-loop の `scripts/`・`templates/`・`references/` と照らす |
-| A14 | ガイドのリポジトリの世界観（ガイドの文書が全体を説明し、デザインシステム・UI プロファイル・基盤の profile・プラグインを構成要素として持つ）と、その中の木が原本にある。ガイドの `docs/` と spec-loop の正本の `docs/` がぶつかることと、その解き方（口 5）が書かれている。非公開のリポジトリの名前と中身を書かない（関門の後に利用者が求めた。2026-11-27） | `references/tree.md`・`README.md`・`references/spec-loop.md` の口 5 | 当て直しの Verifier が原本と照らし、名前が出ていないことを grep で見る |
+| A14 | ガイドのリポジトリの世界観（ガイドの文書が全体を説明し、デザインシステム・UI プロファイル・基盤の profile・プラグインを構成要素として持つ。**どの構成要素も任意で、ガイドに何を含めるかで決まる**——デザインシステムだけのガイドもある）と、その中の木が原本にある。ガイドの `docs/` と spec-loop の正本の `docs/` がぶつかることと、その解き方（口 5）が書かれている。非公開のリポジトリの名前と中身を書かない（関門の後に利用者が求めた。2026-11-27） | `references/tree.md`・`README.md`・`references/spec-loop.md` の口 5 | 当て直しの Verifier が原本と照らし、名前が出ていないことを grep で見る |
 | A9 | A1〜A8・A10・A11 を、Verifier と `/code-review` の両方に、1 パス目と 2 パス目（該当すれば）で渡す（4 つの受け渡し） | 関門 | 下の関門の記録 |
 
 この環境で証明できないもの（未証明）: 設計が実装で成り立つか（たとえば描画キットを screen-spec のモックに埋め込んで同じ入力から同じバイトになるか、DTCG の出力が実際のツールで読めるか）——設計の周なので実装は無い。子の Issue の受入基準に回す。
