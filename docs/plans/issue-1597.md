@@ -22,7 +22,7 @@
 - `plugins/spec-loop/.claude-plugin/plugin.json`
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
 - `plugins/screen-spec/.claude-plugin/plugin.json`
-- `plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行
+- `plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行。`init` は hint の新しい行（`profile.csv が決まりに合わない`）の手当ても足す（1 パス目の CR1-1 で広げた——スキルが hint を読む入口なので、そこが行き止まりだと不変条件 1 が破れる）
 - `docs/plans/issue-1597.md`
 
 触らない:
@@ -58,6 +58,7 @@
 | 7 | `check-screens.py` の出力（終了コード 4 と文言）は変わらない | `check-screens.py` | `LayerRule` は `Stop` の下位で文言は同じ | `test-check-screens.py` の足す試料（4 と「を読めない: …」） |
 | 8 | spec-loop の `check`・`diff` と platform-spec の使う側の結果は変わらない（下位クラス） | `external-profile.py`・platform-spec | 下位クラス | `test-external-profile.py`（`bad-*` が 4）・platform-spec のテスト |
 | 9 | spec-loop の例外の種類: 上の欠陥はどれも `ProfileContent`、層のファイルの中身は `LayerContent`（`ProfileContent` の下位）のまま、6 のものは素の `Undetermined` | `read_profile`・`read_layer` | 投げる所を全部変える | `test-external-profile.py` の観測（試料を足す） |
+| 10 | `init` スキルが hint の `基盤の profile:` の行の言い方（読めない・画面の層・`profile.csv`）ごとに手当てを書き、`profile.csv` の行の `<画面の profile>` を利用者に選ばせる（1 パス目の CR1-1 で足した） | `init` スキル | 本文 | `test-write-screens.py` の `skill_problems`（崩すと落ちる対照つき） |
 
 - 未証明: なし。BLOCKED: なし。
 - 生成物: なし（`skill-metrics.py` の生成ブロックは dev-loop の `SKILL.md` だけで、触らない。`check-all.py` が見る）。
@@ -71,11 +72,27 @@
 
 - 周の在り処: ブランチ `issue/1597-profile-content-hint`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1597`・
   起点 `0c824eac`・base の参照 `origin/main`・base の SHA `0c824eace80033e869325f8fd757fb58bc766376`
+- 実装: `853d5585`（`check-all.py` 緑。新しい試料 7 件は base の本体で赤——`test-write-screens.py` を base の木に当てて確かめた。`base-profile-missing` は base でも緑＝変えない側）
+- 割り目（手順 4 の実装の後）: 割らない（cruise の周）。
+- 1 パス目: 起点（1 パス目の指摘対応の起点）`853d5585`。2026-11-27 08:53Z に両方の関門を起こした。
+  - Verifier（`dev-loop:dev-loop-verifier`・sonnet）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1597-verifier-1-20261127T085317Z.md`
+  - Verifier の結果: 反証 0 件（終点 `853d5585`）
+  - `/code-review`（high）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1597-code-review-1-20261127T085317Z.md`
+    ——指摘 5 件（終点 `853d5585`。採否は下の表——直す 3・残課題 2）
 
 ## 既知の限界・決着済みの論点
 
 - screen-spec の対応する spec-loop の版の範囲は変えていないので、`ProfileContent` を持たない spec-loop（0.138 以前）と組むと、ここで言い分けた欠陥は今までどおり「読めない——明示して渡す」と出る（#1589 の `LayerContent` と同じ扱い）。
 - `profile.csv` がその時点に無い（profile の名前かタグが違う）のは、設定か `--external` の名前・タグを変えれば進む余地があるので `Undetermined` のまま（Issue の範囲の外）。
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1: Verifier 1 パス目——反証 0 件（独立の変異は当てていない。テストを run-serial 越しに回した） | — | — | — |
+| CR1-1: `init` スキルが hint の新しい行（`profile.csv が決まりに合わない`）の手当てを書いていない・`<画面の profile>` を名指しと読む | 示せる——`plugins/screen-spec/skills/init/SKILL.md` の 54〜57 行が `読めない` と `画面の層が決まりに合わない` の 2 つだけを挙げる | 1（hint を読むスキルの入口で行き止まりが残る） | 直す（SKILL.md に行と選ばせ方を足し、不変条件 10 と `skill_problems` を足した。範囲は `plugins/screen-spec/skills/*/SKILL.md` の中） |
+| CR1-2: タグが無い・`profile.csv` が無いを `ProfileContent` にする変異が、どのテストでも素通りする | 示せる（関門が外の複製で当てた——`test-external-profile.py` rc=0、`base-tag-missing` も緑） | 6・9 の証明 | 直す（`base-tag-missing` に hint の 2 行、`test-external-profile.py` に不在 3 種の例外の観測と、`守る` の行と変異「タグが無いのも ProfileContent にする」） |
+| CR1-3: `profile.csv` の列の数・空の層・CSV として読めないの試料が無く、`Undetermined` に戻す変異が素通りする。screen-spec に UTF-8 の試料が無い | 示せる（関門が当てた——`test-external-profile.py` rc=0） | 9・1 の証明 | 直す（`bad-profile-cols`・`bad-profile-empty-layer`・`bad-profile-csv`、`base-profile-utf8`） |
+| CR1-4: 画面の層を持たない profile でも、`profile.csv` の欠陥で外部の profile の付け直しを案内する | 示せない——案内の 3 つの道はどれも進める（`--external なし` で書ける、直してタグを付ければ読める）。画面の層が無いことは `profile.csv` を読めない限り分からない | 無し | 残課題（文言の改善） |
+| CR1-5: 形式の版が上限と同じか上のとき、hint が screen-spec を上げる道を出さない | 示せる（hint の文言） | 無し——Issue が「上限より上の版の文言は変えない」と決めている | 残課題 |
 
 ## 手順 8
 

@@ -71,7 +71,7 @@ platform-spec と screen-spec はこのファイルを `importlib` で読み込�
 - **ID が空なら 4。**
 - **ID が同じ層の中で重なれば 4**（層のファイルが複数でも、層の中で重なれば 4）。
 - **タグの時点の profile の中身が決まりに合わない——`profile.csv` の中身（UTF-8・CSV として読めない・見出し・列の数・空の層・同じ層が 2 行）・層の `ファイル` の当たり先（profile の外・どのファイルにも当たらない）・形式の版（読めない形・下限より下）——なら、`Undetermined` の下位の `ProfileContent` を投げる**（#1597）。
-  clone・タグが無い・`profile.csv` がその時点に無い・profile の名前の形で判定できないのは `Undetermined` のまま（終了コードはどれも 4）。
+- **clone・タグが無い・`profile.csv` がその時点に無い・profile の名前の形で判定できないのは、素の `Undetermined`**——名指しを直せば進む余地があるので `ProfileContent` にしない（終了コードはどれも 4。#1597）。
 - **形式の版が上限と同じか上なら、素の `Undetermined`**——使う側を上げれば読めるので `ProfileContent` にしない（下限より下は `ProfileContent`。#1597）。
 - **層のファイルの中身が決まりに合わない（UTF-8・CSV として読めない・先頭 3 列・見出しの同じ名前・列の数・空の ID・重なった ID）なら、`ProfileContent` の下位の `LayerContent` を投げる**（#1589）。
 - **列の数が見出しと合わない行があれば 4。**

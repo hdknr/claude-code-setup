@@ -340,6 +340,7 @@ CASES: list[tuple] = [
     # #1597: profile.csv の中身・画面の層の ファイル の当たり先・形式の版が読めない形か下限より下でも、同じに言い分ける
     dead_end("base-profile-dup-layer", GUIDE_PROFILE + "画面,1,screens/*.csv,web-spa\n", f"{GUIDE_DIR}/profile.csv に層 画面 が 2 行ある", True),
     dead_end("base-profile-bad-head", GUIDE_PROFILE.replace("層,形式の版,", "層,版,"), f"{GUIDE_DIR}/profile.csv の見出しが", True),
+    dead_end("base-profile-utf8", GUIDE_PROFILE + "運用,1,ops.csv,\udcff\n", f"{GUIDE_DIR}/profile.csv が UTF-8 でない", True),
     dead_end("base-screen-file-missing", GUIDE_PROFILE.replace("screens/*.csv", "missing/*.csv"), "層 画面 の `ファイル` missing/*.csv に当たるファイルがその時点に無い"),
     dead_end("base-screen-file-outside", GUIDE_PROFILE.replace("screens/*.csv", "../x.csv"), "層 画面 の `ファイル` がリポジトリの profile の中を指していない"),
     dead_end("base-screen-version-low", GUIDE_PROFILE.replace("画面,1,", "画面,0.9,"), "層 画面 の形式の版 0.9 が、受け付ける範囲（1 以上 2 未満）の外"),
@@ -363,7 +364,11 @@ CASES: list[tuple] = [
         (["hint"], 0, "基盤の profile: 読めない（"),
         (["init"], 4, "基盤の profile org/guide の org（タグ v1） を読めない"),
     ], None, [], {}),
-    ("base-tag-missing", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("タグ,v1", "タグ,v9")}, [(["init"], 4, "タグ v9 が無い")], None, [], {}, guide()),
+    ("base-tag-missing", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("タグ,v1", "タグ,v9")}, [
+        (["hint"], 0, "基盤の profile: 読めない（基盤の profile org/guide の org（タグ v9） を読めない: "),
+        (["hint"], 0, "——init の引数を省くと止まる（--profile と --external を明示して渡す）"),
+        (["init"], 4, "タグ v9 が無い"),
+    ], None, [], {}, guide()),
     ("base-settings-missing-tag", {"v1": DIR, PLATFORM: "項目,値\nリポジトリ,org/guide\nprofile,org\n"}, [(["init"], 4, "項目 タグ の行が無い")], None, [], {}, guide()),
     ("base-settings-bad-header", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS.replace("項目,値", "名前,値")}, [(["init"], 4, "見出しの行が `項目,値` でない")], None, [], {}, guide()),
     ("base-overlay-unknown", {"v1": DIR, PLATFORM: PLATFORM_SETTINGS}, [(["init"], 4, "重ねる先 'desktop' はこのプラグインの profile でない")], None, [], {},
@@ -439,7 +444,7 @@ def build_profile_repo(root: Path, tags: dict[str, dict[str, str]], env: dict[st
         for rel, body in files.items():
             path = root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(body, encoding="utf-8")
+            path.write_text(body, encoding="utf-8", errors="surrogateescape")  # 試料の \udcff は UTF-8 でないバイト（#1597）
         git("add", "-A")
         git("commit", "-q", "--allow-empty", "-m", tag)
         git("tag", tag)
@@ -911,6 +916,18 @@ CHECK_MUTATIONS: list[tuple[str, str, str, str]] = [
 ]
 
 
+# init スキルが手当てを書く hint の `基盤の profile:` の行の言い方（#1597 の 1 パス目 CR1-1）——本体の言い方と、スキルの本文の両方に在ること
+HINT_HEADS = ["読めない", "画面の層が決まりに合わない", "profile.csv が決まりに合わない"]
+INIT_SKILL = PLUGIN / "skills" / "init" / "SKILL.md"
+
+
+def skill_problems(source: str, skill: str) -> list[str]:
+    """hint の言い方が本体に在り、init スキルの本文がその行（`基盤の profile: <言い方>（…）`）の手当てを書いているか。"""
+    problems = [f"本体に hint の言い方 {head!r} が無い" for head in HINT_HEADS if head not in source]
+    problems += [f"init スキルに `基盤の profile: {head}（…）` の手当てが無い" for head in HINT_HEADS if f"`基盤の profile: {head}（…）`" not in skill]
+    return problems
+
+
 def main() -> int:
     names = [case[0] for case in CASES]
     assert len(names) == len(set(names)), "試料の名前が重複している"
@@ -1001,6 +1018,12 @@ def main() -> int:
             (mutated / "scripts" / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             ok, detail = run_cases(mutated, tmp_path / f"mutwork{index}", only=killer)[killer]
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok or mutated_marker.exists(), detail)
+
+        skill = INIT_SKILL.read_text(encoding="utf-8")
+        problems = skill_problems(source, skill)
+        check("init スキルが hint の行の手当てを書いていない（#1597）", not problems, "; ".join(problems))
+        check("崩すと落ちる: init スキルから profile.csv の行の手当てを外す",
+              bool(skill_problems(source, skill.replace("`基盤の profile: profile.csv が決まりに合わない（…）`", "`基盤の profile: …`"))))
 
         check_source = (PLUGIN / "scripts" / CHECK).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(CHECK_MUTATIONS):
