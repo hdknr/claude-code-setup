@@ -1382,11 +1382,14 @@ def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: in
 
 
 def unreadable_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
-    """持ち主の居ない残りの `.tlc-group` が読めない（権限）とき、起動を止めずに描き、その残りを消さずにそう言う（#1594 の狭いパスの R1）。"""
-    name = f"spec-loop-statechart-{dead_pid()}-abcd1234"
-    repo, argv, env = setup(work, fake, fakebin, CASES["本体: 反例なし"], (name,))
-    record = work / "tmp" / name / ".tlc-group"
-    record.write_text("1", encoding="utf-8")
+    """持ち主の居ない残りの `.tlc-group` が読めない（権限・UTF-8 でない・数字でない・0 以下）とき、起動を止めずに描き、その残りを消さずにそう言う（#1594 の狭いパスの R1 とその当て直しの F1・F2）。"""
+    pid = dead_pid()
+    contents = {"abcd1234": b"1", "efgh5678": b"\xff\xfe", "ijkl9012": b"abc", "mnop3456": b"0", "qrst7890": b"-1"}  # 最初のものは権限を外す
+    names = [f"spec-loop-statechart-{pid}-{suffix}" for suffix in contents]
+    repo, argv, env = setup(work, fake, fakebin, CASES["本体: 反例なし"], tuple(names))
+    for name, body in zip(names, contents.values()):
+        (work / "tmp" / name / ".tlc-group").write_bytes(body)
+    record = work / "tmp" / names[0] / ".tlc-group"
     record.chmod(0)
     try:
         if os.access(record, os.R_OK):
@@ -1398,10 +1401,11 @@ def unreadable_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> 
             record.chmod(0o600)
     out = proc.stdout + proc.stderr
     problems = [] if proc.returncode == 0 else [f"終了コード {proc.returncode}（期待 0）: {out[-300:]!r}"]
-    if not (work / "tmp" / name).is_dir():
-        problems.append("記録の読めない残りを消した（TLC が走っているかを決められないのに）")
-    if "読めないので消していない" not in out:
-        problems.append(f"消していないことを言わない: {out[-300:]!r}")
+    for name, body in zip(names, contents.values()):
+        if not (work / "tmp" / name).is_dir():
+            problems.append(f"記録の読めない残りを消した（中身 {body!r}。TLC が走っているかを決められないのに）")
+        elif not any(name in line and "読めない" in line and "消していない" in line for line in out.splitlines()):
+            problems.append(f"消していないことを言わない（中身 {body!r}）: {out[-300:]!r}")
     return problems
 
 
@@ -1514,7 +1518,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("乱字の長さを見ない", 'r"([1-9][0-9]*)-[a-z0-9_]{8}")', 'r"([1-9][0-9]*)-[a-z0-9_]+")', "回収"),
     ("名前の後ろの余分を見ない", "        found = OWNED.fullmatch(path.name)", "        found = OWNED.match(path.name)", "回収"),
     ("読めない記録の残りを消す", "    except OSError:  # 権限などで読めない", "    except ZeroDivisionError:  # 権限などで読めない", "回収: 記録が読めない"),
-    ("読めない記録の残りを消して黙る", "        return UNREADABLE\n", "        return None\n", "回収: 記録が読めない"),
+    ("読めない記録の残りを消して黙る", "    except OSError:  # 権限などで読めない\n        return UNREADABLE", "    except OSError:  # 権限などで読めない\n        return None", "回収: 記録が読めない"),
+    ("UTF-8 でない記録で止まる", "        group = int(raw.decode(\"ascii\").strip())\n    except ValueError:", "        group = int(raw.decode(\"ascii\").strip())\n    except ZeroDivisionError:", "回収: 記録が読めない"),
+    ("数字でない記録の残りを消す", "    except ValueError:  # UTF-8・ASCII でない（UnicodeDecodeError も ValueError）・数字でない\n        return UNREADABLE",
+     "    except ValueError:  # UTF-8・ASCII でない（UnicodeDecodeError も ValueError）・数字でない\n        return None", "回収: 記録が読めない"),
+    ("0 以下の記録をグループと読む", "    if group < 1:", "    if False:", "回収: 記録が読めない"),
     ("親が無視にした信号を奪う", "        if signal.getsignal(sig) is not signal.SIG_IGN:", "        if True:", "親が無視にした信号: SIGHUP"),
     ("無視の確認を SIGHUP だけに効かせる", "        if signal.getsignal(sig) is not signal.SIG_IGN:",
      "        if sig != signal.SIGHUP or signal.getsignal(sig) is not signal.SIG_IGN:", "親が無視にした信号: SIGINT"),

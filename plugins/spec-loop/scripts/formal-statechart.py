@@ -87,7 +87,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | モデルごとに、状態グラフを読んだら消し、`_liveness.dot` は TLC が走り終えたら消す（#1594） | 全部のモデルの状態グラフが 1 回の実行の中で溜まり、ディスクを使い切る |
 | SIGTERM・SIGINT・SIGHUP で、TLC のプロセスグループを止め、一時ディレクトリを消して 128+信号で終わる | 止められた実行が一時ディレクトリと java を残す |
 | 親が無視にしたシグナル（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま | `nohup` で起こした実行が、端末を閉じただけで止まる |
-| 起動時に、持ち主の pid が居ない `spec-loop-statechart-<pid>-<乱字 8 文字>` を消す（居る・分からない pid と、この形でない名前——pid の無い名前・全角の数字・pid の先頭の 0・乱字に無い文字・乱字が 8 文字でない・後ろに余分——は消さない）。そこで TLC（記録したプロセスグループ）がまだ走っていれば・その記録が読めなければ、消さずにそう言う（例外で起動を止めない） | SIGKILL の残りが溜まり続ける・並行する実行の作業中のディレクトリを消す・走り続ける TLC の書くファイルを見えなくして「消した」と言う |
+| 起動時に、持ち主の pid が居ない `spec-loop-statechart-<pid>-<乱字 8 文字>` を消す（居る・分からない pid と、この形でない名前——pid の無い名前・全角の数字・pid の先頭の 0・乱字に無い文字・乱字が 8 文字でない・後ろに余分——は消さない）。そこで TLC（記録したプロセスグループ）がまだ走っていれば・その記録が読めなければ（権限・UTF-8 でない・数字でない・0 以下）、消さずにそう言う（例外で起動を止めない） | SIGKILL の残りが溜まり続ける・並行する実行の作業中のディレクトリを消す・走り続ける TLC の書くファイルを見えなくして「消した」と言う |
 | 呼び方の行が無ければ 4（`PATH` の `tlc` で探さない） | `check-tlc.py` と違う探し方で走らせる |
 
 **守らないもの**:
@@ -219,19 +219,28 @@ def reclaim(base: Path) -> list[Path]:
 
 
 def running_group(path: Path) -> int | None:
-    """そのディレクトリに書いた TLC のプロセスグループが、まだ居ればその番号。記録を読み出せなければ `UNREADABLE`（持ち主が分からない——消さない）。"""
+    """そのディレクトリに書いた TLC のプロセスグループが、まだ居ればその番号。
+
+    記録が無ければ None（消してよい）。記録を読み出せない（権限）・正の整数として読めない中身（UTF-8 でない・数字でない・0 以下。本体はこの形を書かない）は
+    `UNREADABLE`——走っているかを決められないので、消さない側に倒す（例外で起動を止めない）。
+    """
     try:
-        text = (path / TLC_GROUP).read_text(encoding="utf-8")
+        raw = (path / TLC_GROUP).read_bytes()
     except FileNotFoundError:
         return None
-    except OSError:  # 権限などで読めない——走っているかを決められないので、消さない側に倒す（例外で起動を止めない）
+    except OSError:  # 権限などで読めない
         return UNREADABLE
     try:
-        group = int(text.strip())
+        group = int(raw.decode("ascii").strip())
+    except ValueError:  # UTF-8・ASCII でない（UnicodeDecodeError も ValueError）・数字でない
+        return UNREADABLE
+    if group < 1:  # 0 は自分のグループ、負は別の意味の宛先——グループの番号ではない
+        return UNREADABLE
+    try:
         os.killpg(group, 0)
     except PermissionError:  # 別の利用者のグループが居る
         return group
-    except (OSError, ValueError, OverflowError):
+    except (OSError, OverflowError):
         return None
     return group
 
@@ -620,7 +629,7 @@ def run(args) -> int:
         print(f"持ち主の居ない一時ディレクトリを消した: {path}", file=sys.stderr)
     for path, group in kept:
         if group == UNREADABLE:
-            print(f"持ち主の居ない一時ディレクトリだが、TLC のプロセスグループの記録（{TLC_GROUP}）が読めないので消していない: {path}"
+            print(f"持ち主の居ない一時ディレクトリだが、TLC のプロセスグループの記録（{TLC_GROUP}）が読めない（権限か、本体の書かない中身）ので消していない: {path}"
                   f"（TLC が走っていないことを確かめてから手で消す）", file=sys.stderr)
             continue
         print(f"持ち主の居ない一時ディレクトリだが、TLC（プロセスグループ {group}）がまだ書いているので消していない: {path}"
