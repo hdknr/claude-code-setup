@@ -107,6 +107,7 @@ spec-loop・screen-spec の決まりは写さず、パスと節の名前で指�
 - 指摘対応のコミット: `c550ffb6`。`check-all.py` 緑（16/106 を回して失敗 0、90 は CACHED）。1 パス目の起点 `7b419007` からの成果物の差分は 0 行でない——2 パス目を回す
 - 2 パス目の関門に渡す終点: `c550ffb6`。狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: 2 パス目の結果を受けて書く
 - 残っている関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。どちらも未着手
+- 割り目（手順 6・2 パス目の前）: 利用者に訊いた（2026-11-27）——**ここで割る**を選んだ。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 1613`（Verifier 2 パス目と `/code-review` 2 パス目から。差分の base は周の base のまま、2 パス目の対象は 1 パス目の指摘対応 `7b419007..c550ffb6`）
 - 交絡を潰した手順: 実験なし（文書の周。指摘の根拠は実物のファイル:行を開いて確かめた——`qa-to-pptx.py` 35〜36・109 行・spec-loop の MkDocs の雛形の `site_dir: site`・`signoff-tags.md` の見出し・`versions.md` 129 行・`build-mock.py` 411 行・screen-spec の `profiles.md` 118〜126 行）
 
 ```dev-loop-gates
