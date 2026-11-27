@@ -99,7 +99,7 @@ dot を書くほかの入口: (g) Formal Checker の図の対応の確認（エ�
   1. 回収が、この版の作らない名前を消していた——`OWNED` を `([1-9][0-9]*)-[a-z0-9_]{8}` の `fullmatch` に絞った（全角の数字・乱字に無い文字・後ろに余分・乱字 1 文字・pid の先頭の 0・pid 0 は消さない）。受入基準 5 の「古い形は消さない」に当たる
   2. 親が無視にしたシグナル（`nohup` の SIGHUP・`&` の SIGINT）をハンドラで奪っていた——無視のときは付けない。この周が持ち込んだ後退
   - 試料: 回収に 6 つの名前、「親が無視にした信号」3 つ（SIGHUP・SIGINT・SIGTERM）。変異 7 つ。`test-formal-statechart.py` は試料 41・変異 45、`check-all.py` は 60 本・失敗 0
-  - Verifier（当て直し）: 起動済み・報告待ち（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1594/9e359e6e-2b03-4e96-9fdd-1500d5e0fbbc/scratchpad/gate-1594-redo-1599-20261127T051404Z.md`
+  - Verifier（当て直し）: 済み・反証 3 件（dev-loop:dev-loop-verifier・sonnet。テンプレート 260 行は一致）。本体の誤りは無し——`OWNED` は本版が作る名前を全部拾う（`TemporaryDirectory` 3000 回で不一致 0）、SIG_IGN の扱いは受入基準 4 を壊さない。反証はどれも試料の不足で、直さず人間が決める: S1 乱字に `_` を含む名前の回収を見る試料が無い（`[a-z0-9]{8}` の変異が素通り。実コードではその名前が回収されず溜まる退行を見逃す）、S2 9 文字以上・大文字の乱字を消さないことを見る試料が無い、S3 pid に 0 を含む名前の回収は `dead_pid()` の乱数しだいでしか見えない。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup--claude-worktrees-issue-1594/9e359e6e-2b03-4e96-9fdd-1500d5e0fbbc/scratchpad/gate-1594-redo-1599-20261127T051404Z.md`
   - 0d の周の残りの指摘（この PR の外）: #1600・#1601 を起票済み。試料の穴 1 件（乱字の長さの境界、7・9 文字の名前の試料が無い）は残課題
 - 計画ファイルの scratchpad のパスから案件名を伏せた（公開リポジトリ。利用者の依頼 2026-11-27）
 
@@ -110,6 +110,7 @@ dot を書くほかの入口: (g) Formal Checker の図の対応の確認（エ�
 関門: Verifier 2 4ea51462 反証=1
 関門: /code-review 2 4ea51462 指摘=8
 関門: 狭いパス 4ea51462 b3a0c941 反証=1
+関門: 当て直し 5259c765 395a2078 反証=3
 受入基準: 1 満たす
 受入基準: 2 満たす
 受入基準: 3 満たす
