@@ -95,6 +95,9 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 3. **トレース**（受入基準 3 の前提）: `InvBroken` は 1 ワーカーで 3 回とも同じトレース、auto で 3 種類。`LiveBroken`（lasso）は **1 ワーカーでも 3 回とも違うトレース**（TLC が指紋の多項式を回ごとに選ぶ）で、`-fp 0` を足すと 1 ワーカーで 3 回とも同じ（auto `-fp 0` は 3 回で 2 種類）——**Issue の「1 ワーカーで走らせ直す」だけでは時相の性質の反例が揺れるので、`-fp 0` も足すことにした**（決めたこと 1 の値の一部。穴ではなく受入基準 3 を満たす手段）。
 4. **`check-formal-rerun.py` を本物の TLC で**（受入基準 1）: 呼び方を「受けた引数を記録して本物の TLC を exec する」包みにした正本で、base（`627822c4`）の木は本体・陽性対照の 3 回とも引数なし（1 ワーカー）、新しい木は 3 回とも `-workers auto`。判定はどちらも `満たす`（`Live` 456,976 状態）。
 5. **`formal-statechart.py` を本物の TLC で**（受入基準 3・4）: 呼び方に `-workers auto` を書いた正本で、最短の反例が多数ある 125 状態のモデルの図を 5 回ずつ描いた。base の木は 2 種類の図（最初の反例の経路が `0-1-0 → 1-1-0 …` と `1-0-0 → 2-0-0 …`）、新しい木は 5 回とも同じ図（TLC が受けた引数は `-workers auto -workers 1 -fp 0 -continue -dump …`）。
+6. **Formal Checker の実物**（受入基準 1・3 の (e)）: `spec-loop:formal-checker`（sonnet）に worktree の `formal-checker.md`（指摘対応の後の版・201 行）を正として読ませ、小さい注文の業務フロー（R1 は不変条件・R2 は `PROPERTY`）を検査させた（2026-11-28T07:08Z。報告 `fc-proxy/report-20261128T070835Z.md`）。
+   TLC が受けた引数: 本体・陽性対照・到達の確かめの判定の回はどれも `-workers auto`（出力 `with 28 workers`・`fp` は回ごとに違う）、R1 を破る版の反例は `-workers 1 -fp 0` で取り直し（`fp 0 … with 1 worker`）、`トレース` はその回の出力から写した（手元の TLC 2.19 は `-dumpTrace` を受けないので `tlc-trace.py` は使えず、写す側に落ちた——既存の手順どおり）。
+   1 回目（指摘対応の前の版で 06:19Z）は報告が届かず（「報告を届けずに終わった」の形）、モデルのディレクトリだけが残っていた——数えない。報告の気づきで、出力の文言が 1 ワーカーでは `with 1 worker`（単数）なので `formal-checker.md` の確かめ方を両方の形にした。
 - 観測窓: 各モデル・各条件 3〜5 回。ほかの版・大きいモデルは確かめていない（`check-tlc.py` の docstring に書いた）。
 - 交絡を潰した手順: base と新しい木を同じ正本・同じ包み・同じ機械で続けて走らせた（陽性対照: base は 1 ワーカー・図が揺れる）。
 
@@ -110,6 +113,10 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 - 1 パス目の指摘対応の起点: `1191dc34d9ce89fd6afbe94a5a795ef9569b0618`
 - Verifier 1 パス目: dev-loop:dev-loop-verifier・sonnet。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-verifier-1-20261128T064211Z.md`
 - /code-review 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-code-review-1-20261128T064211Z.md`
+- Verifier 1 パス目: 反証 1 件（V1-R1）。終点 `1191dc34`（成果物。その後のコミット `0163b354` は計画ファイルだけ）
+- /code-review 1 パス目: 指摘 7 件（important 3・nit 4。CR1-1 は V1-R1 と同じ）。終点 `1191dc34`
+- 1 パス目の指摘対応: `6670a5ea`（直す 4 行: V1-R1／CR1-1・CR1-2・CR1-7。CR1-3・CR1-5 は計画ファイルの記録の直し）。`test-check-tlc.py`: 緑。指摘対応の差分は 0 行でない（`check-tlc.py`・`formal-checker.md`）ので 2 パス目を回す
+- 割り目（手順 6）: 割らない（cruise の周）
 
 ```dev-loop-gates
 周の base: 627822c40e7c256da6c7c7916418e0b1e3ce36ee
@@ -117,6 +124,18 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 ```
 
 ## 既知の限界・決着済みの論点
+
+### 1 パス目の指摘と採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-R1／CR1-1: `check-tlc.py` の原本の表と計画の変更範囲が「`check-formal-rerun.py` の反例の行は 1 ワーカーで取り直す」と書くが、実装は取り直さない | 示せる——`grep -n for_trace plugins/spec-loop/scripts/*.py` の呼び出し元は `formal-statechart.py` だけ（`check-formal-rerun.py` の 212〜231 行は `for_verdict` の回の `tail(out)`） | 3（原本の決まりが事実と違う） | 直す（Issue の表のとおり `check-formal-rerun.py` は判定だけ——原本と計画から外し、取り直さないことを書く） |
+| CR1-2: `formal-checker.md` の同時に走らせる手順が、取り直しと `-dump` の回・利用者の `-workers` がある回にも `-workers <数>` を足させる（後の値が使われるので 1 ワーカーでなくなる・利用者の値を上書きする） | 示せる——文面（153 行）と実測（後の値が使われる。実機確認 1） | 2・3・5 | 直す（判定だけの回で `-workers` が無いときに限る。取り直しと `-dump` は同時に走らせない） |
+| CR1-3: 計画の受入基準 1・3 の (e)(g) の証明「Formal Checker を 1 回走らせた実物」の記録が実機確認に無い | 計画ファイルの記録の欠け（成果物ではない） | 無し | 計画ファイルに記録する（Formal Checker を走らせた結果を実機確認の 6 に書く） |
+| CR1-4: `check-tlc.py` の確かめ（probe）は、足したオプション（`-workers auto`・`-fp 0`・2 回渡す形）を受けるかを確かめない | 示せない（手元の TLC 2.19 は受ける。受けない版は手元に無い） | 無し | 残課題 |
+| CR1-5: 計画の受入基準 1 の (b) の証明「試料と変異」は `test-formal-sync.py` に無い | 計画ファイルの記録の誤り（成果物ではない） | 無し | 計画ファイルを直す（コードの読みと (a) の試料と書く） |
+| CR1-6: `has_workers` は語として現れる `-workers` だけを見る——引用符の中・環境変数の展開（`$TLC_OPTS`）に書いた値を「書いていない」と読み、`-workers auto` で上書きする | 示せない（そう書いた正本の実物は無い。`for_verdict("… $TLC_OPTS")` が足すことは示せるが、受入基準 2 は「呼び方の行に書いた」値） | 無し | 残課題 |
+| CR1-7: `formal-checker.md` の「その回の JSON から `tlc-trace.py`」が、最初の複数ワーカーの回と取り直しの回のどちらかを名指ししない | 示せる——文面（63 行） | 3 | 直す（取り直した回の JSON と名指す） |
 
 - 決めたこと 1〜3（穴の記録。推奨で決めた値を関門に渡す——受入基準は足さない）。
 - `check-tlc.py` の CLI の確かめは呼び方の行のまま走らせる（2 つの小さいモデルで、ワーカーの数は効かない）。
