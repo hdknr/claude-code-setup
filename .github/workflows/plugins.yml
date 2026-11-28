@@ -559,6 +559,10 @@ jobs:
       - name: screen-spec の MkDocs のフックのテスト（#1098）
         run: python3 scripts/test-screen-spec-pages.py
 
+      # 本体は plugins/screen-spec/scripts/survey-input-contract.py（調べる道具。check-screens.py と spec-loop の重ね方を読み込むので、本物の spec-loop と並べて回す）。
+      - name: screen-spec の画面の入力と API の入力の照らし合わせの道具のテスト（#1596）
+        run: python3 scripts/test-survey-input-contract.py
+
   # spec-loop の autopilot の外側のループのテスト（1 本で重い）。変異の観測を --shard K/4 で 4 つのジョブに分ける（#1475）——
   # 試料の組・陽性対照・変異以外の検査はどのシャードでも回す。4 本で K=1..4 を覆うことは test-check-all.py が見る（matrix にしない——run: の行に名前を残す）
   spec-loop-autopilot-loop-1:
