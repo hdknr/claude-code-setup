@@ -107,6 +107,8 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 - PR: #1616（2026-11-27 作成）。PR 側の CI（`301fc52d`）: 全部 pass（deploy は skipping）
 - 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` が 3）
 - 再開点: PR を作り CI を見たところまで。マージは親（`マージ = 関門を通ればマージ`）
+- マージの直前の取り込み（2026-11-28。親の依頼の印 2026-11-28T02:13:30Z）: 取り込む前の先端 `046b9060` に `origin/main`（`3607c969`、#1615 design-system）を取り込んだ。git の衝突なし・同じ名前のぶつかりなし（main が足したのは `plugins/design-system/` と `docs/plans/issue-1613.md` だけ）。
+  spec-loop の版は main の先端が 0.138.1 のままなので、minor で 1 つ上げた値 0.139.0 のまま（書き換えなし）。`check-plugin-versions.py`・`skill-metrics.py --check` の 2 本だけ回して緑（CLAUDE.md の例外 #831）。関門はやり直さない
 
 ```dev-loop-gates
 周の base: 0c824eace80033e869325f8fd757fb58bc766376
