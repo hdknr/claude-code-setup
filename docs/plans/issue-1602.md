@@ -80,7 +80,7 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 
 生成物: `docs/` の設計ドキュメントの生成ブロック（`scripts/skill-metrics.py`）——spec-loop の `SKILL.md` の版の行だけを変える。`python3 scripts/skill-metrics.py --check` で鮮度を見る。図（drawio）は触らない。
 
-複製の数: 「どの検査を何ワーカーで走らせるか」を述べる箇所は 4 つ——`check-tlc.py` の docstring（原本）、`formal-checker.md`（Formal Checker が自分で走らせる分）、`check-formal-rerun.py`・`formal-statechart.py` の docstring（自分の走らせ方と原本への指し先だけ）。`tree.md` は原本を指すだけ。
+複製の数: 「どの検査を何ワーカーで走らせるか」を述べる箇所は 5 つ——`check-tlc.py` の docstring（原本）、`formal-checker.md`（Formal Checker が自分で走らせる分）、`check-formal-rerun.py`・`formal-statechart.py` の docstring（自分の走らせ方と原本への指し先だけ）。`tree.md` は CI の行で `check-formal-rerun.py` の決まり（`-workers` が無ければ `-workers auto`）を 1 文写して原本を指す（2 パス目の CR2-6 で数え直した）。
 分けない理由: スクリプトは部品を読み込むので式は 1 つ。Formal Checker は散文でしか縛れないので写しが要る。
 
 ## 実機確認
@@ -119,6 +119,9 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 - 割り目（手順 6）: 割らない（cruise の周）
 - Verifier 2 パス目（当て直し。dev-loop:dev-loop-verifier・sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-verifier-2-20261128T071145Z.md`
 - /code-review 2 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-code-review-2-20261128T071145Z.md`
+- Verifier 2 パス目: 反証 0 件。終点 `46d85a59`
+- /code-review 2 パス目: 指摘 6 件（important 1・nit 5）。終点 `46d85a59`
+- 2 パス目の指摘対応（狭いパス）の起点: `46d85a59b51baa60a036b230763b6541af737f05`（指摘対応を始める直前の HEAD）
 
 ```dev-loop-gates
 周の base: 627822c40e7c256da6c7c7916418e0b1e3ce36ee
@@ -126,6 +129,17 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 ```
 
 ## 既知の限界・決着済みの論点
+
+### 2 パス目の指摘と採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1: 取り直しの回（1 ワーカー）が最初の複数ワーカーの回と違う性質の違反で止まりうるのに、`formal-checker.md` は指摘・結果・状態数をどちらの回で書くかを言わない（InvA の指摘に InvB の Red テストが付く） | 示せない（そう止まる実物は走らせていない。性質が 2 つ以上・同じ深さで破れる形の読み） | 無し（トレースは 1 ワーカーの回から取る——受入基準 3 はそのまま満たす） | 残課題 |
+| CR2-2: 取り直しの回が反例を出さない（時間切れなど）ときに「最初の回の出力を書く」とだけあり、複数ワーカーの回の揺れる経路を `トレース`（Red テスト）に写す読み方が残る | 示せる——文面（`formal-checker.md` 62 行） | 3 | 直す（取り直しが反例を出さなければ `トレース` を書かず、取れなかったと書く） |
+| CR2-3: CR1-4・CR1-6 の限界が `check-tlc.py` の「守らない」に書かれていない | 示せない（文面の欠け。失敗の実物は CR1-4・CR1-6 と同じく無い） | 無し | 残課題 |
+| CR2-4: `check-tlc.py` の箇条の見出し「判定と状態数は、ワーカーの数で変わらなかった」が、同じ箇条の「反例で止まった回の状態数は変わる」と食い違う（実測より強い） | 示せる——docstring の 67 行と同じ箇条の実測 | 6（実測の記録が実測より強い） | 直す（「判定と、状態空間を全部たどった回の状態数」にする） |
+| CR2-5: 「1 本ずつ順に走らせる」が時間切れの後に試す段の 4 番目に置かれ、時間切れの前から並べて走らせる読み方が残る・コア数を `getconf` で取るとコンテナで TLC の値と食い違う | 示せない（Formal Checker の実物（実機確認 6）は順に走らせた。並べて走らせた実物は無い） | 無し（受入基準 5 は割り振りがあること） | 残課題 |
+| CR2-6: 計画の「複製の数」が `tree.md` を指すだけと書くが、`tree.md` は決まり（`-workers` が無ければ `-workers auto`）も写している | 計画ファイルの記録の誤り（成果物ではない） | 無し | 計画ファイルを直す（写しは 5 つ） |
 
 ### 1 パス目の指摘と採否（直す線: 既定）
 
