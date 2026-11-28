@@ -156,9 +156,38 @@ def tab_files(cycle: bool = False) -> dict[str, str]:
 
 
 def v2_files() -> dict[str, str]:
-    files = tables(screen("S-001", "top") + screen("S-002", "form", "F-002"), item("I-101", "S-002", "late"))
+    # v2 で項目を足し（v2 の項目の表は足した行だけ）、同じ版で機能の入口に入力を足す
+    files = tables(screen("S-001", "top") + screen("S-002", "form", "F-002"), item("I-101", "S-002", "early"))
+    files[f"v2/{ITEMS}"] = I_HEAD + item("I-102", "S-002", "late")
     files[f"v1/{IR}"] = ir(feature("F-002", "op_mejirushi_save", {"early": field()}))
     files[f"v2/{IR}"] = ir(feature("F-002", "op_mejirushi_save", {"early": field(), "late": field()}))
+    return files
+
+
+def kind_outside_files() -> dict[str, str]:
+    files = positive_files()
+    files[f"v1/{SCREENS}"] = files[f"v1/{SCREENS}"].replace("S-002,画面めじるしS-002,form,", "S-002,画面めじるしS-002,種別めじるし登録,")
+    return files
+
+
+def not_saved_only_files() -> dict[str, str]:
+    # 一覧の画面の入力が選択のチェックボックスだけ（保存しない）——その画面の検索の入口は逆向きに照らさない
+    files = tables(screen("S-001", "list", "F-001"), item("I-101", "S-001", "選択めじるし"))
+    files[f"v1/{IR}"] = ir(SEARCH)
+    return files
+
+
+def unsure_files() -> dict[str, str]:
+    # 名前で引けない項目（日本語の項目名）のある入口——指されない葉は分けて数える
+    files = tables(screen("S-001", "top") + screen("S-002", "form", "F-002"),
+                   item("I-101", "S-002", "コードめじるし") + item("I-102", "S-002", "数量めじるし"))
+    files[f"v1/{IR}"] = ir(feature("F-002", "op_mejirushi_save", {"code": field(), "qty": field("integer")}))
+    return files
+
+
+def array_array_files() -> dict[str, str]:
+    files = tables(screen("S-001", "top") + screen("S-002", "form", "F-002"), item("I-101", "S-002", "m"))
+    files[f"v1/{IR}"] = ir(feature("F-002", "op_mejirushi_save", {"m": {"type": "array", "items": {"type": "array", "items": field("integer")}}}))
     return files
 
 
@@ -179,7 +208,7 @@ CASES = [
     ("positive-8", positive_files(), POSITIVE_MAP, [], 0,
      ["入力の項目 11", "画面 2（form）: 入力 11 — 入口: 決まった（対応の CSV） — 一致 2・食い違い 8・保存しない 1・引けない 0",
       "入力の項目（順向き）: 一致 2・食い違い 8（パスが入口の入力に無い）・保存しない 1・引けない 0",
-      "照らした入口 1・葉 5 — どの項目からも指されない 1・システムが埋めると宣言 1・パスの変数 1・照らさなかった入力のある入口 1",
+      "照らした入口 1・葉 5 — どの項目からも指されない 1・指されない（引けない項目のある入口） 0・システムが埋めると宣言 1・パスの変数 1・照らさなかった入力のある入口 1",
       "画面の入口: 決まった 2（対応の CSV 1・機能の列 1・親の画面の機能の列 0）"], []),
     ("detail", positive_files(), POSITIVE_MAP, ["--detail"], 0,
      ["食い違い: S-002 I-103 → op_mejirushi_save fld_mejirushi_x3", "どの項目からも指されない: op_mejirushi_save memo", "公開の場に貼らない"],
@@ -193,13 +222,19 @@ CASES = [
       "画面の表に無い画面: 入力 1", "照らした入口 0"], []),
     ("many-fields", many_files(), None, [], 0, ["当たるフィールドが 2 つ以上 1"], []),
     ("nested", nested_files(), NESTED_MAP, [], 0,
-     ["一致 4・食い違い 1", "照らした入口 1・葉 6 — どの項目からも指されない 1・システムが埋めると宣言 0・パスの変数 0"], []),
+     ["一致 4・食い違い 1", "照らした入口 1・葉 6 — どの項目からも指されない 1・指されない（引けない項目のある入口） 0・システムが埋めると宣言 0・パスの変数 0"], []),
     ("nested-detail", nested_files(), NESTED_MAP, ["--detail"], 0,
      ["食い違い: S-002 I-103 → op_mejirushi_save rows[].bad", "どの項目からも指されない: op_mejirushi_save rows[].qty"], ["meta.note", "meta.tag"]),
     ("tab-inherit", tab_files(), None, [], 0, ["画面 3（tab）: 入力 1 — 入口: 決まった（親の画面の機能の列） — 一致 1"], []),
     ("parent-cycle", tab_files(cycle=True), None, [], 0, ["機能が空 3", "画面の入口が決まらない 1"], []),
-    ("v2-whole", v2_files(), None, [], 0, ["一致 1・食い違い 0"], []),
-    ("v2-upto", v2_files(), None, ["--upto", "1"], 0, ["一致 0・食い違い 0", "当たるフィールドが無い 1"], []),
+    ("v2-whole", v2_files(), None, [], 0, ["入力の項目 2", "一致 2・食い違い 0"], []),
+    ("v2-upto", v2_files(), None, ["--upto", "1"], 0, ["入力の項目 1", "一致 1・食い違い 0"], []),
+    ("kind-outside", kind_outside_files(), POSITIVE_MAP, [], 0, ["画面 2（種別が決まりの外）: 入力 11"], []),
+    ("not-saved-only", not_saved_only_files(), "対象,値\nI-101,保存しない\n", [], 0,
+     ["保存しない 1", "照らした入口 0・葉 0", "照らさなかった入力のある入口 1"], []),
+    ("name-unsure", unsure_files(), None, [], 0,
+     ["当たるフィールドが無い 2", "どの項目からも指されない 0・指されない（引けない項目のある入口） 2"], []),
+    ("name-array-array", array_array_files(), None, [], 0, ["一致 1", "当たるフィールドが 2 つ以上 0", "どの項目からも指されない 0"], []),
     ("malformed-feature", malformed_files(), None, [], 0, ["形の崩れた機能・入口を飛ばした 1"], []),
     ("nothing-tables", without(positive_files(), f"v1/{SCREENS}", f"v1/{ITEMS}", f"v1/{TRANSITIONS}"), None, [], 3, ["照らす画面が無い"], []),
     ("nothing-ir", without(positive_files(), f"v1/{IR}"), None, [], 3, ["照らす入口が無い"], []),
@@ -224,6 +259,7 @@ CASES = [
     ("bad-detail-twice", positive_files(), None, ["--detail", "--detail"], 2, ["--detail は 1 度だけ"], []),
     ("stop-not-spec-loop", positive_files(), None, ["--spec-loop", "@plugin"], 4, ["spec-loop のプラグインの根でない"], []),
     ("stop-version", positive_files(), None, ["--spec-loop", "@old-spec-loop"], 4, ["対応の範囲の外"], []),
+    ("stop-no-spec-loop", positive_files(), None, ["@alone"], 4, ["spec-loop が見つからない"], []),
 ]
 
 failures: list[str] = []
@@ -278,12 +314,19 @@ def run_case(plugins_root: Path, plugin: Path, case_dir: Path, case, check_reado
         if map_text != "@missing":
             map_path.write_text(map_text, encoding="utf-8")
         extra = ["--map", str(map_path)]
-    real_args = [str(plugin) if a == "@plugin" else str(plugins_root / "old-spec-loop") if a == "@old-spec-loop" else a for a in args]
+    script = plugin / "scripts" / TARGET
+    if "@alone" in args:
+        # 隣に spec-loop を置かない写し（一時の HOME にはプラグインの記録も無い）
+        alone = case_dir / "alone" / "screen-spec"
+        shutil.copytree(plugin, alone, ignore=shutil.ignore_patterns("__pycache__"))
+        script = alone / "scripts" / TARGET
+    real_args = [str(plugin) if a == "@plugin" else str(plugins_root / "old-spec-loop") if a == "@old-spec-loop" else a
+                 for a in args if a != "@alone"]
     env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CONFIG_DIR", "SCREEN_SPEC_SPEC_LOOP") and not k.startswith("GIT_")}
     env["HOME"] = str(home)
     before_case, before_plugins = snapshot(case_dir), snapshot(plugins_root)
     try:
-        proc = subprocess.run([sys.executable, "-I", str(plugin / "scripts" / TARGET), str(docs), *extra, *real_args],
+        proc = subprocess.run([sys.executable, "-I", str(script), str(docs), *extra, *real_args],
                               capture_output=True, text=True, env=env, cwd=case_dir, timeout=30)
     except subprocess.TimeoutExpired:
         return -1, "時間切れ"
@@ -333,7 +376,7 @@ def doc_problems(module, text: str) -> list[str]:
         "画面の入口が引けない理由": list(module.SCREEN_REASONS),
         "項目の結果": [module.MATCHED, module.MISMATCHED, module.SAVED_NOT, module.UNRESOLVED],
         "項目が引けない理由": list(module.ITEM_REASONS),
-        "逆向き": [module.UNPOINTED, module.SYSTEM_FILLED, module.PATH_VARIABLE],
+        "逆向き": [module.UNPOINTED, module.UNPOINTED_UNSURE, module.SYSTEM_FILLED, module.PATH_VARIABLE],
     }
     for heading, values in expected.items():
         if doc_table(text, heading) != values:
@@ -369,7 +412,12 @@ MUTATIONS = [
     ("配列の要素の下の葉を指さない", ' or leaf.startswith(pointer + "[]")', "", "nested"),
     ("パスの変数を分けない", "                if leaf in variables:\n", "                if False:\n", "positive-8"),
     ("システムが埋める宣言を分けない", "                elif any(covers(p, leaf) for p in system):\n", "                elif False:\n", "positive-8"),
-    ("入力の無い画面の入口も逆向きに照らす", "resolved[sid][0] for sid in per_screen if sid in resolved", "resolved[sid][0] for sid in resolved", "positive-8"),
+    ("入力の無い画面の入口も逆向きに照らす", "resolved[sid][0] for sid in saving if", "resolved[sid][0] for sid in resolved if", "positive-8"),
+    ("保存しないだけの画面の入口を逆向きに照らす", "                counts[SAVED_NOT] += 1\n", "                counts[SAVED_NOT] += 1\n                saving.add(sid)\n", "not-saved-only"),
+    ("引けない項目のある入口を分けない", "                elif oid in unsure:\n", "                elif False:\n", "name-unsure"),
+    ("種別のセルをそのまま出す", 'row["種別"] if row["種別"] in screens_check.SCREEN_KINDS else KIND_OUTSIDE', 'row["種別"]', "kind-outside"),
+    ("下のパスも名前の当たりに残す", "                hits = [h for h in hits if not any(o != h and covers(o, h) for o in hits)]", "                pass", "name-array-array"),
+    ("隣の spec-loop が無くても探さずに進む", "        spec_loop = screens_check.find_spec_loop(named, docs)\n", "        spec_loop = Path(named) if named else HERE.parent.parent / 'spec-loop'\n", "stop-no-spec-loop"),
     ("既定の出力に画面ID を出す", 'label = f"画面 {order[sid]}', 'label = f"画面 {sid}', "positive-8"),
     ("宣言したパスが入力に在るかを見ない", "                elif value not in self.paths[target]:\n", "                elif False:\n", "bad-map-system"),
     ("入力でない項目を止めない", "                if target not in inputs:\n", "                if False:\n", "bad-map-not-input"),

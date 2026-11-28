@@ -16,9 +16,10 @@ usage: python3 survey-input-contract.py <docs ディレクトリ> [--upto <n>] [
   中間表現に在り、入力の項目を 1 つ以上持つ入口が 1 つだけなら決まる。
 - **項目 → フィールド**: 種類が `入力` の項目。`--map` の項目の行（フィールドのパスか `保存しない`）があればそれ。無ければ項目名が入口の入力のパスか
   パスの末尾の名前と同じ文字列のもの（1 つだけなら引ける）。
-- **順向き**: 引けたパスが入口の入力に無ければ食い違い。**逆向き**: 照らした入口（入力の項目を持つ画面から決まった入口）の入力の葉のうち、
-  どの項目からも指されず、`--map` でシステムが埋めると宣言されてもいないもの。パスの変数（入口の `path` の `{…}`）は別に数える。
-- **既定の出力は件数と種類だけ**——画面は表の行の順の番号と種別で示し、名前・画面ID・項目の番号・入口の id・パスを出さない（案件の名前・業務の中身を公開の報告に持ち出さない）。
+- **順向き**: 引けたパスが入口の入力に無ければ食い違い。**逆向き**: 照らした入口（`保存しない` でない入力の項目を持つ画面から決まった入口）の入力の葉のうち、
+  どの項目からも指されず、`--map` でシステムが埋めると宣言されてもいないもの。パスの変数（入口の `path` の `{…}`）は別に数え、
+  名前で引けない項目のある入口の「指されない」も別に数える（その項目が指すはずの葉かもしれない）。
+- **既定の出力は件数と種類だけ**——画面は表の行の順の番号と種別（決まった値でなければ `種別が決まりの外`）で示し、名前・画面ID・項目の番号・入口の id・パスを出さない（案件の名前・業務の中身を公開の報告に持ち出さない）。
   `--detail` を付けたときだけ、画面ID・項目の番号・入口の id・パスを出す（項目名・画面名・機能の題は `--detail` でも出さない）。
 - 標準ライブラリだけを使う。
 
@@ -34,11 +35,12 @@ usage: python3 survey-input-contract.py <docs ディレクトリ> [--upto <n>] [
 - 照らすのは重ねた全体の行だけ（版の生の行を読まない）。種類が `入力` の項目だけを順向きに数える
 - 画面 → 入口は、対応の CSV の画面の行を `機能` の列より先に使う。`機能` が空の `tab`・`dialog` は親の画面を辿り（循環したら辿るのをやめて「機能が空」）、入力を持つ入口が 1 つに決まらなければ決めない
 - 入口が決まらない画面の項目は、`保存しない` と書いたものを除いて「画面の入口が決まらない」に数える（対応の CSV にパスがあっても照らさない）
-- 項目名で引くのは、パス全体か末尾の名前と同じ文字列のときだけ（言い換え・推定をしない）。当たるパスが 2 つ以上なら引かない
+- 項目名で引くのは、パス全体か末尾の名前と同じ文字列のときだけ（言い換え・推定をしない）。当たったパスのうち、ほかの当たったパスの下にあるもの（`m` に対する `m[]`）は外し、それでも 2 つ以上なら引かない
 - 入れ子（`a.b`・`rows[].x`・配列の配列 `m[]`）を葉のパスで照らす。項目が親のパス（オブジェクト・配列）を指せば、その下の葉を全部指したとする
-- 逆向きは、入力の項目を 1 つ以上持つ画面から決まった入口だけを照らし、照らさなかった入力のある入口の数を出す。パスの変数とシステムが埋めると宣言した葉は「指されない」に数えない
+- 逆向きは、`保存しない` でない入力の項目を 1 つ以上持つ画面から決まった入口だけを照らし、照らさなかった入力のある入口の数を出す。パスの変数とシステムが埋めると宣言した葉は「指されない」に数えない。
+  名前で引けない項目（当たるフィールドが無い・2 つ以上）のある入口の指されない葉は、「指されない」と分けて数える
 - 対応の CSV の誤り（見出し・空のセル・対象がどれにも無い・2 つの種類に当たる・入力でない項目・同じ画面か項目が 2 行・パスの形・宣言したパスが入口の入力に無い）は、照らす前に全部出して 2
-- 既定の出力に名前・画面ID・項目の番号・入口の id・パスを出さない。`--detail` でも項目名・画面名・機能の題を出さない
+- 既定の出力に名前・画面ID・項目の番号・入口の id・パスを出さない。`種別` は決まった値のときだけ出す。`--detail` でも項目名・画面名・機能の題を出さない
 - ファイルを書かない（正本・対応の CSV・プラグインを書かない。読み込むスクリプトの `__pycache__` も書かない）
 - 形の崩れた機能・入口（`operation` が無い・`id` が文字列でない）は飛ばして数を出す（黙って落とさない）
 
@@ -105,8 +107,10 @@ SCREEN_NOT_IN_TABLE = "画面が表に無い"
 ITEM_REASONS = (SCREEN_UNRESOLVED, NO_FIELD, MANY_FIELDS, SCREEN_NOT_IN_TABLE)
 # 逆向き
 UNPOINTED = "どの項目からも指されない"
+UNPOINTED_UNSURE = "指されない（引けない項目のある入口）"
 SYSTEM_FILLED = "システムが埋めると宣言"
 PATH_VARIABLE = "パスの変数"
+KIND_OUTSIDE = "種別が決まりの外"  # 既定の出力で、決まった値でない `種別` のセルの代わりに出す
 
 EXIT_OK, EXIT_UNJUDGED, EXIT_NOTHING, EXIT_STOPPED = 0, 2, 3, 4
 
@@ -327,6 +331,8 @@ class Survey:
         item_counts = {MATCHED: 0, MISMATCHED: 0, SAVED_NOT: 0}
         reasons = {reason: 0 for reason in ITEM_REASONS}
         pointers: dict[str, set[str]] = {}
+        saving: set[str] = set()  # `保存しない` でない入力の項目を持つ画面
+        unsure: set[str] = set()  # 名前で引けない項目のある入口（逆向きの「指されない」が確かでない）
         detail: list[str] = []
         for row in inputs:
             sid, number = row["画面ID"], row["番号"]
@@ -345,6 +351,7 @@ class Survey:
                 counts[SAVED_NOT] += 1
                 item_counts[SAVED_NOT] += 1
                 continue
+            saving.add(sid)
             oid, _ = resolved[sid]
             if oid is None:
                 unresolved(SCREEN_UNRESOLVED)
@@ -352,11 +359,14 @@ class Survey:
             paths = self.paths[oid]
             if mapped is None:
                 hits = sorted({p for p in paths if p == row["項目名"] or last_name(p) == row["項目名"]})
+                hits = [h for h in hits if not any(o != h and covers(o, h) for o in hits)]  # `m` と `m[]` は同じ入力——上のパスだけ
                 if not hits:
                     unresolved(NO_FIELD)
+                    unsure.add(oid)
                     continue
                 if len(hits) > 1:
                     unresolved(MANY_FIELDS)
+                    unsure.add(oid)
                     continue
                 mapped = hits[0]
             if mapped in paths:
@@ -368,9 +378,9 @@ class Survey:
                 item_counts[MISMATCHED] += 1
                 detail.append(f"{MISMATCHED}: {sid} {number} → {oid} {mapped}")
 
-        # 逆向き: 入力の項目を持つ画面から決まった入口
-        checked = sorted({resolved[sid][0] for sid in per_screen if sid in resolved and resolved[sid][0] is not None})
-        reverse = {UNPOINTED: 0, SYSTEM_FILLED: 0, PATH_VARIABLE: 0}
+        # 逆向き: `保存しない` でない入力の項目を持つ画面から決まった入口
+        checked = sorted({resolved[sid][0] for sid in saving if resolved[sid][0] is not None})
+        reverse = {UNPOINTED: 0, UNPOINTED_UNSURE: 0, SYSTEM_FILLED: 0, PATH_VARIABLE: 0}
         leaves_total = 0
         for oid in checked:
             variables = path_variables(self.ops[oid])
@@ -383,6 +393,9 @@ class Survey:
                     continue
                 elif any(covers(p, leaf) for p in system):
                     reverse[SYSTEM_FILLED] += 1
+                elif oid in unsure:
+                    reverse[UNPOINTED_UNSURE] += 1
+                    detail.append(f"{UNPOINTED_UNSURE}: {oid} {leaf}")
                 else:
                     reverse[UNPOINTED] += 1
                     detail.append(f"{UNPOINTED}: {oid} {leaf}")
@@ -394,11 +407,12 @@ class Survey:
                  f"対応: {'対応の CSV あり' if self.map_path else '対応の CSV なし（画面は機能の列、項目は名前の一致で引く）'}",
                  "", "画面ごと（名前は出さない。番号は画面の表の行の順）:"]
         order = {sid: at for at, sid in enumerate(screen_ids, start=1)}
-        kinds = {row["画面ID"]: row["種別"] for row in self.screens if row["画面ID"]}
+        # `種別` のセルは決まった値のときだけ出す（表の決まりを見ないので、名前や業務の言葉が入っていても既定の出力に持ち出さない）
+        kinds = {row["画面ID"]: (row["種別"] if row["種別"] in screens_check.SCREEN_KINDS else KIND_OUTSIDE) for row in self.screens if row["画面ID"]}
         for sid in sorted(per_screen, key=lambda s: (order.get(s, len(order) + 1), s)):
             counts = per_screen[sid]
             total = sum(counts.values())
-            label = f"画面 {order[sid]}（{kinds.get(sid) or '種別なし'}）" if sid in order else "画面の表に無い画面"
+            label = f"画面 {order[sid]}（{kinds[sid]}）" if sid in order else "画面の表に無い画面"
             if sid in resolved:
                 oid, how = resolved[sid]
                 operation = f"入口: 決まった（{how}）" if oid is not None else f"入口: {UNRESOLVED}（{how}）"
@@ -420,7 +434,7 @@ class Survey:
                   + f"・{SAVED_NOT} {item_counts[SAVED_NOT]}・{UNRESOLVED} {sum(reasons.values())}（"
                   + "・".join(f"{why} {reasons[why]}" for why in ITEM_REASONS) + "）",
                   f"  入口の入力（逆向き）: 照らした入口 {len(checked)}・葉 {leaves_total} — "
-                  + "・".join(f"{name} {reverse[name]}" for name in (UNPOINTED, SYSTEM_FILLED, PATH_VARIABLE))
+                  + "・".join(f"{name} {reverse[name]}" for name in (UNPOINTED, UNPOINTED_UNSURE, SYSTEM_FILLED, PATH_VARIABLE))
                   + f"・照らさなかった入力のある入口 {unchecked}"]
         self.detail = sorted(detail) + [f"入口が{UNRESOLVED}画面: {sid}（{how}）" for sid, (oid, how) in resolved.items() if oid is None]
         return lines
