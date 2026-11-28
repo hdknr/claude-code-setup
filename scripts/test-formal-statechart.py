@@ -23,6 +23,9 @@
    眠る偽の TLC の間に SIGTERM・SIGINT・SIGHUP を送り、128+信号で終わり、偽の TLC のプロセスも一時ディレクトリも残らず、`--out` に触らないことを見る。
    持ち主の居ない pid つきの一時ディレクトリを起動時に消し、持ち主の居るもの・pid の無い古い名前を消さないことを見る。
 
+8. **呼び方に `-workers auto` があっても最初の反例の経路が揺れない**（#1602）——偽の TLC は、最後の `-workers` が 1・最後の `-fp` が 0 でなければ反例の並びを走らせるたびにずらす。
+   同じモデルを 2 回描いて同じ図になり、偽の TLC が受けた最後の値が `1`・`0` であることを見る。
+
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、名指しした試料が期待どおりでなくなることを確かめる（壊す箇所が本体にちょうど 1 回現れることも先に見る）。
@@ -863,6 +866,9 @@ FIXTURES["OrderLive"] = {**FIXTURES["Order"], "tla": FIXTURES["Order"]["tla"].re
                          "cfg": FIXTURES["Order"]["cfg"] + "PROPERTY Done\n"}
 # `Sleepy` も同じ写し。偽の TLC は状態グラフを書き、自分の pid を書いてから眠る（信号で止める試料。#1594）
 FIXTURES["Sleepy"] = {**FIXTURES["Order"], "tla": FIXTURES["Order"]["tla"].replace("MODULE Order", "MODULE Sleepy")}
+# `TwoPar` は `Two` の写し。偽の TLC は、最後の `-workers` が 1・最後の `-fp` が 0 でなければ、反例の並びを走らせるたびにずらす——
+# 複数ワーカーで最初に見つかる反例が回ごとに変わる形（#1602。本物の TLC 2.19 で、最短の反例が多数あるモデルを `-workers auto` で 3 回走らせると 3 回とも違った）
+FIXTURES["TwoPar"] = {**FIXTURES["Two"], "tla": FIXTURES["Two"]["tla"].replace("MODULE Two", "MODULE TwoPar")}
 
 FAKE_TLC = """#!{python}
 import json, os, re, sys
@@ -878,6 +884,22 @@ if module == "Broken":
     print("Error: Parsing or semantic analysis failed."); sys.exit(150)
 name = module if "-continue" in args else module + ":nocontinue"
 case = fixtures.get(name, fixtures[module])
+def last(option):
+    values = [args[i + 1] for i, a in enumerate(args[:-1]) if a == option]
+    return values[-1] if values else None
+if os.environ.get("FAKE_TLC_ARGS"):  # 最後の -workers と -fp（#1602）
+    with open(os.environ["FAKE_TLC_ARGS"], "a", encoding="utf-8") as log:
+        log.write(json.dumps([module, last("-workers"), last("-fp")]) + "\\n")
+if module == "TwoPar" and (last("-workers"), last("-fp")) != ("1", "0"):
+    runs = os.environ["FAKE_TLC_RUNS"]
+    count = int(open(runs).read()) + 1 if os.path.exists(runs) else 1
+    open(runs, "w").write(str(count))
+    head, *blocks = case["stdout"].split("Error: Invariant")
+    rest = blocks[-1].split("Model checking completed.")
+    blocks[-1] = rest[0]
+    shift = count % len(blocks)
+    blocks = blocks[shift:] + blocks[:shift]
+    case = {{**case, "stdout": head + "".join("Error: Invariant" + b for b in blocks) + "Model checking completed." + rest[1]}}
 if "-dump" in args:
     kind, path = args[args.index("-dump") + 1], args[args.index("-dump") + 2]
     if kind == "dot,actionlabels":
@@ -1445,7 +1467,8 @@ def ignored_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: i
 
 SIGNAL_CASES = {f"信号: {sig.name}": sig for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
 IGNORED_CASES = {f"親が無視にした信号: {sig.name}": sig for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)}
-SPECIAL = ["回収", "回収: 記録が読めない", "信号: 片付けの途中", "想定外の例外", "SIGKILL の後に TLC が走っている", *SIGNAL_CASES, *IGNORED_CASES]
+SPECIAL = ["回収", "回収: 記録が読めない", "信号: 片付けの途中", "想定外の例外", "SIGKILL の後に TLC が走っている", "経路はワーカーの数で揺れない",
+           *SIGNAL_CASES, *IGNORED_CASES]
 
 
 def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
@@ -1459,6 +1482,8 @@ def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: P
         return unexpected_problems(script, work, fake, fakebin)
     if name == "SIGKILL の後に TLC が走っている":
         return killed_problems(script, work, fake, fakebin)
+    if name == "経路はワーカーの数で揺れない":
+        return workers_problems(script, work, fake, fakebin)
     if name in IGNORED_CASES:
         return ignored_problems(script, work, fake, fakebin, IGNORED_CASES[name])
     return signal_problems(script, work, fake, fakebin, SIGNAL_CASES[name])
@@ -1466,6 +1491,7 @@ def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: P
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("状態グラフを呼び方のワーカーの数で走らせる", "tlc.run_model(f\"{tlc.for_trace(call)} -continue", "tlc.run_model(f\"{call} -continue", "経路はワーカーの数で揺れない"),
     ("遷移を 1 本落とす", "    for a, b, action in edges:\n        if action in skip:", "    for a, b, action in edges[:-1]:\n        if action in skip:", "本体: 反例なし"),
     ("言葉の無い状態に状態の式を使う", "            return label\n    return None",
      "            return label\n    return \" \".join(f\"{k}={v}\" for k, v in state.items())", "対応に無い状態"),
@@ -1473,7 +1499,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if action not in actions:\n            actions[action] = action\n        if False:\n            raise Stop(EXIT_UNDRAWABLE", "対応に無い行為"),
     ("skip が別の状態へ移っても消す", "            if labels[a] != labels[b]:", "            if False:", "skip が別の状態へ移る"),
     ("印を付けない", "    bad_nodes = {walk[-1][1] for walk in walks}", "    bad_nodes = set()", "陽性対照に印と経路（受入基準 2）"),
-    ("-continue を渡さない", '{call} -continue -dump dot,actionlabels', '{call} -dump dot,actionlabels', "本体の反例が 3 つ"),
+    ("-continue を渡さない", '{tlc.for_trace(call)} -continue -dump dot,actionlabels', '{tlc.for_trace(call)} -dump dot,actionlabels', "本体の反例が 3 つ"),
     ("破る状態と破らない状態をまとめても通す", "    if mixed:\n", "    if False:\n", "破る状態と破らない状態をまとめる"),
     ("経路に番号を付けない", "            steps.setdefault(edge, []).append(number)", "            steps.setdefault(edge, [])", "陽性対照に印と経路（受入基準 2）"),
     ("経路の段が状態グラフに無くても通す", "            if walk and (walk[-1][1], node, action) not in edge_set:",
@@ -1533,6 +1559,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 
 # check-tlc.py（TLC の走らせ方）を壊す変異——(名前, 壊す前, 壊した後, 殺す試料)
 TLC_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("トレースの呼び方に -fp 0 を足さない", "    return f\"{call} {WORKERS_OPTION} {TRACE_WORKERS} {FP_OPTION} {TRACE_FP}\"\n",
+     "    return f\"{call} {WORKERS_OPTION} {TRACE_WORKERS}\"\n", "経路はワーカーの数で揺れない"),
     # 止める枝を丸ごと外す（#1594 より前の形）——`with_group` だけを外すと `proc.wait()` が眠る偽の TLC を待ち続け、時間切れでしか落ちない（1 パス目の /code-review の指摘）。
     # #1600 の 2 パス目で、止めるのは `run_model` の `finally` に移った（時間切れの枝で止める前に届いた信号も止めるため）
     ("信号で抜けても TLC を止めない", "        if proc.returncode is None:\n            with_group(proc, signal.SIGKILL)\n            proc.wait()\n",
@@ -1543,6 +1571,31 @@ TLC_MUTATIONS: list[tuple[str, str, str, str]] = [
 def guard_rows(source: str) -> int:
     block = source.split("**守ること**:", 1)[1].split("**守らないもの**", 1)[0]
     return sum(1 for line in block.splitlines() if line.startswith("| ") and not line.startswith("| 守ること") and "---" not in line)
+
+
+def workers_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """呼び方に `-workers auto` があっても、同じモデルを 2 回描くと同じ図になる——最初の反例の経路が揺れない（#1602。Issue の受入基準 2・3）。"""
+    runs = work.parent / f"{work.name}-runs"
+    runs.unlink(missing_ok=True)
+    outputs, seen = [], []
+    for _ in range(2):
+        repo, argv, env = setup(work, fake, fakebin, (f"TLC の呼び方: {CALL} -workers auto\n", target("TwoPar", view=VIEW_TWO), [], 0, "", []))
+        env["FAKE_TLC_RUNS"] = str(runs)
+        env["FAKE_TLC_ARGS"] = str(work.parent / f"{work.name}-args")
+        proc = subprocess.run([sys.executable, "-I", str(script), str(repo), str(repo / T), *argv],
+                              capture_output=True, text=True, cwd=work, env=env, timeout=120)
+        if proc.returncode != 0 or "1. " not in proc.stdout:
+            return [f"描けなかった（終了コード {proc.returncode}）: {(proc.stdout + proc.stderr)[-300:]!r}"]
+        outputs.append(proc.stdout)
+    args_log = work.parent / f"{work.name}-args"
+    seen = [json.loads(line) for line in args_log.read_text(encoding="utf-8").splitlines()] if args_log.is_file() else []
+    args_log.unlink(missing_ok=True)
+    problems = []
+    if outputs[0] != outputs[1]:
+        problems.append("2 回の図が違う（最初の反例の経路が揺れた）")
+    if not seen or any(row[1:] != ["1", "0"] for row in seen):
+        problems.append(f"偽の TLC が受けた最後の -workers・-fp が 1・0 でない: {seen}")
+    return problems
 
 
 def killed(killer: str, script: Path, work: Path, fake: Path, fakebin: Path) -> bool:

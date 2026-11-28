@@ -23,7 +23,8 @@ Formal Checker が組んだモデルは `spec/formal/<対象>/` に残るが、�
 
 - **本体**: 記録の `モデルのファイル` の TLC のモデル（同じ名前の `.tla` と `.cfg`。陽性対照の一覧にもある名前は除く——`check-formal-rerun.py` と同じ）。
 - **陽性対照**（`--controls` のときだけ）: 記録の `陽性対照のファイル` の TLC のモデル。**違反が 1 つも出なければ描いたことにしない（4）**——印を付ける形を確かめられない。
-- 一覧のファイルを 1 つの一時ディレクトリに写し、呼び方の後ろに `-continue -dump dot,actionlabels <名前>.dump.dot <名前>.tla` を足してそのディレクトリで `sh` に渡す。
+- 一覧のファイルを 1 つの一時ディレクトリに写し、呼び方の後ろに `-workers 1 -fp 0 -continue -dump dot,actionlabels <名前>.dump.dot <名前>.tla` を足してそのディレクトリで `sh` に渡す。
+  **呼び方に `-workers auto` などがあっても 1 ワーカー・指紋を固定して走らせる**（#1602）——複数ワーカーでは最初の反例の経路が回ごとに変わり、指紋の多項式は時相の性質の反例を 1 ワーカーでも変える。決まりと実測は同梱の `check-tlc.py` の「ワーカーの数と指紋」を正とする。
   `-continue` は不変条件の違反の後も展開を続けさせる（違反した状態ごとに反例を出し、状態グラフを最後まで書く）。
 - **状態グラフのファイルは使い終わったら消す**（#1594。数 GB になり、一時ディレクトリに溜まってディスクを使い切った）——モデルごとに、TLC が走り終えたら
   `<名前>.dump_liveness.dot`（cfg に `PROPERTY`／`PROPERTIES` があると TLC が書く活性の挙動グラフ。図は読まない）を、状態グラフは読み込んだ直後に消す。
@@ -76,6 +77,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 対応に無い状態・行為があれば描かない（1） | 変数名・行為の名前・状態の式が図に出る |
 | `skip` は、まとめた後で同じ状態に戻る辺だけを描かない | 別の状態へ移る遷移が図から黙って消える |
 | 反例の最後の状態に印を付ける（`-continue` で違反ごとの反例を読む） | 規則を破る状態が図の上で見分けられない |
+| 呼び方に `-workers auto` があっても、1 ワーカー・`-fp 0` で走らせる（#1602） | 最初の反例の経路（段の番号つきの遷移と経路の一覧）が、同じモデルを走らせるたびに変わる |
 | 規則を破る状態と破らない状態を 1 つの言葉にまとめた対応を通さない（1。行き止まりの反例の状態は、同じ言葉の先へ進める状態とまとめたときだけ——行き止まりで TLC が止まると、同じ言葉のほかの終わりの状態は報告されない） | 印が、破らない状態・先へ進める状態まで覆う |
 | 最初の反例の段を番号つきの遷移と経路の一覧で描く | 「どの状態から、どの操作で」破るかが図に出ない |
 | 反例の状態と段が状態グラフに無ければ 4 | 状態グラフと食い違う経路を描く |
@@ -567,7 +569,8 @@ def draw(call: str, directory: Path, max_edges: int, timeout: int, controls: boo
             shutil.copyfile(directory / name, Path(tmp) / name)
         for name, kind in targets:
             dot_name = f"{name}.dump.dot"
-            rc, out = tlc.run_model(f"{call} -continue -dump dot,actionlabels {shlex.quote(dot_name)}", tmp, name, timeout,
+            # 経路とグラフが要る——呼び方に何があっても 1 ワーカー・指紋を固定して走らせる（#1602。`check-tlc.py` の「ワーカーの数と指紋」）
+            rc, out = tlc.run_model(f"{tlc.for_trace(call)} -continue -dump dot,actionlabels {shlex.quote(dot_name)}", tmp, name, timeout,
                                     started=lambda proc: (Path(tmp) / TLC_GROUP).write_text(str(proc.pid), encoding="utf-8"))
             dot_path = Path(tmp) / dot_name
             (Path(tmp) / f"{name}.dump_liveness.dot").unlink(missing_ok=True)  # 活性の挙動グラフ——図は読まない（#1594）

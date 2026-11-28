@@ -27,6 +27,8 @@ usage:
   **本体・陽性対照の 1 回ごとに、一覧のファイルを別の空の一時ディレクトリへ写して走らせる**（#1346）——TLC は作業ディレクトリに `states/<yy-MM-dd-HH-mm-ss>`（秒の単位の名前）を作り、
   時相の性質の違反・構文の誤りで終わった回はそれを残す（TLC 2.19 で確かめた。不変条件の違反・行き止まり・通った回は消した）。同じディレクトリで続けて走らせると、次の回が同じ秒に起動したとき
   `util.FileUtil.makeMetaDir` で検査の前に落ち（`… but that directory already exists.`）、陽性対照なら「空振りの疑い」と読み違える。
+- **複数ワーカーで走らせる**（#1602）——呼び方の行に `-workers` の語が無ければ、後ろに `-workers auto` を足す（有れば足さない）。判定（`満たす`／`反例あり`）は経路に依らない。
+  反例で止まった回の状態数はワーカーの数で変わる（重さの注記。判定には使わない）。決まりと実測は同梱の `check-tlc.py` の「ワーカーの数と指紋」を正とする。
 - **保存した `.cfg` のまま走らせる**——`PROPERTY`（時相の性質）を外して速くしない（外すと判定が弱くなる。`references/tree.md` の「保存したモデルを CI で走らせ続ける」）。
 
 ## 重さの注記（#1339）
@@ -69,6 +71,7 @@ usage:
 | 呼び方の行が無ければ 4 | `PATH` の `tlc` で走らせる（探し方を `check-tlc.py` に揃える） |
 | 一時ディレクトリで走らせる | 正本に `states/` と出力が残り、`formal-baseline.py check` が落ちる |
 | 走らせる 1 回ごとに別の空の一時ディレクトリで走らせる（#1346） | 前の回が残した `states/<秒>` と同じ秒に起動した回が TLC の `makeMetaDir` で落ち、陽性対照を「空振りの疑い」・本体を「通らず、反例も出さなかった」と読む |
+| 本体・陽性対照を、呼び方に `-workers` が無ければ `-workers auto` を足して走らせ、有れば足さない（#1602） | 利用者が設定しないと 1 ワーカーで走り、`PROPERTY` つきの本体が数倍遅い・利用者が絞った値を上書きする |
 | 1 回の検査を `--timeout` 秒で止める（プロセスグループごと） | 大きいモデルで待ち続ける |
 | 走らせたモデルごとに状態数と経過時間を出し、状態数が読めなければそう言う（#1339） | 時間切れのとき、状態数が多すぎたのか遅いだけなのかが出力から分からない・読めない回に数を作る（知らない桁区切りの数の最後の 3 桁を数と読む） |
 | 状態数が読めなくても判定と終了コードを変えない | 診断の材料が無いことで、通るモデルを「判定できなかった」にする |
@@ -205,9 +208,11 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
                 shutil.copyfile(directory / name, Path(where) / name)
             return where
 
+        # 判定だけが要る——呼び方に `-workers` が無ければ複数ワーカーで走らせる（#1602。`check-tlc.py` の「ワーカーの数と指紋」）
+        runs = tlc.for_verdict(call)
         verdict = PASS
         for name in bodies:
-            rc, out, weight = timed(call, fresh(), name, timeout, group)
+            rc, out, weight = timed(runs, fresh(), name, timeout, group)
             if violated(out):
                 lines.append(f"{directory}: 本体 {name}.tla で反例が出た{weight}: {tlc.tail(out)}")
                 verdict = COUNTEREXAMPLE
@@ -223,7 +228,7 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
             else:
                 lines.append(f"{directory}: 本体 {name}.tla: 反例なし{weight}")
         for name in broken:
-            rc, out, weight = timed(call, fresh(), name, timeout, group)
+            rc, out, weight = timed(runs, fresh(), name, timeout, group)
             if violated(out):
                 lines.append(f"{directory}: 陽性対照 {name}.tla: 反例が出た（空振りでない）{weight}")
             else:

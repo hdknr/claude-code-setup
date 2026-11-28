@@ -49,6 +49,10 @@ MUTATIONS = {
     "読めない CLAUDE.md を書いていないと読む": [('        raise Unknown(f"{path} を読めない: {e}")\n', '        return None, False, f"{path} を読めない: {e}"\n')],
     "時間切れで止めない": [("        out, _ = proc.communicate(timeout=timeout)\n", "        out, _ = proc.communicate()\n")],
     "正本で走らせる": [("cwd=workdir,", "cwd=None,")],
+    "判定の検査に -workers auto を足さない": [("    return call if has_workers(call) else f\"{call} {WORKERS_OPTION} {VERDICT_WORKERS}\"\n", "    return call\n")],
+    "呼び方に -workers があっても判定の検査に足す": [("    return WORKERS_OPTION in words\n", "    return False\n")],
+    "トレースの検査で呼び方の -workers を上書きしない": [("    return f\"{call} {WORKERS_OPTION} {TRACE_WORKERS} {FP_OPTION} {TRACE_FP}\"\n",
+                                         "    return call if has_workers(call) else f\"{call} {WORKERS_OPTION} {TRACE_WORKERS} {FP_OPTION} {TRACE_FP}\"\n")],
 }
 
 FAKE_TLC = """#!/bin/sh
@@ -204,6 +208,14 @@ def scenario(mod, base: Path, tag: str) -> dict:
     o["出力（通る）"] = run(mod, [str(root)])[1].replace(str(tools["good"]), "<tlc>")
     md.unlink()
     o["出力（無い）"] = run(mod, [str(root)])[1].replace(str(root), "<root>")
+    # ワーカーの数（#1602）——呼び方の文字列だけで決まる（TLC は走らせない）
+    plain = "java -cp /opt/tla/tla2tools.jar tlc2.TLC"
+    o["ワーカー: 判定（書いていない）"] = mod.for_verdict(plain)
+    o["ワーカー: 判定（書いた）"] = mod.for_verdict(plain + " -workers 4")
+    o["ワーカー: 判定（引用符が閉じていない）"] = mod.for_verdict("java -cp '/opt/tla 2/tla2tools.jar tlc2.TLC -workers 2")
+    o["ワーカー: 判定（名前の一部）"] = mod.for_verdict(plain + " -workersX")
+    o["ワーカー: トレース（書いていない）"] = mod.for_trace(plain)
+    o["ワーカー: トレース（書いた）"] = mod.for_trace(plain + " -workers auto -fp 7")
     os.chdir(base)
     return o
 
@@ -247,6 +259,16 @@ def main() -> int:
         check("読めない CLAUDE.md: 4", o["読めない CLAUDE.md（UTF-8 でない）"] == unknown)
         check("時間切れ: 1 で、子のプロセスを待たずに早く返る", o["時間切れ"] == (missing, "早い"))
         check("引数なし: 2", o["引数なし"] == 2)
+        plain = "java -cp /opt/tla/tla2tools.jar tlc2.TLC"
+        check("ワーカー: 判定の検査は -workers が無ければ -workers auto を後ろに足す",
+              o["ワーカー: 判定（書いていない）"] == plain + " -workers auto"
+              and o["ワーカー: 判定（名前の一部）"] == plain + " -workersX -workers auto")
+        check("ワーカー: 判定の検査は -workers があれば足さない（利用者の値を使う）",
+              o["ワーカー: 判定（書いた）"] == plain + " -workers 4"
+              and o["ワーカー: 判定（引用符が閉じていない）"] == "java -cp '/opt/tla 2/tla2tools.jar tlc2.TLC -workers 2")
+        check("ワーカー: トレースの検査は何があっても後ろに -workers 1 -fp 0 を足す",
+              o["ワーカー: トレース（書いていない）"] == plain + " -workers 1 -fp 0"
+              and o["ワーカー: トレース（書いた）"] == plain + " -workers auto -fp 7 -workers 1 -fp 0")
         check("出力（通る）は呼び方を名指しする", "TLC が在る: 呼び方 `<tlc>`" in o["出力（通る）"])
         check("出力（無い）は用意のしかたと書く行を出す", "TLC の呼び方: <コマンド>" in o["出力（無い）"]
               and "業務フローの形式検査: しない" in o["出力（無い）"] and "command -v" in o["出力（無い）"])
