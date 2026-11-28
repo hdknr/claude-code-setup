@@ -117,6 +117,8 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 - /code-review 1 パス目: 指摘 7 件（important 3・nit 4。CR1-1 は V1-R1 と同じ）。終点 `1191dc34`
 - 1 パス目の指摘対応: `6670a5ea`（直す 4 行: V1-R1／CR1-1・CR1-2・CR1-7。CR1-3・CR1-5 は計画ファイルの記録の直し）。`test-check-tlc.py`: 緑。指摘対応の差分は 0 行でない（`check-tlc.py`・`formal-checker.md`）ので 2 パス目を回す
 - 割り目（手順 6）: 割らない（cruise の周）
+- Verifier 2 パス目（当て直し。dev-loop:dev-loop-verifier・sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-verifier-2-20261128T071145Z.md`
+- /code-review 2 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-code-review-2-20261128T071145Z.md`
 
 ```dev-loop-gates
 周の base: 627822c40e7c256da6c7c7916418e0b1e3ce36ee
