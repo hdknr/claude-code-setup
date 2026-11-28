@@ -38,12 +38,34 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 | --- | --- | --- |
 | `-XX:+UseParallelGC`・`-Xmx<量>`（ヒープ） | `java` と `-cp` の間 | 速さとメモリのためのもの。手元の TLC 2.19 で、`-Xmx2g -fpmem 0.5` を足した 3 回は反例のトレースと状態数が足さない回と同じだった——**ただし 356 状態の小さいモデルで、メモリが足りなくなる大きさではない**（大きいモデルで結果が変わらないことは確かめていない）。`-XX:+UseParallelGC` は足さない形と比べていない |
 | `-fpmem <割合>`（TLC のヘルプでは「探索済みの状態の指紋に回す、物理メモリに対する割合」。0.0 と 1.0 の間。既定 0.25） | `tlc2.TLC` の後ろ | 同上。**`-Xmx` と合わせて物理メモリを超えないようにする**——指紋の分がヒープの外なら、両方の和が物理メモリを超えうる（ヒープの内か外かは確かめていない） |
-| `-workers <数>` か `-workers auto` | `tlc2.TLC` の後ろ | **反例のトレースが実行ごとに変わる**——手元の TLC 2.19 で、最短の反例が多数あるモデルを 8 回ずつ走らせ、`-workers 1` は 8 回とも同じ、`-workers 8` は 5 種類（長さはどれも同じだった）。Formal Checker の `トレース`（Red テストになる）と `formal-statechart.py` の最初の反例の経路が回ごとに揺れる。`check-formal-rerun.py` の判定（`満たす`／`反例あり`）は経路に依らない。**足すなら、揺れることを承知で足す** |
+| `-workers <数>` か `-workers auto` | `tlc2.TLC` の後ろ | **書かなくてよい**——ワーカーの数は、スクリプトと Formal Checker が検査の種類ごとに後ろに足す（下の「ワーカーの数と指紋」。#1602）。書いたら、判定だけが要る検査はその値で走り、反例の経路・状態グラフが要る検査は `-workers 1` で上書きされる |
 
-**確かめたのはこの 1 つのモデル・この機械（28 コア）・各 3〜8 回だけ**——ほかの形で反例が最短でなくなるかは確かめていない。
+#1339 の測り方（上の表と、下の「ワーカーの数と指紋」の #1339 の行）: **確かめたのはこの 1 つのモデル・この機械（28 コア）・各 3〜8 回だけ**——ほかの形で反例が最短でなくなるかは確かめていない。
 状態グラフ（`-dump dot,actionlabels`）は、TLC が指紋の多項式を回ごとに選ぶので、`-fp 0` で固定して比べた——違反のある 2 つの小さいモデル（24・25 本の遷移）を `-continue` つきで
 `-workers 1` と `-workers 8` で 6〜8 回ずつ走らせ、どれも同じ中身だった。**大きいモデルや別の形で辺が欠けないことは確かめていない**（別の形で欠けたという報告がある——#1339 の PR）。
 **モデルそのものを軽くする手（構成を小さくする・`CONSTRAINT`・抽象化）と、使わない手（SYMMETRY・VIEW・`-simulate`）は Formal Checker の「検査が重いとき」を正とする**（プラグイン直下の `agents/formal-checker.md`）。
+
+### ワーカーの数と指紋（#1602。ここが原本）
+
+**TLC は既定で 1 ワーカーで走る**（#1602 の実案件で `with 1 worker on 15 cores`。`PROPERTY` を持つ本体が、1 ワーカーで 44 秒・`-workers auto` で 6 秒だった——Issue の実測）。
+呼び方の行に `-workers` を書かせると、利用者は反例のトレースが揺れるのを嫌って書かないか、書くことに気づかない。そこで**呼び方の行はそのままにして、走らせる側が検査の種類ごとに後ろに足す**:
+
+| 検査 | 結果に要るもの | 足すもの（呼び方の後ろ・モデルのファイルの前） |
+| --- | --- | --- |
+| 本体・陽性対照・到達の確かめ（`check-formal-rerun.py`・それを読み込む dev-loop の `formal-sync.py`・正本の CI・Formal Checker） | 判定と状態数 | `for_verdict`——呼び方に `-workers` の語が無ければ `-workers auto`。**有れば足さない**（利用者が CPU を絞るために書いた値を使う） |
+| 本体の反例のトレース（`check-formal-rerun.py` の反例の行・Formal Checker の `トレース` と `-dumpTrace json`）・状態グラフ（`formal-statechart.py` と Formal Checker の図の対応の `-dump`） | 経路・グラフ | `for_trace`——**呼び方に何があっても** `-workers 1 -fp 0` |
+| この CLI の確かめ（2 つの小さいモデル） | 呼び方が通るか | 足さない（呼び方の行のまま） |
+
+- **#1339 の行**: 手元の TLC 2.19 で、最短の反例が多数あるモデルを 8 回ずつ走らせ、`-workers 1` は 8 回とも同じトレース、`-workers 8` は 5 種類（長さはどれも同じ）だった——Formal Checker の `トレース`（Red テストになる）と `formal-statechart.py` の最初の反例の経路が回ごとに揺れるので、経路の要る検査は 1 ワーカーにする。
+- **後ろに足した値が使われる**——手元の TLC 2.19（tla2tools v1.7.4）で、`-workers auto -workers 1` は 1 worker、`-workers 1 -workers auto` は 28 workers、`-workers 1 -workers 3` は 3 workers、
+  `-fp 5 -fp 0` は fp 0、`-fp 0 -fp 5` は fp 5 で走った（2026-11-28。出力の `with <n> worker(s)`・`with fp <n>` の行）。
+- **`-fp 0` も足すのは、時相の性質の反例（lasso）が 1 ワーカーでも回ごとに変わるから**——TLC は指紋の多項式を回ごとに選ぶ（`with fp <n> and seed …` の行）。手元の TLC 2.19 で、時相の性質を破るモデル（6,561 状態）を
+  1 ワーカーで 3 回走らせると 3 回とも違うトレース（状態の並び）で、`-fp 0` を足すと 3 回とも同じだった（`-workers auto -fp 0` は 3 回で 2 種類）。
+  不変条件の反例（幅優先で最短）は 1 ワーカーなら `-fp` を足さなくても 3 回とも同じで、`-workers auto` は 3 回とも違った（331 状態の小さいモデル。最短の反例が多数ある形）。
+- **判定と状態数は、ワーカーの数で変わらなかった**——同じ機械で各 3 回: `PROPERTY` を持ち反例の無いモデル（456,976 状態）は 1 ワーカーも `-workers auto`（28）もどれも `No error has been found`・456,976 状態、
+  時相の性質を破るモデル（陽性対照）はどれも `Temporal properties were violated.`・6,561 状態、不変条件を破るモデル（陽性対照）はどれも `is violated`。
+  **反例で止まった回の状態数はワーカーの数で変わる**（不変条件の反例で 1 ワーカーは 3 回とも 331、`-workers auto` は 216・296・280——最初の違反で止まるまでにたどった数）。判定と終了コードには使わない（`check-formal-rerun.py` の重さの注記）。
+- **確かめたのは TLC 2.19・この機械（28 コア）・小さいモデル 3 つ・各 3 回だけ**——ほかの版・大きいモデルで後の値が使われること・1 ワーカーと `-fp 0` でトレースが揺れないことは確かめていない。
 
 ## 確かめ方
 
@@ -113,6 +135,9 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 - **読めない `CLAUDE.md` を「書いていない」と読まない**——4。
 - **時間切れで待ち続けない**——1 回の検査を `PROBE_TIMEOUT` 秒で止め（プロセスグループごと）、1。
 - **正本リポジトリに書かない**——モデルは一時ディレクトリに書いて、そこで走らせる。
+- **判定だけが要る検査の呼び方は、呼び方に `-workers` が無ければ後ろに `-workers auto` を足す**（`for_verdict`）——利用者の設定なしで 1 ワーカーに落ちない。
+- **呼び方に `-workers` の語があれば、判定だけが要る検査に足さない**（`for_verdict`）——利用者の値を上書きしない。
+- **トレース・状態グラフが要る検査の呼び方は、呼び方に何があっても後ろに `-workers 1 -fp 0` を足す**（`for_trace`）——呼び方の `-workers auto` で経路が揺れない。
 
 守らない:
 
@@ -129,6 +154,7 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 import argparse
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -149,6 +175,13 @@ BROKEN_MODEL = ("Broken", "---- MODULE Broken ----\nVARIABLE x\nInit == x = FALS
 MODEL_CFG = "INIT Init\nNEXT Next\nINVARIANT Inv\n"
 GOOD_MARK = "No error has been found"
 BROKEN_MARK = "is violated"
+
+# ワーカーの数（#1602。docstring の「ワーカーの数と指紋」）——判定だけが要る検査は複数、反例の経路・状態グラフが要る検査は 1 で指紋も固定
+WORKERS_OPTION = "-workers"
+VERDICT_WORKERS = "auto"
+TRACE_WORKERS = "1"
+FP_OPTION = "-fp"
+TRACE_FP = "0"
 
 EXIT_OK = 0
 EXIT_MISSING = 1
@@ -416,6 +449,25 @@ def probe(call, timeout=None):
         if BROKEN_MARK not in out:
             return False, f"違反するモデルで違反を出さなかった（終了コード {rc}。TLC として検査していない）: {tail(out)}"
     return True, "通るモデルを通し、違反するモデルで違反を出した"
+
+
+def has_workers(call):
+    """呼び方の行に `-workers` の語があるか（利用者がワーカーの数を決めている）。"""
+    try:
+        words = shlex.split(call)
+    except ValueError:  # 閉じていない引用符——語の区切りだけで見る
+        words = call.split()
+    return WORKERS_OPTION in words
+
+
+def for_verdict(call):
+    """判定だけが要る検査（本体・陽性対照）の呼び方。利用者が `-workers` を書いていなければ `-workers auto` を後ろに足す。"""
+    return call if has_workers(call) else f"{call} {WORKERS_OPTION} {VERDICT_WORKERS}"
+
+
+def for_trace(call):
+    """反例の経路・状態グラフが要る検査の呼び方。呼び方に何があっても後ろに `-workers 1 -fp 0` を足す（TLC は後の値を使う）。"""
+    return f"{call} {WORKERS_OPTION} {TRACE_WORKERS} {FP_OPTION} {TRACE_FP}"
 
 
 def tail(out, n=3):

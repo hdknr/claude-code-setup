@@ -24,6 +24,8 @@
    （GitHub Actions の `run:` の既定のシェル）。空振り・本体の反例で非 0、通るモデル・TLC でない対象だけで 0。雛形を崩す変異（最後のコマンドの結果を捨てる・
    TLC でない対象も渡す）で期待が変わることも見る。**YAML そのもの（`actions/*`・jar の取得）は走らせない。**
 
+7. **本体と陽性対照を複数ワーカーで走らせる**（#1602）——偽の TLC が受けた呼び方の後ろの引数を記録し、呼び方に `-workers` が無ければ 2 回とも `-workers auto`、`-workers 3` を書いた呼び方では `-workers 3` のままであることを見る。
+
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料の終了コードか、正本に残したファイルが期待と変わること**を確かめる。
@@ -50,6 +52,9 @@ PREFIX = "spec-loop-formal-rerun-"
 FAKE_TLC = f"""#!{sys.executable}
 import os, sys, time
 name = sys.argv[-1]
+if os.environ.get("FAKE_TLC_ARGS"):  # 呼び方の後ろに足された引数（モデルのファイルの前。#1602）
+    with open(os.environ["FAKE_TLC_ARGS"], "a", encoding="utf-8") as log:
+        log.write(" ".join(sys.argv[1:-1]) + "\\n")
 os.makedirs("states", exist_ok=True)
 # 本物の TLC は states/<yy-MM-dd-HH-mm-ss> を作る——同じ秒に起動した回を、秒に依らず固定の名前で再現する（#1346）
 meta = os.path.join("states", "26-11-21-00-38-41")
@@ -198,11 +203,25 @@ CASES: dict[str, tuple] = {
     "状態数が読めなくても判定を変えない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="QUIETPASS", controls=("TEMPORAL",))}, [], 0,
                             "本体 Order.tla: 反例なし（状態数は読めなかった・"),
     "状態数の無い構文の誤りは読めなかったと言う": (f"TLC の呼び方: {CALL}\n", {T1: target(body="PARSE")}, [], 4, "（状態数は読めなかった・"),
+    # ワーカーの数（#1602）——呼び方に -workers が無ければ本体も陽性対照も -workers auto、有れば足さない
+    "複数ワーカーで走らせる": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "渡した 1 件とも満たす"),
+    "呼び方の -workers を残す": (f"TLC の呼び方: {CALL} -workers 3\n", {T1: target()}, [], 0, "渡した 1 件とも満たす"),
     "判定しない: --timeout が 0": (f"TLC の呼び方: {CALL}\n", {T1: target()}, ["--timeout", "0"], 2, "--timeout は 1 以上"),
     "判定しない: 対象が無い": (f"TLC の呼び方: {CALL}\n", {}, [], 2, "usage"),
 }
-# 正本に states/ を残さない（終了コードに加えて見る試料）
-POST = {"満たす": no_states}
+def tlc_args(repo: Path) -> list[str]:
+    """偽の TLC が受けた、呼び方の後ろの引数（1 回 1 行）。"""
+    log = repo.parent / "tlc.args"
+    return log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
+
+
+def every_run(expected: str):
+    """本体と陽性対照の 2 回とも、呼び方の後ろの引数が `expected` だった（#1602）。"""
+    return lambda repo: len(tlc_args(repo)) == 2 and all(line == expected for line in tlc_args(repo))
+
+
+# 正本に states/ を残さない・偽の TLC が受けた引数（終了コードに加えて見る試料）
+POST = {"満たす": no_states, "複数ワーカーで走らせる": every_run("-workers auto"), "呼び方の -workers を残す": every_run("-workers 3")}
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -221,11 +240,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("正本で走らせる", "            return where\n", "            return str(directory)\n", "満たす"),
     ("1 回ごとに分けない（1 つの一時ディレクトリで続けて走らせる）", "            where = tempfile.mkdtemp(dir=tmp)\n", "            where = tmp\n",
      "前の回の states に次の回がぶつからない"),
-    ("本体の回でディレクトリを分けない", "        for name in bodies:\n            rc, out, weight = timed(call, fresh(), name, timeout, group)\n",
-     "        shared = fresh()\n        for name in bodies:\n            rc, out, weight = timed(call, shared, name, timeout, group)\n",
+    ("本体の回でディレクトリを分けない", "        for name in bodies:\n            rc, out, weight = timed(runs, fresh(), name, timeout, group)\n",
+     "        shared = fresh()\n        for name in bodies:\n            rc, out, weight = timed(runs, shared, name, timeout, group)\n",
      "前の本体の states に次の本体がぶつからない"),
-    ("陽性対照が最後に作ったディレクトリを使い回す", "timed(call, fresh(), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
-     "timed(call, max((str(d) for d in Path(tmp).iterdir() if d.is_dir()), key=lambda d: Path(d).stat().st_mtime_ns), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
+    ("陽性対照が最後に作ったディレクトリを使い回す", "timed(runs, fresh(), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
+     "timed(runs, max((str(d) for d in Path(tmp).iterdir() if d.is_dir()), key=lambda d: Path(d).stat().st_mtime_ns), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
      "本体の states に陽性対照がぶつからない"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),
@@ -243,6 +262,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    return (rc if DISTINCT.search(out or \"\") else None), out, measure(out, time.monotonic() - begun)\n",
      "状態数が読めなくても判定を変えない"),
     ("陽性対照に重さの注記を付けない", "反例が出た（空振りでない）{weight}\")", "反例が出た（空振りでない）\")", "陽性対照の状態数も出す"),
+    ("判定の検査にワーカーの数を足さない", "        runs = tlc.for_verdict(call)\n", "        runs = call\n", "複数ワーカーで走らせる"),
+    ("陽性対照はワーカーの数を足さずに走らせる", "timed(runs, fresh(), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
+     "timed(call, fresh(), name, timeout, group)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照", "複数ワーカーで走らせる"),
     ("--timeout を使わない", "        verdict, lines = rerun(call, directory, int(args.timeout))\n", "        verdict, lines = rerun(call, directory, TIMEOUT)\n", "時間切れ"),
 ]
 
@@ -334,7 +356,7 @@ def env_of(work: Path, fakebin: Path) -> dict[str, str]:
     """試料ごとの空の `TMPDIR`（#1600。走らせた後の残りを見る・利用者の `$TMPDIR` を回収させない）。"""
     (work / "tmp").mkdir(parents=True, exist_ok=True)
     return {**os.environ, "PATH": f"{fakebin}{os.pathsep}/usr/bin{os.pathsep}/bin", "TMPDIR": str(work / "tmp"),
-            "FAKE_TLC_PID": str(work / "tlc.pid"), "FAKE_TLC_MASK": str(work / "tlc.mask")}
+            "FAKE_TLC_PID": str(work / "tlc.pid"), "FAKE_TLC_MASK": str(work / "tlc.mask"), "FAKE_TLC_ARGS": str(work / "tlc.args")}
 
 
 def leftovers(work: Path) -> list[str]:
