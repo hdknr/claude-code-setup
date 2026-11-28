@@ -409,10 +409,32 @@ def dead_pid() -> int:
     raise AssertionError(f"終わったはずのプロセス {pid} が居る（pid の再使用）——試料を組めない")
 
 
-def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int) -> list[str]:
-    """TLC が走っている間に信号を受けたら、TLC を止め、一時ディレクトリを消し、128+信号で終わる。"""
+# `sh -c` の最後のコマンドを exec しない sh（Linux の dash）では、検査器は sh の子で、sh が待たせ方を解いてから起こすことがあり、検査器の待たせ方を見ても引き継いだかが分からない（PR #1627 の CI）。
+# 本体を読み込み、`/bin/sh -c` に渡す文字列の頭に `exec ` を足して、検査器を Popen の子そのものにしてから本体を走らせる
+EXEC_SHELL = """import importlib.util, subprocess, sys
+spec = importlib.util.spec_from_file_location("check_formal_rerun", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real = subprocess.Popen
+class Popen(real):
+    def __init__(self, args, *a, **k):
+        if isinstance(args, list) and args[:2] == ["/bin/sh", "-c"]:
+            args = [*args[:2], "exec " + args[2], *args[3:]]
+        super().__init__(args, *a, **k)
+subprocess.Popen = Popen
+sys.exit(module.main(sys.argv[2:]))
+"""
+
+
+def signal_problems(script: Path, work: Path, fake: Path, fakebin: Path, sig: int, exec_shell: bool = False) -> list[str]:
+    """TLC が走っている間に信号を受けたら、TLC を止め、一時ディレクトリを消し、128+信号で終わる。`exec_shell` は検査器を Popen の子そのものにする形（上の EXEC_SHELL）。"""
     argv, env = setup(work, fake, fakebin, SLEEPY)
-    proc = subprocess.Popen([sys.executable, "-I", str(script), *argv], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    head = [str(script)]
+    if exec_shell:
+        wrapper = work / "exec_shell.py"
+        wrapper.write_text(EXEC_SHELL, encoding="utf-8")
+        head = [str(wrapper), str(script)]
+    proc = subprocess.Popen([sys.executable, "-I", *head, *argv], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             cwd=work, env=env, preexec_fn=lambda: signal.signal(sig, signal.SIG_DFL))  # 走らせる側が無視にしていても、試料は既定から始める
     pid = wait_pid(work)
     if pid is None:
@@ -753,7 +775,7 @@ IGNORED_CASES = {f"親が無視にした信号: {sig.name}": sig for sig in (sig
 SPECIAL = [*SIGNAL_CASES, *IGNORED_CASES, "回収", "回収: 記録が読めない", "SIGKILL の後に TLC が走っている",
            "信号: 片付けの途中", "信号: 片付けの途中に 3 回", "main の後に信号の扱いを戻す",
            "信号: 起こした直後（Popen の中）", "信号: 入れる途中", "信号: 戻す途中",
-           "信号: 戻す入口", "信号: 時間切れの枝", "信号: 書けない標準エラー"]
+           "信号: 戻す入口", "信号: 時間切れの枝", "信号: 書けない標準エラー", "信号: 検査器の待たせ方（sh が exec する形）"]
 
 
 def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
@@ -777,6 +799,8 @@ def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: P
         return window_problems(script, work, fake, fakebin, "catch")
     if name == "信号: 戻す途中":
         return window_problems(script, work, fake, fakebin, "restore")
+    if name == "信号: 検査器の待たせ方（sh が exec する形）":
+        return signal_problems(script, work, fake, fakebin, signal.SIGTERM, exec_shell=True)
     if name == "信号: 戻す入口":
         return window_problems(script, work, fake, fakebin, "restore-entry")
     if name == "信号: 時間切れの枝":
@@ -810,7 +834,7 @@ TLC_MUTATIONS: list[tuple[str, str, str, str]] = [
      "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())\n    try:\n        for sig, old in saved.items():", "信号: 戻す途中"),
     ("起こす間に信号を待たせない", "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)\n    try:\n        proc = subprocess.Popen(",
      "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())\n    try:\n        proc = subprocess.Popen(", "信号: 起こした直後（Popen の中）"),
-    ("検査器に待たせた信号を引き継ぐ", ", preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))", ")", "信号: SIGTERM"),
+    ("検査器に待たせた信号を引き継ぐ", ", preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))", ")", "信号: 検査器の待たせ方（sh が exec する形）"),
     ("待っている間の例外・時間切れの枝で止める前の信号で検査器を止めない", "        if proc.returncode is None:\n            with_group(proc, signal.SIGKILL)\n",
      "        if False:\n            with_group(proc, signal.SIGKILL)\n", "信号: 時間切れの枝"),
     ("書けない標準エラーで例外を上げる", "    except OSError:\n        sys.stderr = None", "    except ZeroDivisionError:\n        sys.stderr = None", "信号: 書けない標準エラー"),

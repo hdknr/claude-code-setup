@@ -247,6 +247,23 @@ finally:
 """
 
 
+# `sh -c` の最後のコマンドを exec しない sh（Linux の dash）では、検査器は sh の子で、sh が待たせ方を解いてから起こすことがあり、検査器の待たせ方を見ても引き継いだかが分からない（PR #1627 の CI）。
+# 本体を読み込み、`/bin/sh -c` に渡す文字列の頭に `exec ` を足して、検査器を Popen の子そのものにしてから本体を走らせる
+EXEC_SHELL = """import importlib.util, subprocess, sys
+spec = importlib.util.spec_from_file_location("check_alloy", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real = subprocess.Popen
+class Popen(real):
+    def __init__(self, args, *a, **k):
+        if isinstance(args, list) and args[:2] == ["/bin/sh", "-c"]:
+            args = [*args[:2], "exec " + args[2], *args[3:]]
+        super().__init__(args, *a, **k)
+subprocess.Popen = Popen
+sys.exit(module.main(sys.argv[2:]))
+"""
+
+
 def dead_pid() -> int:
     proc = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True, check=True)
     pid = int(proc.stdout)
@@ -314,6 +331,26 @@ def signals(script: Path, work: Path, tools: dict) -> dict:
             proc.kill()
             out, _ = proc.communicate()
         o["信号: SIGTERM"] = (proc.returncode, "信号" in out, gone(pid), left(), mask_file.read_text() if mask_file.is_file() else None)
+    wipe()
+    # 1a. 検査器を Popen の子そのものにした形（上の EXEC_SHELL）で、Alloy が待たせた信号を引き継がずに起きるか
+    (root / "CLAUDE.md").write_text(f"Alloy の呼び方: {tools['sleepy']} exec\n", encoding="utf-8")
+    wrapper = work / "exec_shell.py"
+    wrapper.write_text(EXEC_SHELL, encoding="utf-8")
+    proc = subprocess.Popen([sys.executable, "-I", str(wrapper), str(script), str(root)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            env=env, cwd=work, preexec_fn=lambda: signal.signal(signal.SIGTERM, signal.SIG_DFL))
+    pid = wait_pid(pid_file)
+    if pid is None:
+        proc.kill()
+        proc.communicate()
+        o["信号: 検査器の待たせ方"] = "偽の Alloy が起動しなかった"
+    else:
+        proc.send_signal(signal.SIGTERM)
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+        o["信号: 検査器の待たせ方"] = (proc.returncode, gone(pid), mask_file.read_text() if mask_file.is_file() else None)
     wipe()
     # 1b. 起こした直後（Popen の中）の SIGTERM——Popen が子を起こした後・返る前に信号を送り、関数を 1 つ呼んで待っていない信号の例外をその場で上げさせる
     wrapper = work / "popen.py"
@@ -568,6 +605,7 @@ def main() -> int:
         check("引数なし: 2", o["引数なし"] == 2)
         check("信号: Alloy が走っている間の SIGTERM で 143・信号と言う・Alloy を止める・一時ディレクトリを残さない（#1600）",
               o["信号: SIGTERM"] == (143, True, True, [], "[]"))
+        check("信号: 検査器を Popen の子そのものにした形（sh が exec する形）で、Alloy は待たせた信号を引き継がずに起きる", o["信号: 検査器の待たせ方"] == (143, True, "[]"))
         check("信号: 起こした直後（Popen の中）の SIGTERM でも 143 で Alloy を残さない", o["信号: 起こした直後"] == (143, False, []))
         check("信号: 片付けの途中の SIGTERM でも 143 で一時ディレクトリを残さない", o["信号: 片付けの途中"] == (143, []))
         check("信号: 時間切れの枝で止める前の SIGTERM でも、抜ける前に Alloy のグループを止める（#1600 の 2 パス目）",
