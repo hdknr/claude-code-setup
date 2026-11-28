@@ -62,12 +62,16 @@ MUTATIONS = {
     "信号で片付けない": [("        TLC.catch_signals(saved)\n", "        pass\n")],
     "起こす間に信号を待たせない": [("    mask = signal.pthread_sigmask(signal.SIG_BLOCK, TLC.SIGNALS)\n", "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())\n")],
     "Alloy に待たせた信号を引き継ぐ": [(", preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))", ")")],
-    "待っている間の例外で Alloy を止めない": [("    except BaseException:\n        # 待っている間の例外（信号を例外にした main・Ctrl-C）でも、別のセッションで起こした Alloy を置き去りにしない（#1600）\n"
-                                     "        TLC.with_group(proc, signal.SIGKILL)\n        proc.wait()\n        raise\n", "")],
-    "片付けの途中の信号の後に消し直さない": [("        TLC.sweep(PREFIX)  # 片付け", "        pass  # 片付け")],
+    "待っている間の例外・時間切れの枝の途中の信号で Alloy を止めない": [("        if proc.returncode is None:\n            TLC.with_group(proc, signal.SIGKILL)\n",
+                                                   "        if False:\n            TLC.with_group(proc, signal.SIGKILL)\n")],
+    "片付けの途中の信号の後に消し直さない": [("    TLC.sweep(PREFIX)  # 片付け", "    pass  # 片付け")],
     "起動時に回収しない": [("    for line in TLC.reclaim_lines(*TLC.reclaim(PREFIX)):\n        print(line, file=sys.stderr)\n", "")],
     "Alloy のグループを記録しない": [("        group = TLC.record_group(tmp)", "        group = None")],
     "信号の扱いを戻さない": [("        TLC.restore_signals(saved)\n", "        pass\n")],
+    # 2 パス目の指摘（#1600）
+    "戻す入口の信号を受けない": [("    except TLC.Interrupted as stop:  # 信号の扱いを戻す入口", "    except ZeroDivisionError as stop:  # 信号の扱いを戻す入口")],
+    "書けない標準エラーで終了コードを変える": [("    TLC.say(f\"確かめていない: 信号 {signal.Signals(stop.signum).name} で止められた（Alloy を止め、一時ディレクトリを消した）\")",
+                                     "    print(f\"確かめていない: 信号 {signal.Signals(stop.signum).name} で止められた（Alloy を止め、一時ディレクトリを消した）\", file=sys.stderr)")],
 }
 PREFIX = "spec-loop-check-alloy-"
 
@@ -205,6 +209,44 @@ sys.exit(module.main(sys.argv[3:]))
 """
 
 
+# 信号の扱いを戻す入口（待たせる前）に届く形——本体を読み込み、`restore_signals` を「自分に SIGTERM を送ってから本物を呼ぶ」ものに包む（#1600 の 2 パス目の CR2-1）
+RESTORE_ENTRY = """import importlib.util, os, signal, sys
+spec = importlib.util.spec_from_file_location("check_alloy", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real = module.TLC.restore_signals
+def restore_signals(saved):
+    os.kill(os.getpid(), signal.SIGTERM)
+    return real(saved)
+module.TLC.restore_signals = restore_signals
+sys.exit(module.main(sys.argv[2:]))
+"""
+
+# 時間切れの枝で止める前に届く形——本体の `run_model` を時間切れ 1 秒で眠る検査器に当て、最初の `with_group`（止める呼び出し）の入口で自分に SIGTERM を送る（#1600 の 2 パス目の V2-R1）
+TIMEOUT_BRANCH = """import importlib.util, os, signal, sys, tempfile
+spec = importlib.util.spec_from_file_location("check_alloy", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real, fired = module.TLC.with_group, []
+def with_group(proc, sig):
+    if not fired:
+        fired.append(1)
+        open(sys.argv[2], "w").write(str(proc.pid))
+        os.kill(os.getpid(), signal.SIGTERM)
+    return real(proc, sig)
+module.TLC.with_group = with_group
+saved = module.TLC.current_signals()
+try:
+    module.TLC.catch_signals(saved)
+    module.run_model("sleep 30 #", tempfile.mkdtemp(), "M", 1)
+    print("信号が上がらない")
+except module.TLC.Interrupted as stop:
+    print("Interrupted", stop.signum)
+finally:
+    module.TLC.restore_signals(saved)
+"""
+
+
 def dead_pid() -> int:
     proc = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True, check=True)
     pid = int(proc.stdout)
@@ -289,6 +331,52 @@ def signals(script: Path, work: Path, tools: dict) -> dict:
         except ProcessLookupError:
             group_alive = False
     o["信号: 起こした直後"] = (run_.returncode, group_alive, left())
+    wipe()
+    # 1c. 時間切れの枝で止める前の SIGTERM——抜ける前に Alloy のグループを止めるか
+    wrapper = work / "timeout_branch.py"
+    wrapper.write_text(TIMEOUT_BRANCH, encoding="utf-8")
+    group_file = work / "timeout.pid"
+    run_ = subprocess.run([sys.executable, "-I", str(wrapper), str(script), str(group_file)], capture_output=True, text=True, env=env,
+                          cwd=work, timeout=120, preexec_fn=lambda: signal.signal(signal.SIGTERM, signal.SIG_DFL))
+    group_alive = None
+    if group_file.is_file():
+        time.sleep(0.2)
+        try:
+            os.killpg(int(group_file.read_text()), 0)
+            group_alive = True
+            os.killpg(int(group_file.read_text()), signal.SIGKILL)
+        except ProcessLookupError:
+            group_alive = False
+    o["信号: 時間切れの枝"] = (run_.stdout.strip(), group_alive)
+    wipe()
+    # 1d. 信号の扱いを戻す入口の SIGTERM（通る偽物で）——143 で、トレースバックの 1 にしない
+    (root / "CLAUDE.md").write_text(f"Alloy の呼び方: {tools['good']} exec\n", encoding="utf-8")
+    wrapper = work / "restore_entry.py"
+    wrapper.write_text(RESTORE_ENTRY, encoding="utf-8")
+    run_ = subprocess.run([sys.executable, "-I", str(wrapper), str(script), str(root)], capture_output=True, text=True, env=env, cwd=work, timeout=120,
+                          preexec_fn=lambda: signal.signal(signal.SIGTERM, signal.SIG_DFL))
+    o["信号: 戻す入口"] = (run_.returncode, "Traceback" in run_.stderr, left())
+    wipe()
+    # 1e. 標準エラーが書けない（読む側を閉じた管）ときの SIGHUP——129 で、120 にしない
+    (root / "CLAUDE.md").write_text(f"Alloy の呼び方: {tools['sleepy']} exec\n", encoding="utf-8")
+    read_end, write_end = os.pipe()
+    proc = subprocess.Popen([sys.executable, "-I", str(script), str(root)], stdout=subprocess.PIPE, stderr=write_end, text=True,
+                            env=env, cwd=work, preexec_fn=lambda: signal.signal(signal.SIGHUP, signal.SIG_DFL))
+    os.close(write_end)
+    pid = wait_pid(pid_file)
+    os.close(read_end)
+    if pid is None:
+        proc.kill()
+        proc.communicate()
+        o["信号: 書けない標準エラー"] = "偽の Alloy が起動しなかった"
+    else:
+        proc.send_signal(signal.SIGHUP)
+        try:
+            proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+        o["信号: 書けない標準エラー"] = (proc.returncode, gone(pid), left())
     wipe()
     # 2. 片付けの途中の信号（通る偽物で）
     (root / "CLAUDE.md").write_text(f"Alloy の呼び方: {tools['good']} exec\n", encoding="utf-8")
@@ -482,6 +570,10 @@ def main() -> int:
               o["信号: SIGTERM"] == (143, True, True, [], "[]"))
         check("信号: 起こした直後（Popen の中）の SIGTERM でも 143 で Alloy を残さない", o["信号: 起こした直後"] == (143, False, []))
         check("信号: 片付けの途中の SIGTERM でも 143 で一時ディレクトリを残さない", o["信号: 片付けの途中"] == (143, []))
+        check("信号: 時間切れの枝で止める前の SIGTERM でも、抜ける前に Alloy のグループを止める（#1600 の 2 パス目）",
+              o["信号: 時間切れの枝"] == ("Interrupted 15", False))
+        check("信号: 信号の扱いを戻す入口の SIGTERM でも 143 で、トレースバックを出さない", o["信号: 戻す入口"] == (143, False, []))
+        check("信号: 標準エラーが書けない（読む側を閉じた管）ときの SIGHUP でも 129 で Alloy を残さない", o["信号: 書けない標準エラー"] == (129, True, []))
         check("回収: 持ち主の居ない pid つきだけを消し、居るもの・古い名前・ほかの頭は消さない",
               o["回収"] == (0, {"持ち主が居ない": False, "持ち主が居る": True, "古い名前": True, "ほかの頭": True}, True))
         check("SIGKILL の後に Alloy が走っている間は消さずに言い、止まった後の起動が消す", o["SIGKILL の後に Alloy が走っている"] == (True, True, []))

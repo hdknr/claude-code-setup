@@ -17,6 +17,7 @@ cruise（親 Issue #1604）の子として回す**不在の周**（`/dev-loop:cr
 - `plugins/spec-loop/scripts/check-alloy.py` — 部品を当てる（同上）。`run_model` の例外の枝でプロセスグループを止める・`started` を受ける
 - `scripts/test-check-formal-rerun.py` — 信号・回収の試料と変異（`check-tlc.py` の部品の変異も）
 - `scripts/test-check-alloy.py` — 信号・回収の観測と変異
+- `scripts/test-formal-statechart.py` — `check-tlc.py` の `run_model` を壊す変異の当てる先だけ（2 パス目の V2-R1 の直しで、検査器を止めるのが `except BaseException` の枝から `finally` に移ったため。2026-11-28 に広げた）
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行

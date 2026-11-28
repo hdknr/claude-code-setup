@@ -82,7 +82,9 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 - **時間切れで待ち続けない**——1 回の検査を `PROBE_TIMEOUT` 秒で止め（プロセスグループごと）、1。
 - **正本で走らせない**——モデルは一時ディレクトリに書いて、そこで走らせる（`exec` の出力の `<名前>/` も一時ディレクトリにできる）。
 - **SIGTERM・SIGINT・SIGHUP で止められても、一時ディレクトリを残さず 128+信号で終わる**（#1600。親が無視にした信号は無視のまま——`check-tlc.py` の部品）。
-- **待っている間の例外（信号）でも、Alloy のプロセスグループを止める**——別のセッションで起こした java を置き去りにしない。
+- **待っている間の例外（信号）でも、時間切れの枝で止める前に届いた信号でも（#1600 の 2 パス目）、Alloy のプロセスグループを止める**——別のセッションで起こした java を置き去りにしない。
+- **信号の扱いを戻す入口に届いた信号でも、128+信号で終わる**——`finally` から上がる `Interrupted` をトレースバックの 1（「Alloy が無い」）にしない。
+- **止められたことを言う 1 行が書けなくても（SIGHUP の後の閉じた端末）、128+信号で終わる**——120 にしない。
 - **起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせる**——起こした直後の信号で Alloy を置き去りにしない。
 - **Alloy には待たせた信号を引き継がない**——Alloy が SIGTERM を受けられないまま起きない。
 - **片付けの途中に届いた信号の後も、自分の pid の一時ディレクトリを消し直す。**
@@ -237,12 +239,12 @@ def run_model(call, workdir, name, timeout, started=None):
         TLC.with_group(proc, signal.SIGKILL)
         out, _ = proc.communicate()
         return None, (out or "") + f"\n（{timeout} 秒で時間切れ）"
-    except BaseException:
-        # 待っている間の例外（信号を例外にした main・Ctrl-C）でも、別のセッションで起こした Alloy を置き去りにしない（#1600）
-        TLC.with_group(proc, signal.SIGKILL)
-        proc.wait()
-        raise
     finally:
+        # 待っている間の例外（信号を例外にした main・Ctrl-C）でも、時間切れの枝で止める前に届いた信号（#1600 の 2 パス目）でも、
+        # 別のセッションで起こした Alloy を置き去りにしない——枝の中で上がった例外は兄弟の except に入らないので、finally で止める
+        if proc.returncode is None:
+            TLC.with_group(proc, signal.SIGKILL)
+            proc.wait()
         signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # started が上げた例外の枝でも解く
 
 
@@ -295,6 +297,12 @@ def judge(root):
     return EXIT_OK, [f"Alloy が在る: 呼び方 `{call}`——{detail}"]
 
 
+def stopped(stop):
+    TLC.sweep(PREFIX)  # 片付けの途中に届いた信号で、削除が途切れていることがある（信号はもう無視している）
+    TLC.say(f"確かめていない: 信号 {signal.Signals(stop.signum).name} で止められた（Alloy を止め、一時ディレクトリを消した）")
+    return 128 + stop.signum
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Alloy が正本の CLAUDE.md の呼び方で使えるかを確かめる（読むだけ）")
     p.add_argument("root", type=Path, help="正本リポジトリの根（CLAUDE.md の在る場所）")
@@ -306,14 +314,17 @@ def main(argv=None):
         print(line, file=sys.stderr)
     saved = TLC.current_signals()
     try:
-        TLC.catch_signals(saved)
-        code, lines = judge(args.root)
-    except TLC.Interrupted as stop:
-        TLC.sweep(PREFIX)  # 片付けの途中に届いた信号で、削除が途切れていることがある（信号はもう無視している）
-        print(f"確かめていない: 信号 {signal.Signals(stop.signum).name} で止められた（Alloy を止め、一時ディレクトリを消した）", file=sys.stderr)
-        return 128 + stop.signum
-    finally:
+        try:
+            TLC.catch_signals(saved)
+            code, lines = judge(args.root)
+        except TLC.Interrupted as stop:
+            return stopped(stop)
+        finally:
+            TLC.restore_signals(saved)
+    except TLC.Interrupted as stop:  # 信号の扱いを戻す入口（待たせる前）に届いた 1 回目（`check-tlc.py` の部品。以後は無視なので、ここでは止まらない）
+        code = stopped(stop)
         TLC.restore_signals(saved)
+        return code
     for line in lines:
         print(line)
     return code

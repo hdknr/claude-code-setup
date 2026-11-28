@@ -562,7 +562,7 @@ sys.exit(module.main(sys.argv[3:]))
 
 
 def cleanup_problems(script: Path, work: Path, fake: Path, fakebin: Path, times: int) -> list[str]:
-    """片付けの途中に信号が届いても（消し直しの途中の 2 回目も）、一時ディレクトリを残さず 128+信号で終わる。"""
+    """片付けの途中に信号が届いても（消し直しの途中の 2 回目・3 回目も）、一時ディレクトリを残さず 128+信号で終わる。"""
     argv, env = setup(work, fake, fakebin, CASES["満たす"])
     wrapper = work / "in_cleanup.py"
     wrapper.write_text(IN_CLEANUP, encoding="utf-8")
@@ -598,6 +598,12 @@ if kind == "popen":
             os.kill(os.getpid(), signal.SIGTERM)
             time.sleep(0.01)
     subprocess.Popen = Popen
+elif kind == "restore-entry":  # 信号の扱いを戻す入口（待たせる前）に SIGTERM（2 パス目の /code-review の指摘 CR2-1）
+    real_restore = module.tlc.restore_signals
+    def restore_signals(saved):
+        os.kill(os.getpid(), signal.SIGTERM)
+        return real_restore(saved)
+    module.tlc.restore_signals = restore_signals
 else:
     real, count = signal.signal, []
     def wrapped(sig, handler):
@@ -644,6 +650,82 @@ def window_problems(script: Path, work: Path, fake: Path, fakebin: Path, kind: s
     return problems
 
 
+# 時間切れの枝で止める前に届く形（2 パス目の Verifier の反証 V2-R1）——同じ場所の check-tlc.py の `run_model` を時間切れ 1 秒で眠る検査器に当て、
+# 最初の `with_group`（止める呼び出し）の入口で自分に SIGTERM を送る。抜ける前に検査器のグループを止めるかを見る
+TIMEOUT_BRANCH = """import importlib.util, os, signal, sys, tempfile
+spec = importlib.util.spec_from_file_location("check_tlc", sys.argv[1])
+tlc = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tlc)
+real, fired = tlc.with_group, []
+def with_group(proc, sig):
+    if not fired:
+        fired.append(1)
+        open(sys.argv[2], "w").write(str(proc.pid))
+        os.kill(os.getpid(), signal.SIGTERM)
+    return real(proc, sig)
+tlc.with_group = with_group
+saved = tlc.current_signals()
+try:
+    tlc.catch_signals(saved)
+    tlc.run_model("sleep 30 #", tempfile.mkdtemp(), "M", 1)
+    print("信号が上がらない")
+except tlc.Interrupted as stop:
+    print("Interrupted", stop.signum)
+finally:
+    tlc.restore_signals(saved)
+"""
+
+
+def timeout_branch_problems(script: Path, work: Path) -> list[str]:
+    if work.exists():
+        shutil.rmtree(work)
+    (work / "tmp").mkdir(parents=True)
+    wrapper = work / "timeout_branch.py"
+    wrapper.write_text(TIMEOUT_BRANCH, encoding="utf-8")
+    group_file = work / "timeout.pid"
+    proc = subprocess.run([sys.executable, "-I", str(wrapper), str(script.parent / "check-tlc.py"), str(group_file)], capture_output=True, text=True,
+                          cwd=work, env={**os.environ, "TMPDIR": str(work / "tmp")}, timeout=120,
+                          preexec_fn=lambda: signal.signal(signal.SIGTERM, signal.SIG_DFL))
+    problems = [] if proc.stdout.strip() == "Interrupted 15" else [f"時間切れの枝の信号が上がらない: {(proc.stdout + proc.stderr)[-300:]!r}"]
+    if not group_file.is_file():
+        return problems + ["起こした検査器の pid が無い（試料を組めない）"]
+    group = int(group_file.read_text())
+    time.sleep(0.2)
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return problems
+    os.killpg(group, signal.SIGKILL)
+    return problems + ["時間切れの枝で止める前に届いた信号で、検査器のグループが残った"]
+
+
+def broken_stderr_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
+    """標準エラーが書けない（読む側を閉じた管——SIGHUP の後の閉じた端末の形）ときの SIGHUP でも、129 で TLC と一時ディレクトリを残さない（2 パス目の CR2-3）。"""
+    argv, env = setup(work, fake, fakebin, SLEEPY)
+    read_end, write_end = os.pipe()
+    proc = subprocess.Popen([sys.executable, "-I", str(script), *argv], stdout=subprocess.PIPE, stderr=write_end, text=True,
+                            cwd=work, env=env, preexec_fn=lambda: signal.signal(signal.SIGHUP, signal.SIG_DFL))
+    os.close(write_end)
+    pid = wait_pid(work)
+    os.close(read_end)
+    if pid is None:
+        proc.kill()
+        proc.communicate()
+        return ["偽の TLC が起動しなかった（試料を組めない）"]
+    proc.send_signal(signal.SIGHUP)
+    try:
+        proc.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+    problems = [] if proc.returncode == 128 + signal.SIGHUP else [f"終了コード {proc.returncode}（期待 {128 + signal.SIGHUP}）"]
+    if not gone(pid):
+        problems.append("TLC が残った")
+    if leftovers(work):
+        problems.append(f"TMPDIR に残した: {leftovers(work)}")
+    return problems
+
+
 # 同じプロセスで main を呼んだ後、信号の扱いが元に戻るか（formal-sync.py のように読み込んで使う側・テスト）
 RESTORE = """import importlib.util, signal, sys
 spec = importlib.util.spec_from_file_location("check_formal_rerun", sys.argv[1])
@@ -669,8 +751,9 @@ def restore_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> lis
 SIGNAL_CASES = {f"信号: {sig.name}": sig for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
 IGNORED_CASES = {f"親が無視にした信号: {sig.name}": sig for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)}
 SPECIAL = [*SIGNAL_CASES, *IGNORED_CASES, "回収", "回収: 記録が読めない", "SIGKILL の後に TLC が走っている",
-           "信号: 片付けの途中", "信号: 片付けの途中に 2 回", "main の後に信号の扱いを戻す",
-           "信号: 起こした直後（Popen の中）", "信号: 入れる途中", "信号: 戻す途中"]
+           "信号: 片付けの途中", "信号: 片付けの途中に 3 回", "main の後に信号の扱いを戻す",
+           "信号: 起こした直後（Popen の中）", "信号: 入れる途中", "信号: 戻す途中",
+           "信号: 戻す入口", "信号: 時間切れの枝", "信号: 書けない標準エラー"]
 
 
 def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: Path) -> list[str]:
@@ -686,27 +769,34 @@ def special_problems(name: str, script: Path, work: Path, fake: Path, fakebin: P
         return killed_problems(script, work, fake, fakebin)
     if name == "信号: 片付けの途中":
         return cleanup_problems(script, work, fake, fakebin, 1)
-    if name == "信号: 片付けの途中に 2 回":
-        return cleanup_problems(script, work, fake, fakebin, 2)
+    if name == "信号: 片付けの途中に 3 回":  # 3 回目は、戻す入口の信号を受ける外の try の片付けに届く（#1600 の 2 パス目——2 回では外の try が 2 回目を受けて隠す）
+        return cleanup_problems(script, work, fake, fakebin, 3)
     if name == "信号: 起こした直後（Popen の中）":
         return window_problems(script, work, fake, fakebin, "popen")
     if name == "信号: 入れる途中":
         return window_problems(script, work, fake, fakebin, "catch")
     if name == "信号: 戻す途中":
         return window_problems(script, work, fake, fakebin, "restore")
+    if name == "信号: 戻す入口":
+        return window_problems(script, work, fake, fakebin, "restore-entry")
+    if name == "信号: 時間切れの枝":
+        return timeout_branch_problems(script, work)
+    if name == "信号: 書けない標準エラー":
+        return broken_stderr_problems(script, work, fake, fakebin)
     return restore_problems(script, work, fake, fakebin)
 
 
 # 本体（check-formal-rerun.py）を壊す変異——(名前, 壊す前, 壊した後, 殺す試料)
 SPECIAL_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("信号を例外にしない", "        tlc.catch_signals(saved)\n", "        pass\n", "信号: SIGTERM"),
-    ("入れるのを try の外にする", "    saved = tlc.current_signals()\n    try:\n        tlc.catch_signals(saved)\n",
-     "    saved = tlc.current_signals()\n    tlc.catch_signals(saved)\n    try:\n", "信号: 入れる途中"),
-    ("片付けの途中の信号の後に消し直さない", "        tlc.sweep(PREFIX)  # 片付け", "        pass  # 片付け", "信号: 片付けの途中"),
+    ("入れるのを try の外にする", "    saved = tlc.current_signals()\n    try:\n        try:\n            tlc.catch_signals(saved)\n",
+     "    saved = tlc.current_signals()\n    tlc.catch_signals(saved)\n    try:\n        try:\n", "信号: 入れる途中"),
+    ("片付けの途中の信号の後に消し直さない", "    tlc.sweep(PREFIX)  # 片付け", "    pass  # 片付け", "信号: 片付けの途中"),
+    ("戻す入口の信号を受けない", "    except tlc.Interrupted as stop:  # 信号の扱いを戻す入口", "    except ZeroDivisionError as stop:  # 信号の扱いを戻す入口", "信号: 戻す入口"),
     ("起動時に回収しない", "    for line in tlc.reclaim_lines(*tlc.reclaim(PREFIX)):\n        print(line, file=sys.stderr)\n", "", "回収"),
     ("TLC のグループを記録しない", "        group = tlc.record_group(tmp)", "        group = None", "SIGKILL の後に TLC が走っている"),
     ("名前に pid を入れない", "    with tlc.owned_dir(PREFIX) as tmp:", "    with tempfile.TemporaryDirectory(prefix=PREFIX) as tmp:", "SIGKILL の後に TLC が走っている"),
-    ("信号の扱いを戻さない", "        tlc.restore_signals(saved)\n", "        pass\n", "main の後に信号の扱いを戻す"),
+    ("信号の扱いを戻さない", "        finally:\n            tlc.restore_signals(saved)\n", "        finally:\n            pass\n", "main の後に信号の扱いを戻す"),
 ]
 
 # check-tlc.py の部品を壊す変異——(名前, 壊す前, 壊した後, 殺す試料)
@@ -714,15 +804,17 @@ TLC_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("親が無視にした信号を奪う", "        if old is not signal.SIG_IGN:", "        if True:", "親が無視にした信号: SIGHUP"),
     ("無視の確認を SIGHUP だけに効かせる", "        if old is not signal.SIG_IGN:", "        if sig != signal.SIGHUP or old is not signal.SIG_IGN:", "親が無視にした信号: SIGINT"),
     ("SIGHUP を片付けない", "SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)", "SIGNALS = (signal.SIGTERM, signal.SIGINT)", "信号: SIGHUP"),
-    ("1 回目の後に信号を無視しない", "    for sig in SIGNALS:  # 2 回目は無視する", "    for sig in ():  # 2 回目は無視する", "信号: 片付けの途中に 2 回"),
+    ("1 回目の後に信号を無視しない", "    for sig in SIGNALS:  # 2 回目は無視する", "    for sig in ():  # 2 回目は無視する", "信号: 片付けの途中に 3 回"),
     ("元の扱いに戻さない", "            signal.signal(sig, signal.SIG_DFL if old is None else old)", "            pass", "main の後に信号の扱いを戻す"),
     ("戻す途中の信号を待たせない", "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)\n    try:\n        for sig, old in saved.items():",
      "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())\n    try:\n        for sig, old in saved.items():", "信号: 戻す途中"),
     ("起こす間に信号を待たせない", "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)\n    try:\n        proc = subprocess.Popen(",
      "    mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())\n    try:\n        proc = subprocess.Popen(", "信号: 起こした直後（Popen の中）"),
     ("検査器に待たせた信号を引き継ぐ", ", preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))", ")", "信号: SIGTERM"),
-    ("待っている間の例外で TLC を止めない", "    except BaseException:\n        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）\n        with_group(proc, signal.SIGKILL)\n        proc.wait()\n        raise\n",
-     "", "信号: SIGTERM"),
+    ("待っている間の例外・時間切れの枝で止める前の信号で検査器を止めない", "        if proc.returncode is None:\n            with_group(proc, signal.SIGKILL)\n",
+     "        if False:\n            with_group(proc, signal.SIGKILL)\n", "信号: 時間切れの枝"),
+    ("書けない標準エラーで例外を上げる", "    except OSError:\n        sys.stderr = None", "    except ZeroDivisionError:\n        sys.stderr = None", "信号: 書けない標準エラー"),
+    ("書けない標準エラーで終わるときの書き出しを失敗させる", "        sys.stderr = None  # 終わるときの", "        pass  # 終わるときの", "信号: 書けない標準エラー"),
     ("消し直しで自分の pid を見ない", 'glob(f"{prefix}{os.getpid()}-*")', 'glob(f"{prefix}0-*")', "信号: 片付けの途中"),
     ("持ち主の居ないディレクトリを消さない", "        shutil.rmtree(path, ignore_errors=True)\n        if not path.exists():", "        pass\n        if not path.exists():", "回収"),
     ("持ち主の居るディレクトリも消す", "        if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):", "        if False:", "回収"),

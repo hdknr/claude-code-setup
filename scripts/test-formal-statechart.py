@@ -1533,9 +1533,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 
 # check-tlc.py（TLC の走らせ方）を壊す変異——(名前, 壊す前, 壊した後, 殺す試料)
 TLC_MUTATIONS: list[tuple[str, str, str, str]] = [
-    # 節を丸ごと外す（#1594 より前の形）——`with_group` だけを外すと `proc.wait()` が眠る偽の TLC を待ち続け、時間切れでしか落ちない（1 パス目の /code-review の指摘）
-    ("信号で抜けても TLC を止めない", "    except BaseException:\n        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）\n        with_group(proc, signal.SIGKILL)\n        proc.wait()\n        raise\n",
-     "", "信号: SIGTERM"),
+    # 止める枝を丸ごと外す（#1594 より前の形）——`with_group` だけを外すと `proc.wait()` が眠る偽の TLC を待ち続け、時間切れでしか落ちない（1 パス目の /code-review の指摘）。
+    # #1600 の 2 パス目で、止めるのは `run_model` の `finally` に移った（時間切れの枝で止める前に届いた信号も止めるため）
+    ("信号で抜けても TLC を止めない", "        if proc.returncode is None:\n            with_group(proc, signal.SIGKILL)\n            proc.wait()\n",
+     "        if False:\n            with_group(proc, signal.SIGKILL)\n            proc.wait()\n", "信号: SIGTERM"),
 ]
 
 

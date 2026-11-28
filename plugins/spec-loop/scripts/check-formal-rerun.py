@@ -74,6 +74,8 @@ usage:
 | 状態数が読めなくても判定と終了コードを変えない | 診断の材料が無いことで、通るモデルを「判定できなかった」にする |
 | SIGTERM・SIGINT・SIGHUP で、TLC のプロセスグループを止め、一時ディレクトリを消して 128+信号で終わる（親が無視にした信号は無視のまま。#1600） | 止められた実行が `$TMPDIR` に一時ディレクトリと java を残す |
 | 片付けの途中に届いた信号の後も、自分の pid の一時ディレクトリを消し直す | 削除が途切れたディレクトリが残る |
+| 信号の扱いを戻す入口に届いた信号でも、128+信号で終わる（#1600 の 2 パス目） | `finally` から上がる `Interrupted` がトレースバックの 1（反例あり）になる |
+| 止められたことを言う 1 行が書けなくても（SIGHUP の後の閉じた端末）、128+信号で終わる | 120 で終わる |
 | 起動時に、持ち主の居ない `spec-loop-formal-rerun-<pid>-<乱字 8 文字>` を回収し、TLC がまだ走っていれば・記録が読めなければ消さずに言う | SIGKILL の残りが溜まり続ける・走り続ける TLC の書くファイルを見えなくする |
 | TLC のプロセスグループを一時ディレクトリに記録する（`rerun` を読み込んだ `formal-sync.py` の回も） | SIGKILL の後に走り続ける TLC のディレクトリを、次の起動が消して「消した」と言う |
 
@@ -231,6 +233,12 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
     return verdict, lines
 
 
+def stopped(stop) -> int:
+    tlc.sweep(PREFIX)  # 片付けの途中に届いた信号で、削除が途切れていることがある（信号はもう無視している）
+    tlc.say(f"判定していない: 信号 {signal.Signals(stop.signum).name} で止められた（TLC を止め、一時ディレクトリを消した）")
+    return 128 + stop.signum
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="保存した TLC のモデルの本体と陽性対照を走らせ直す（読むだけ）")
     parser.add_argument("root", type=Path, help="正本リポジトリの根（CLAUDE.md の在る場所）")
@@ -254,19 +262,22 @@ def main(argv: list[str]) -> int:
     verdicts = []
     saved = tlc.current_signals()
     try:
-        tlc.catch_signals(saved)
-        for directory in args.targets:
-            verdict, lines = rerun(call, directory, int(args.timeout))
-            verdicts.append(verdict)
-            for line in lines:
-                print(line)
-            print(f"{directory}: {verdict}")
-    except tlc.Interrupted as stop:
-        tlc.sweep(PREFIX)  # 片付けの途中に届いた信号で、削除が途切れていることがある（信号はもう無視している）
-        print(f"判定していない: 信号 {signal.Signals(stop.signum).name} で止められた（TLC を止め、一時ディレクトリを消した）", file=sys.stderr)
-        return 128 + stop.signum
-    finally:
+        try:
+            tlc.catch_signals(saved)
+            for directory in args.targets:
+                verdict, lines = rerun(call, directory, int(args.timeout))
+                verdicts.append(verdict)
+                for line in lines:
+                    print(line)
+                print(f"{directory}: {verdict}")
+        except tlc.Interrupted as stop:
+            return stopped(stop)
+        finally:
+            tlc.restore_signals(saved)
+    except tlc.Interrupted as stop:  # 信号の扱いを戻す入口（待たせる前）に届いた 1 回目（`check-tlc.py` の部品。以後は無視なので、ここでは止まらない）
+        code = stopped(stop)
         tlc.restore_signals(saved)
+        return code
     if COUNTEREXAMPLE in verdicts:
         print(f"条件 4 を満たさない（反例あり {verdicts.count(COUNTEREXAMPLE)} 件）")
         return EXIT_COUNTEREXAMPLE

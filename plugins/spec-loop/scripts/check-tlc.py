@@ -76,7 +76,9 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 - **信号**: `catch_signals(current_signals() の値)` は SIGTERM・SIGINT・SIGHUP を例外 `Interrupted`（`BaseException` の子——途中の `except Exception` に呑ませず、`with` の片付けまで上げる）にする。
   **親が無視にした信号は無視のまま**（`nohup` の SIGHUP・`&` の SIGINT）。1 回目を受けたら全部を無視にする（片付けの途中で止めない）。`restore_signals()` で入れる前に戻す。
   入れるのは呼ぶ側の `try` の中で（入れた直後の信号を `try` の外で上げない）。`restore_signals` は戻す途中の信号を待たせ、戻した後の扱いで受ける。
-  例外が `run_model` の待ちの中で起きれば、`run_model` が検査器のプロセスグループを止めてから上げる。`run_model` は起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせ、検査器には待たせた分を引き継がない。
+  **`restore_signals` の入口（待たせる前）に届いた 1 回目は `Interrupted` として呼ぶ側の `finally` から上がる**——呼ぶ側はもう 1 つ外の `try` で受け、片付けて `restore_signals` を呼び直す（1 回目の後は全部を無視にしているので、呼び直しは止まらない）。
+  止められたことを言う 1 行は `say` で書く——標準エラーが書けなくても（SIGHUP の後の閉じた端末）128+信号の終了コードを変えない。
+  例外が `run_model` の待ちの中で起きれば、`run_model` が検査器のプロセスグループを止めてから上げる（時間切れの枝で止める前に届いた信号でも、`finally` で止める）。`run_model` は起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせ、検査器には待たせた分を引き継がない。
 - **消し直し**: `sweep(<頭>)` は自分の pid の `<頭><pid>-*` を消す——片付け（`TemporaryDirectory` の削除）の途中に届いた信号で、削除が途切れていることがある。
 - **回収**: `reclaim(<頭>)` は、名前が `<頭><pid>-<乱字 8 文字>` の形どおりで、その pid のプロセスが居ないもの（SIGKILL で片付けが走らなかった残り）を消す。
   その中に `record_group` で記録した検査器のプロセスグループ（`GROUP_FILE`）がまだ居れば・記録が読めなければ、消さずに返す（`reclaim_lines` が言う行を作る）。
@@ -89,6 +91,8 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 | 親が無視にした信号は無視のまま、ほかは `Interrupted` にし、1 回目の後は全部を無視する | `nohup` で起こした実行が端末を閉じただけで止まる・片付けの途中の 2 回目で止まる |
 | `restore_signals` で入れる前の扱いに戻し、戻す途中の信号は戻した後の扱いで受ける | 同じプロセスで呼んだ後も、信号が例外のまま残る・戻す途中の信号が捕まえられずに 1 で終わる |
 | `run_model` は、起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせ、検査器には待たせた分を引き継がない | 起こした直後に届いた信号で、検査器を止めずに抜ける・検査器が SIGTERM を受けられない |
+| `run_model` は、時間切れ・例外の枝の途中に届いた信号でも、抜ける前に検査器のプロセスグループを止める | 時間切れの直後（止める前）に届いた信号で、検査器を止めずに抜ける |
+| `say` は、標準エラーが書けなくても例外を上げず、終わるときの書き出しも失敗させない | SIGHUP の後に端末が閉じていると、128+信号ではなく 120 で終わる |
 
 ## 何を守り、何を守らないか
 
@@ -238,12 +242,12 @@ def run_model(call, workdir, name, timeout, started=None):
         with_group(proc, signal.SIGKILL)
         out, _ = proc.communicate()
         return None, (out or "") + f"\n（{timeout} 秒で時間切れ）"
-    except BaseException:
-        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）
-        with_group(proc, signal.SIGKILL)
-        proc.wait()
-        raise
     finally:
+        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C。#1594）でも、時間切れの枝で止める前に届いた信号（#1600 の 2 パス目）でも、
+        # 別のセッションで起こした TLC を置き去りにしない——枝の中で上がった例外は兄弟の except に入らないので、finally で止める
+        if proc.returncode is None:
+            with_group(proc, signal.SIGKILL)
+            proc.wait()
         signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # started が上げた例外の枝でも解く
 
 
@@ -295,6 +299,14 @@ def restore_signals(saved):
             signal.signal(sig, signal.SIG_DFL if old is None else old)
     finally:
         signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+
+
+def say(message):
+    """信号で止められたことを標準エラーに 1 行言う。書けなくても（SIGHUP の後の閉じた端末・読み手の居ない管）終了コードを変えない。"""
+    try:
+        print(message, file=sys.stderr, flush=True)
+    except OSError:
+        sys.stderr = None  # 終わるときの書き出しでも失敗させない——失敗すると Python は 120 で終わる
 
 
 def owned_pattern(prefix):
