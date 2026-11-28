@@ -122,6 +122,8 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 - Verifier 2 パス目: 反証 0 件。終点 `46d85a59`
 - /code-review 2 パス目: 指摘 6 件（important 1・nit 5）。終点 `46d85a59`
 - 2 パス目の指摘対応（狭いパス）の起点: `46d85a59b51baa60a036b230763b6541af737f05`（指摘対応を始める直前の HEAD）
+- 2 パス目の指摘対応: `0cbc474b03a37deb45a670ce5fdc27bbaf31032b`（直す 2 行: CR2-2・CR2-4）。`test-check-tlc.py`: 緑
+- 狭いパス: 起点 `46d85a59b51baa60a036b230763b6541af737f05` → 終点 `0cbc474b03a37deb45a670ce5fdc27bbaf31032b`（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-narrow-1-20261128T075215Z.md`
 
 ```dev-loop-gates
 周の base: 627822c40e7c256da6c7c7916418e0b1e3ce36ee
