@@ -281,7 +281,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器（差分の印とレビュー会の進め方——#1096）と、profile `web-spa`（#1094）と、MkDocs のフック（#1098）まで）
     - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・案件ごとの設定（`settings.csv`）・`init` と `add`（採番）・検査と終了コードは `tables.md`、
       散文の仕様書の節・雛形・書き方・レビュー観点・共通仕様は `prose.md`、実現方式の profile（列・節と小見出し・方式が未定のとき・誰が決めるか）は `profiles.md`、
-      対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`）
+      対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`、画面の入力と API の入力を照らす調べる道具の決まりは `input-contract.md`）
     - `profiles/` - profile ごとの雛形（`web-spa/`。仕様書の末尾の節と共通仕様の節。**`init` が案件の雛形と共通仕様の末尾に足す**）。
       **profile の列は表の見出し行に入るので、profile は表を置く最初の版で決める**（見出し行は版の間で変えない——#1105）
     - `skills/init/`・`skills/add/` - 画面設計書を始める・画面を 1 つ足すスキル（#1093。`/screen-spec:init`・`/screen-spec:add`）。**書き込みは同梱のスクリプトがし、スキルは値を利用者と決めるだけ**。
@@ -308,6 +308,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       本体は画面の表の行を仕様書の「表で持つ」節に表として出し（共有の層だけ・未決定のセルに `⚠️` の飾り）、ビルドのときに版ごとのモックを `build-mock.py` の `build` で作って（**基準の時点（`--since`）は渡さない**——サイトのモックに前回の会からの印は付かない）
       `build/mkdocs/mock/v<n>/`（`build-mock.py` の出力の `build/mock/` と分ける）に書いてサイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
       決まりの原本は `references/mkdocs.md`、守る／守らないは docstring を正とする。テストは `scripts/test-screen-spec-pages.py`）
+    - `scripts/survey-input-contract.py` - **画面の入力の項目と、その画面が呼ぶ入口（中間表現の `operation`）の入力を照らし、食い違いと対応の引けない箇所を件数と種類で出す調べる道具**（#1596。
+      **関門ではない**——件数に依らず 0。関門の置き場所と対応の持たせ方は、案件の正本に当てた結果を見てから決める）。画面と項目の対応は正本の外に置く対応の CSV（`--map`）で渡せ、無ければ `機能` の列と名前の一致で引く。
+      **既定の出力は件数と種類だけ（名前・ID・パスを出さない）**、`--detail` で ID とパス。読むだけ。`check-screens.py` を読み込む（写さない）。
+      決まりの原本は `references/input-contract.md`、守る／守らないは docstring を正とする。テストは `scripts/test-survey-input-contract.py`）
   - `platform-spec/` - spec-loop の基盤要件（`shared/infra.csv`）を、組織の開発ガイドのような外部の設計パターン（profile）とつなぐプラグイン（#1312。**spec-loop は platform-spec に依存しない**——
     置かなければ今の `infra.csv` と `check-infra-csv.py` のまま動く。いまは基盤の層の形と照合（#1456）と、版の差分の候補（#1457）と、アーキテクチャと開発の進め方の層を使う側に渡す形にして出す口（#1558）まで。スキルはまだ持たない）
     - `references/` - **決まりの原本**（基盤の層の表の形・形式の版の範囲・案件の設定（版の中の `shared/platform/settings.csv`）・`profile の行` の書き方・照合は `infra-profile.md`、
@@ -564,6 +568,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **一時ディレクトリに screen-spec と本物の spec-loop（`templates/` を含む）の写しを並べ、`write-screens.py mkdocs` で登録した正本のフックを読み込んで MkDocs のイベントを直に呼ぶ**
     （`File` は偽物。`mkdocs build` は走らせない）。#1098 の受入基準（回し直しても登録が消えない・`docs/mocks.md` に版ごとの生成したモック・節に表）と、
     **本体の定数が `references/mkdocs.md` と一致すること**を見る
+  - `test-survey-input-contract.py` - screen-spec の画面の入力と API の入力の照らし合わせの道具（#1596）の回帰テスト（変異テストを含む）。**本体は `plugins/screen-spec/scripts/` にある**。
+    **一時ディレクトリに screen-spec と本物の spec-loop の写しを並べ、合成の試料（編集できる入力 8 つが保存の入口の入力に無い陽性対照・引けない理由ごとの試料・入れ子・`tab` の親・版の重ね合わせ）で走らせる**。
+    既定の出力に試料の名前の目印と画面ID・項目の番号が出ないこと・実行の前後で正本とプラグインが変わらないことと、**本体の定数が `references/input-contract.md` と一致すること**を見る
   - `test-check-review-record.py` - spec-loop の仕様レビューの記録の数え直し（#1044）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数（効く重さ・上限の数える値と数え直しの判断・内部の行の印）が `references/spec-exit.md` と一致することも見る**（印は `agents/domain-checker.md` とも。#1155）
   - `test-findings-by-feature.py` - spec-loop の指摘の機能ごとの数え方（#1045）の回帰テスト（変異テストを含む）。
