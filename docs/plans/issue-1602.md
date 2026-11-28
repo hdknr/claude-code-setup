@@ -106,6 +106,10 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 
 - 周の在り処: ブランチ `issue/1602-tlc-workers`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1602`・起点 `627822c4`・base は `origin/main`（`refs/remotes/origin/HEAD`）の merge-base `627822c40e7c256da6c7c7916418e0b1e3ce36ee`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 実装: 済（`1191dc34`）。歯止め `check-all.py`（run-serial 越し）: 61 本を回し失敗 1——`check-plan-counts.py`（件数の行が無かった）。計画に件数の行を足して `check-plan-counts.py` 単体で緑
+- 1 パス目の指摘対応の起点: `1191dc34d9ce89fd6afbe94a5a795ef9569b0618`
+- Verifier 1 パス目: dev-loop:dev-loop-verifier・sonnet。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-verifier-1-20261128T064211Z.md`
+- /code-review 1 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-code-review-1-20261128T064211Z.md`
 
 ```dev-loop-gates
 周の base: 627822c40e7c256da6c7c7916418e0b1e3ce36ee
