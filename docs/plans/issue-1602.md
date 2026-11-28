@@ -97,7 +97,7 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 5. **`formal-statechart.py` を本物の TLC で**（受入基準 3・4）: 呼び方に `-workers auto` を書いた正本で、最短の反例が多数ある 125 状態のモデルの図を 5 回ずつ描いた。base の木は 2 種類の図（最初の反例の経路が `0-1-0 → 1-1-0 …` と `1-0-0 → 2-0-0 …`）、新しい木は 5 回とも同じ図（TLC が受けた引数は `-workers auto -workers 1 -fp 0 -continue -dump …`）。
 6. **Formal Checker の実物**（受入基準 1・3 の (e)）: `spec-loop:formal-checker`（sonnet）に worktree の `formal-checker.md`（指摘対応の後の版・201 行）を正として読ませ、小さい注文の業務フロー（R1 は不変条件・R2 は `PROPERTY`）を検査させた（2026-11-28T07:08Z。報告 `fc-proxy/report-20261128T070835Z.md`）。
    TLC が受けた引数: 本体・陽性対照・到達の確かめの判定の回はどれも `-workers auto`（出力 `with 28 workers`・`fp` は回ごとに違う）、R1 を破る版の反例は `-workers 1 -fp 0` で取り直し（`fp 0 … with 1 worker`）、`トレース` はその回の出力から写した（手元の TLC 2.19 は `-dumpTrace` を受けないので `tlc-trace.py` は使えず、写す側に落ちた——既存の手順どおり）。
-   1 回目（指摘対応の前の版で 06:19Z）は報告が届かず（「報告を届けずに終わった」の形）、モデルのディレクトリだけが残っていた——数えない。報告の気づきで、出力の文言が 1 ワーカーでは `with 1 worker`（単数）なので `formal-checker.md` の確かめ方を両方の形にした。
+   1 回目（指摘対応の前の版・202 行で 06:19Z）の報告は子には届かず、後で親から転送された（`relayed-1602-20261128T062150Z.md`）。中身は 2 回目と同じ形——判定の回は 4 本とも `-workers auto`（`with 28 workers`）、本体の R1 の反例を `-workers 1 -fp 0` で取り直し（`fp 0 … with 1 worker`）、トレースはその回の出力から写した。報告の気づきで、出力の文言が 1 ワーカーでは `with 1 worker`（単数）なので `formal-checker.md` の確かめ方を両方の形にした。
 - 観測窓: 各モデル・各条件 3〜5 回。ほかの版・大きいモデルは確かめていない（`check-tlc.py` の docstring に書いた）。
 - 交絡を潰した手順: base と新しい木を同じ正本・同じ包み・同じ機械で続けて走らせた（陽性対照: base は 1 ワーカー・図が揺れる）。
 
