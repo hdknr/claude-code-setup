@@ -323,6 +323,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       開発の進め方の層を **dev-loop の `.claude/dev-loop.md` の雛形**と正本の `CLAUDE.md` の `impl_module` の行（`dev-loop`。本文は写さず `<リポジトリ>@<タグ>:<パス>` で指し、手元のパスを書かない）にして標準出力に出す（#1558。**読むだけ。使う側は platform-spec を読み込まない**——
       雛形の読み方は dev-loop の `references/profile-template.md`）。設定の読み方と spec-loop の見つけ方は `check-infra-profile.py`、層の読み出しとリンクは spec-loop の `external-profile.py` を読み込む——写さない。
       決まりの原本は `references/layers.md`、守る／守らないは docstring を正とする。テストは `scripts/test-profile-layers.py`）
+  - `design-system/` - デザインシステムを spec-loop の決め方（Q&A 表・レビュー会・承認・版）で作るプラグイン（#1613。親 #1609。**spec-loop の決まりに従い、spec-loop は design-system に依存しない**。
+    デザインシステムは見た目と振る舞いのルールで、UI プロファイル（実装の方式。screen-spec の外部の profile）とは別の概念。**いまは設計の原本（`references/`）だけで、スクリプト・スキル・判定役はまだ持たない**——入れる順は `README.md` の「子の Issue」）
+    - `references/` - **設計の原本**（spec-loop との境目・使う段と使わない段・spec-loop に要る口は `spec-loop.md`、ガイドのリポジトリ（世界観を説明する文書が、デザインシステム・UI プロファイル・基盤の profile を任意の構成要素として持つ）の木・5 つの表の列・profile と並べる形は `tree.md`、
+      生成物（索引・DTCG のトークン・描画キット・ドキュメントのサイト）とコミットと鮮度は `outputs.md`、1 周・機械の検査・判定役は `review.md`、UI プロファイルへの引き渡しの Issue は `handoff.md`）。spec-loop の決まりは写さず指す
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。

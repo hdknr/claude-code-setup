@@ -58,6 +58,13 @@
       "version": "0.3.0",
       "author": { "name": "hdknr" },
       "description": "spec-loop の基盤要件（shared/infra.csv）を、組織の開発ガイドのような外部の設計パターン（profile）とつなぐプラグイン（spec-loop は依存しない——置かなければ今の infra.csv と check-infra-csv.py のまま動く）。profile の中身はパターンの持ち主のリポジトリに置いたまま写さず、spec-loop の external-profile.py を読み込んで手元の clone のタグの時点を読む。基盤の層の表の形（ID・要約・リンク・項目。形式の版 1）と案件の設定（版の中の shared/platform/settings.csv にリポジトリ・profile・タグ）を決め、check-infra-profile.py が spec-loop の重ね方で重ねた全体の infra.csv の末尾の任意の列 profile の行（・で区切った ID）が設定のタグの基盤の層に在るかを照らし、無い ID を名指しする（読むだけ）。check-profile-diff.py が profile の新しい版（手元の clone のタグのうち版の順が最も後ろのもの。--new で名指しも）と設定のタグを比べ、profile の行が指す行のうち変わった・消えた・リンクの切れた行を、共有の Q&A 表に起票する候補として出す（番号は振らない。採らないと決めた版は設定の任意の項目 確かめたタグ に書く）。spec-loop の profile-gate.py がこれを子のプロセスで呼んで proposal・scaffold の前の関門にする。対応する spec-loop の版の範囲の外なら照らす前に止まる。profile-layers.py がアーキテクチャの層（ID・要約・リンク・観点）を spec-review の Domain Checker に渡す照合先の一覧に、開発の進め方の層（ID・要約・リンク・項目・値。項目は verify・deploy・歯止め・制約・リポジトリの構成・impl_module）を dev-loop の .claude/dev-loop.md の雛形（本文は写さず リポジトリ@タグ:パス で指す）と正本の CLAUDE.md の impl_module の行にして出す（読むだけ。使う側は platform-spec を読み込まない）。スキルはまだ持たない"
+    },
+    {
+      "name": "design-system",
+      "source": "./plugins/design-system",
+      "version": "0.1.0",
+      "author": { "name": "hdknr" },
+      "description": "デザインシステムを spec-loop の決め方（Q&A 表・レビュー会・承認・版）で作るプラグイン（spec-loop の決まりに従い、spec-loop は依存しない）。組織のシステム構築ガイドの文書のリポジトリ（ガイドの文書が世界観を説明し、デザインシステム・UI プロファイル・基盤の profile を任意の構成要素として持つ。デザインシステムを含めるなら spec-loop の正本でもある）に、トークン・部品・部品の仕様・パターン・規則の 5 つの表と散文を置き、使う側（案件の screen-spec・組織の UI プロファイル）が release-v<n> のタグの時点を git で読む生成物（spec-loop の外部の profile の形の索引・DTCG のトークン・描画キット。コミットして --check で鮮度を見る）と、人間がレビューするドキュメントの頁（ガイドのサイトに差し込む）を作る。検査と判定役は起票の候補を出すだけで、Q&A の番号は req-loop が振る。版を上げたら変わった部品ごとに UI プロファイルへの引き渡しの Issue を作る。デザインシステムは見た目と振る舞いのルールで、UI プロファイル（実装の方式）とは別の概念。いまは設計の原本（references/）だけで、スクリプト・スキル・判定役はまだ持たない"
     }
   ]
 }
