@@ -13,12 +13,12 @@ cruise（親 Issue #1604）の子として回す**不在の周**（`/dev-loop:cr
 触る:
 
 - `plugins/spec-loop/scripts/check-tlc.py` — ワーカーの数を検査の種類ごとに足す部品（`for_verdict`・`for_trace`）と、docstring の「呼び方に足すオプション」の書き直し・実測の記録
-- `plugins/spec-loop/scripts/check-formal-rerun.py` — 本体・陽性対照を複数ワーカーで走らせ、本体の反例は 1 ワーカーで走らせ直してトレース（出力の終わり）を出す
+- `plugins/spec-loop/scripts/check-formal-rerun.py` — 本体・陽性対照を複数ワーカーで走らせる（反例は取り直さない——判定だけを出す。Issue の表のとおり）
 - `plugins/spec-loop/scripts/formal-statechart.py` — 状態グラフ（`-dump`）を、呼び方に何があっても 1 ワーカーで走らせる
 - `plugins/spec-loop/agents/formal-checker.md` — 検査の種類ごとのワーカーの数・反例のトレースの取り直し・同時に走らせる本数とワーカー数の割り振り・陽性対照の `PROPERTY`
 - `plugins/spec-loop/references/tree.md` — 「保存したモデルを CI で走らせ続ける」の呼び方のオプションの行（ワーカーの数はスクリプトが足す）
 - `scripts/test-check-tlc.py` — 部品の観測と変異
-- `scripts/test-check-formal-rerun.py` — 偽の TLC がワーカーの数を記録し、反例のトレースをワーカーの数で揺らす試料と変異
+- `scripts/test-check-formal-rerun.py` — 偽の TLC が受けたワーカーの数を記録する試料と変異
 - `scripts/test-formal-statechart.py` — 状態グラフを 1 ワーカーで走らせる試料と変異
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
@@ -43,7 +43,7 @@ cruise（親 Issue #1604）の子として回す**不在の周**（`/dev-loop:cr
 Issue の「あわせて決めたいこと」の 3 つは Issue が決めていない（選択肢だけを挙げる）ので、仕様の穴として推奨で決め、穴ごとに確認の Issue を立てる。
 
 1. **ワーカーの数をどこで持つか** — 選択肢: 案 A（呼び方の行に書かず、スクリプトと Formal Checker が検査の種類ごとに足す）／案 B（`TLC のワーカー:` の別の宣言）／案 C（呼び方の例に `-workers auto` を入れ、トレースの要る場面だけ `-workers 1` で上書き）。
-   **決めた値: 案 A。ただし呼び方の行に利用者が `-workers` を書いていれば、判定の検査はその値を使う（足さない）。トレースの要る検査（反例の取り直し・状態グラフ）は呼び方に何があっても後ろに `-workers 1` を足す。**
+   **決めた値: 案 A。ただし呼び方の行に利用者が `-workers` を書いていれば、判定の検査はその値を使う（足さない）。トレースの要る検査（Formal Checker の反例の取り直し・状態グラフ）は呼び方に何があっても後ろに `-workers 1 -fp 0` を足す（`-fp 0` は下の「実機確認」の 3）。**
    理由: 利用者の設定なしで速くなる（受入基準 1）のは A と C で、C は利用者が呼び方を書き直さないと効かない。B は宣言と読み方が 1 つ増える。手元の TLC 2.19（tla2tools v1.7.4）で `-workers` を 2 回渡すと後の値が使われた（`-workers auto -workers 1` → 1 worker、`-workers 1 -workers auto` → 28 workers、`-workers 1 -workers 3` → 3 workers。2026-11-28）ので、
    後ろに足せば呼び方の行の値を確実に上書きできる。利用者が CPU を絞るために書いた値は、判定の検査では尊重する（#1339 の「呼び方の行は利用者が決める」を崩さない）。
 2. **何本も同時に走らせるときの割り振り** — 選択肢: 「1 本ずつ複数ワーカーで順に走らせる」／「ワーカー数 = コア数 ÷ 同時に走らせる本数」。
@@ -66,7 +66,7 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 
 | # | 不変条件 | 経路 | 守り方 | 証明 |
 | --- | --- | --- | --- | --- |
-| 1 | 判定の検査（本体・陽性対照・到達の確かめ・`check-formal-rerun.py`）が、利用者の設定なしで複数ワーカー（`-workers auto`）で走る | a・b・c・e・g | `check-tlc.py` の `for_verdict` を (a) が使う（b・c は (a) を通る）。(e) は `formal-checker.md` | (a)(b): 試料（偽の TLC が受けたワーカーの数を記録）と変異。(c): 雛形の試料が (a) を走らせる。(e)(g): `formal-checker.md` の文面と、その文面で Formal Checker を 1 回走らせた実物（下の「実機確認」） |
+| 1 | 判定の検査（本体・陽性対照・到達の確かめ・`check-formal-rerun.py`）が、利用者の設定なしで複数ワーカー（`-workers auto`）で走る | a・b・c・e・g | `check-tlc.py` の `for_verdict` を (a) が使う（b・c は (a) を通る）。(e) は `formal-checker.md` | (a): 試料（偽の TLC が受けたワーカーの数を記録）と変異。(b): コードの読み（`formal-sync.py` は `rerun` を読み込んで呼ぶ）と (a) の試料。(c): 雛形の試料が (a) を走らせる。(e)(g): `formal-checker.md` の文面と、その文面で Formal Checker を 1 回走らせた実物（下の「実機確認」） |
 | 2 | 呼び方の行に利用者が `-workers` を書いていれば、判定の検査はその値で走る（足さない） | a・b・c・e | `for_verdict` | 試料と変異（`test-check-tlc.py`・`test-check-formal-rerun.py`） |
 | 3 | 反例の経路を出す検査（Formal Checker の `トレース` と Red テスト・`formal-statechart.py` の最初の反例の経路）は、1 ワーカー・指紋の固定（`-workers 1 -fp 0`）で走らせた結果から取る。同じモデルで 2 回走らせると同じ経路になる | d・e | `for_trace`（d）。(e) は `formal-checker.md`（本体で反例が出たら `-workers 1 -fp 0` で走らせ直してトレースを取る） | (d): 回帰テスト——偽の TLC は最後の `-workers` が 1・`-fp` が 0 でなければ反例の並びを走らせるたびにずらす。呼び方に `-workers auto` がある正本で 2 回描いて同じ図になり、`for_trace` を外す・`-fp 0` を外す変異で違う図になる（陽性対照）。本物の TLC でも 5 回ずつ比べる（下の「実機確認」）。(e): 文面と Formal Checker の実物 |
 | 4 | `formal-statechart.py`（`-dump`）は 1 ワーカーのまま——呼び方に `-workers auto` があっても | d | `for_trace` | 試料と変異（`test-formal-statechart.py`） |

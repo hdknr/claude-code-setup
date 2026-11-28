@@ -53,8 +53,10 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 | 検査 | 結果に要るもの | 足すもの（呼び方の後ろ・モデルのファイルの前） |
 | --- | --- | --- |
 | 本体・陽性対照・到達の確かめ（`check-formal-rerun.py`・それを読み込む dev-loop の `formal-sync.py`・正本の CI・Formal Checker） | 判定と状態数 | `for_verdict`——呼び方に `-workers` の語が無ければ `-workers auto`。**有れば足さない**（利用者が CPU を絞るために書いた値を使う） |
-| 本体の反例のトレース（`check-formal-rerun.py` の反例の行・Formal Checker の `トレース` と `-dumpTrace json`）・状態グラフ（`formal-statechart.py` と Formal Checker の図の対応の `-dump`） | 経路・グラフ | `for_trace`——**呼び方に何があっても** `-workers 1 -fp 0` |
+| 本体の反例のトレース（Formal Checker が反例を取り直す回の `トレース` と `-dumpTrace json`）・状態グラフ（`formal-statechart.py` と Formal Checker の図の対応の `-dump`） | 経路・グラフ | `for_trace`——**呼び方に何があっても** `-workers 1 -fp 0` |
 | この CLI の確かめ（2 つの小さいモデル） | 呼び方が通るか | 足さない（呼び方の行のまま） |
+
+`check-formal-rerun.py` は反例を取り直さない——判定だけを出し、反例の行（出力の終わり）は複数ワーカーの回のものである（回ごとに変わりうる）。
 
 - **#1339 の行**: 手元の TLC 2.19 で、最短の反例が多数あるモデルを 8 回ずつ走らせ、`-workers 1` は 8 回とも同じトレース、`-workers 8` は 5 種類（長さはどれも同じ）だった——Formal Checker の `トレース`（Red テストになる）と `formal-statechart.py` の最初の反例の経路が回ごとに揺れるので、経路の要る検査は 1 ワーカーにする。
 - **後ろに足した値が使われる**——手元の TLC 2.19（tla2tools v1.7.4）で、`-workers auto -workers 1` は 1 worker、`-workers 1 -workers auto` は 28 workers、`-workers 1 -workers 3` は 3 workers、
