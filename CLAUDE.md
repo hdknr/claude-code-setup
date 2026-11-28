@@ -262,7 +262,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       Formal Checker だけを別ティアで呼び、渡し方と残し方は spec-review の手順 3 を指す（写さない）。**作業中の版がリリース済みなら書かず、反例が出たらモデルを残して振り分けずに止まる**。
       記録の表に `モデルの保存` の行（実行の行ではない）を足す。素のスキルとして張れないのは同上
     - `scripts/formal-baseline.py` - 形式検査のモデルを**書いてよい版を決め**（`target`。作業中の版がリリース済みなら 3）、**残したモデルの形を確かめる**（`check`。記録の項目・値と、
-      **一覧に無いファイル（検査器の作業ファイル・出力・前の残り）**を見る。spec-review の「モデルを残す」も呼ぶ）（#1031。版の見つけ方は `merge-versions.py`、凍結は `check-frozen.py` を読み込む——写さない。
+      **一覧に無いファイル（検査器の作業ファイル・出力・前の残り）**を見る。spec-review の「モデルを残す」も呼ぶ）、**写し終えた Formal Checker の `$TMPDIR` のモデルのディレクトリを消す**（`cleanup`。**報告のパスを信じず、一時ディレクトリの実体の下のディレクトリだけを消し、外・symlink・リポジトリや `HOME` を含むものは消さずに名指しする**——#1601）（#1031。版の見つけ方は `merge-versions.py`、凍結は `check-frozen.py` を読み込む——写さない。
       記録の項目は `references/tree.md` の写しで、テストが突き合わせる。**記録の `実装の対応`・`対応を確かめたコミット`（任意の 2 行。#1178）の形も見る——dev-loop の `formal-sync.py` は `parse_mapping` を読み込む**。守る／守らないは docstring を正とする。テストは `scripts/test-formal-baseline.py`）
     - `scripts/check-tlc.py` - **TLC が正本の `CLAUDE.md` に書いた呼び方で使えるか**を、小さいモデル 2 つ（通るもの・わざと違反するもの）を検査させて確かめる（#912。
       **TLC は既定で必須の前提**で、書く行（`TLC の呼び方:`・外す宣言 `業務フローの形式検査: しない`）の原本はここの docstring。**`command -v` では探さない**。
@@ -323,6 +323,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       開発の進め方の層を **dev-loop の `.claude/dev-loop.md` の雛形**と正本の `CLAUDE.md` の `impl_module` の行（`dev-loop`。本文は写さず `<リポジトリ>@<タグ>:<パス>` で指し、手元のパスを書かない）にして標準出力に出す（#1558。**読むだけ。使う側は platform-spec を読み込まない**——
       雛形の読み方は dev-loop の `references/profile-template.md`）。設定の読み方と spec-loop の見つけ方は `check-infra-profile.py`、層の読み出しとリンクは spec-loop の `external-profile.py` を読み込む——写さない。
       決まりの原本は `references/layers.md`、守る／守らないは docstring を正とする。テストは `scripts/test-profile-layers.py`）
+  - `design-system/` - デザインシステムを spec-loop の決め方（Q&A 表・レビュー会・承認・版）で作るプラグイン（#1613。親 #1609。**spec-loop の決まりに従い、spec-loop は design-system に依存しない**。
+    デザインシステムは見た目と振る舞いのルールで、UI プロファイル（実装の方式。screen-spec の外部の profile）とは別の概念。**いまは設計の原本（`references/`）だけで、スクリプト・スキル・判定役はまだ持たない**——入れる順は `README.md` の「子の Issue」）
+    - `references/` - **設計の原本**（spec-loop との境目・使う段と使わない段・spec-loop に要る口は `spec-loop.md`、ガイドのリポジトリ（世界観を説明する文書が、デザインシステム・UI プロファイル・基盤の profile を任意の構成要素として持つ）の木・5 つの表の列・profile と並べる形は `tree.md`、
+      生成物（索引・DTCG のトークン・描画キット・ドキュメントのサイト）とコミットと鮮度は `outputs.md`、1 周・機械の検査・判定役は `review.md`、UI プロファイルへの引き渡しの Issue は `handoff.md`）。spec-loop の決まりは写さず指す
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -623,7 +627,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-alloy.py` - spec-loop の Alloy の確かめ（#922）の回帰テスト（変異テストを含む）。
     **偽の Alloy（Alloy 6.2.0 の `exec` の結果の行の形を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `alloy` を置く**——本物の Alloy は走らせない（出力の形は見ない）。
     **引数なし・`gui` の形は偽物でも走らせない**（走ったら印を書く偽物で見る）
-  - `test-formal-baseline.py` - spec-loop の形式検査のモデルの書く場所と形の確かめ（#1031）の回帰テスト（変異テストを含む）。
+  - `test-formal-baseline.py` - spec-loop の形式検査のモデルの書く場所と形の確かめ（#1031）と、モデルのディレクトリの片付け（`cleanup`。#1601）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の git リポジトリとタグを作って**当て、**本体の記録の項目が `references/tree.md` の表と一致すること**と、
     `check-findings-csv.py` が `モデルの保存` の行を実行の行と読まないことも見る
   - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する。

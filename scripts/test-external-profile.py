@@ -72,6 +72,10 @@ MUTATIONS = {
     "見出しの同じ名前を許す": [("        if len(set(head)) != len(head):\n", "        if False:\n")],
     "ID が空でも読む": [("            if not rid:\n", "            if False:\n")],
     "ID が重なっても読む": [("            if rid in result.rows:\n", "            if False:\n")],
+    "profile の中身の欠陥を ProfileContent にしない": [("raise ProfileContent(", "raise Undetermined("), ("where, ProfileContent)", "where)"),
+                                                ("stop = ProfileContent if below(row.version, low) else Undetermined", "stop = Undetermined")],
+    "タグが無いのも ProfileContent にする": [('        raise Undetermined(f"{clone} にタグ {tag} が無い', '        raise ProfileContent(f"{clone} にタグ {tag} が無い')],
+    "上限と同じか上の形式の版も ProfileContent にする": [("stop = ProfileContent if below(row.version, low) else Undetermined", "stop = ProfileContent")],
     "層のファイルの中身の欠陥を LayerContent にしない": [("raise LayerContent(f", "raise Undetermined(f"), ("path, LayerContent)", "path)")],
     "列の数を見ない": [("            if len(r) != len(head):\n", "            if False:\n")],
     "ファイルが当たらなくても読む": [("    if not matched:\n", "    if False:\n")],
@@ -147,6 +151,13 @@ BAD = {
     "bad-outside-file": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,../shared.csv,\n画面,1,screens/*.csv,\n",
                          "spec-profile/shared.csv": "ID,要約,リンク\nZ-1,外,\n"},
     "bad-missing-file": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,missing.csv,\n"},
+    # 形式の版の範囲（1 以上 2 未満）の外（#1597）——下限より下は profile の欠陥、上限と同じは使う側を上げれば読める
+    # profile.csv の中身の欠陥（#1597 の 1 パス目 CR1-3）——列の数・空の層・CSV として読めない
+    "bad-profile-cols": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,infra.csv\n画面,1,screens/*.csv,\n"},
+    "bad-profile-empty-layer": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,infra.csv,\n,1,screens/*.csv,\n"},
+    "bad-profile-csv": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,1.2,infra.csv," + "x" * 200000 + "\n画面,1,screens/*.csv,\n"},
+    "bad-version-low": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,0.9,infra.csv,\n画面,1,screens/*.csv,\n"},
+    "bad-version-high": {f"{PROFILE}/profile.csv": "層,形式の版,ファイル,重ねる先\n基盤,2,infra.csv,\n画面,1,screens/*.csv,\n"},
 }
 
 
@@ -396,6 +407,16 @@ def scenario(mod, base: Path, tag: str, template: Path, seed: int) -> dict:
             except Exception as exc:
                 kinds.append(type(exc).__name__ + ("（Undetermined の下位）" if isinstance(exc, getattr(mod, "Undetermined", ())) else ""))
         o[f"read_layer {t}"] = tuple(kinds)
+    # 名指しを直せば進む余地がある不在は素の Undetermined（#1597 の 1 パス目 CR1-2）——タグが無い・profile.csv がその時点に無い・profile の名前の形
+    for label, call in (("タグが無い", lambda: mod.resolve_tag(prof, "nope")),
+                        ("profile.csv がその時点に無い", lambda: mod.read_profile(prof, mod.resolve_tag(prof, "v1"), "other")),
+                        ("profile の名前の形", lambda: mod.read_profile(prof, mod.resolve_tag(prof, "v1"), "a/b"))):
+        try:
+            call()
+            o[f"不在 {label}"] = "読めた"
+        except Exception as exc:
+            o[f"不在 {label}"] = type(exc).__name__
+    o["LayerContent は ProfileContent の下位"] = issubclass(getattr(mod, "LayerContent", object), getattr(mod, "ProfileContent", ()) or ZeroDivisionError)
     o["diff v1 v2"] = df("v1", "v2", "基盤=1,2", "画面=1,2")
     o["diff v1 v1"] = df("v1", "v1", "画面=1,2")
     o["diff 層が無い"] = df("v1", "v2", "運用=1,2")
@@ -501,14 +522,21 @@ def main() -> int:
         check("無い層と切れた層を一緒に求めると 1（1 が 3 より強い）", o["check 層が無い・切れた層"][0] == 1)
         check("読めない形式の版（1a）は 4（A3）", o["check bad-version"][0] == 4 and "[基盤] 判定できなかった" in o["check bad-version"][1])
         for t in ("bad-wide-digit", "bad-profile-head", "bad-dup-layer", "bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-missing-file", "bad-outside-file",
-                  "bad-layer-utf8", "bad-layer-csv", "bad-profile-utf8"):
+                  "bad-layer-utf8", "bad-layer-csv", "bad-profile-utf8", "bad-version-low", "bad-version-high", "bad-profile-cols", "bad-profile-empty-layer", "bad-profile-csv"):
             check(f"表の形が違う {t} は 4（A8）", o[f"check {t}"][0] == 4)
         content = "LayerContent（Undetermined の下位）"
         for t in ("bad-layer-head", "bad-dup-col", "bad-empty-id", "bad-dup-id", "bad-cols", "bad-layer-utf8", "bad-layer-csv"):
             check(f"層のファイルの中身の欠陥 {t} は LayerContent（Undetermined の下位）を投げる（#1589）: {o[f'read_layer {t}']}", content in o[f"read_layer {t}"])
-        for t in ("bad-wide-digit", "bad-version", "bad-profile-head", "bad-dup-layer", "bad-missing-file", "bad-outside-file", "bad-profile-utf8"):
-            check(f"profile.csv・形式の版・ファイルの当たり先で判定できない {t} は LayerContent にしない（#1589）: {o[f'read_layer {t}']}",
-                  content not in o[f"read_layer {t}"] and "Undetermined（Undetermined の下位）" in o[f"read_layer {t}"])
+        profile_content = "ProfileContent（Undetermined の下位）"
+        for t in ("bad-wide-digit", "bad-version", "bad-profile-head", "bad-dup-layer", "bad-missing-file", "bad-outside-file", "bad-profile-utf8", "bad-version-low",
+                  "bad-profile-cols", "bad-profile-empty-layer", "bad-profile-csv"):
+            check(f"profile.csv の中身・形式の版の読めない形か下限より下・ファイルの当たり先の {t} は ProfileContent で、LayerContent にしない（#1589・#1597）: {o[f'read_layer {t}']}",
+                  content not in o[f"read_layer {t}"] and profile_content in o[f"read_layer {t}"])
+        check(f"形式の版が上限と同じ bad-version-high は素の Undetermined（ProfileContent にしない。#1597）: {o['read_layer bad-version-high']}",
+              "Undetermined（Undetermined の下位）" in o["read_layer bad-version-high"] and profile_content not in o["read_layer bad-version-high"])
+        check("LayerContent は ProfileContent の下位（#1597）", o["LayerContent は ProfileContent の下位"] is True)
+        for label in ("タグが無い", "profile.csv がその時点に無い", "profile の名前の形"):
+            check(f"{label} は素の Undetermined（ProfileContent にしない。#1597）: {o[f'不在 {label}']}", o[f"不在 {label}"] == "Undetermined")
         check("画面の層の後ろの列が違っても、層ごとに読める・改行入りの値も読む（A6）",
               o.get("read_layer の画面の行", {}).get("S-2", {}).get("高さ") == "2\n00"
               and o.get("read_layer の画面のファイル") == [f"{PROFILE}/screens/a.csv", f"{PROFILE}/screens/b.csv"]

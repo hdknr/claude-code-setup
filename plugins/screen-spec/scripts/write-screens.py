@@ -62,11 +62,13 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
   基盤の profile が無い・画面の層が無い・`重ねる先` が空なら `未設定`・外部の profile なしで、書くものと出力は基盤の profile を見る前と同じ
 - 引数を省いた `init` で基盤の profile から初期値を決められなければ、今の初期値に落とさずに 4 で止める（何も書かない）。
   名指した画面の層は `load_external` で確かめ（形式の版・層の行）、設定の値が `外部の profile` の行に写せない形（`リポジトリ` に `/` が無い・profile とタグに空白）なら決められないとする——`hint` も同じ確かめを通った値だけを初期値として出す
-- `hint` と引数を省いた `init` は、基盤の profile が名指す画面の層の行が決まりに合わない（`check-screens.py` の `LayerRule`——#1571・#1581 の止め方と、層のファイルの中身の欠陥（ID が 2 行・列の数など。#1589）を含む）とき、
+- `hint` と引数を省いた `init` は、基盤の profile が名指す画面の層の行が決まりに合わない（`check-screens.py` の `LayerRule`——#1571・#1581 の止め方と、層のファイルの中身の欠陥（ID が 2 行・列の数など。#1589）と、
+  層の `ファイル` の当たり先・形式の版が読めない形か下限より下（spec-loop の `ProfileContent`。#1597）を含む）とき・基盤の profile の `profile.csv` の中身が決まりに合わない（同じ層が 2 行・見出し・UTF-8 など。`ProfileContent`。#1597）とき、
   「明示して渡す」とだけ案内しない——同じ外部の profile を `--external` で明示しても止まることと、外部の profile を直してタグを付け、基盤の profile の設定のタグをそれにするか、`--profile <重ねる先> --external なし` を渡すことを出す（#1582。
   外部の profile はタグの時点で読むので、直しても設定のタグが同じなら止まったまま）。
   タグを変える道には、`shared/` の変更なので 2 つの承認を取り直すことと、`shared/` を触らずに直したタグを `--profile <重ねる先> --external "<リポジトリ> <名前> <新しいタグ>"` で明示する道を添える（#1590）。
-  読めないとき（設定の形・clone・タグ・形式の版・`重ねる先`・行に写せない形）は今までどおり「読めない（…）」と出す
+  `profile.csv` の中身の欠陥では `重ねる先` が読めないので、案内の `--profile` は `<画面の profile>` と書く。
+  読めないとき（設定の形・clone・タグ・`profile.csv` がその時点に無い・形式の版が上限と同じか上・`重ねる先`・行に写せない形）は今までどおり「読めない（…）」と出す
 - `init` が外部の profile を書くときは、`check-screens.py` と同じ読み方（`load_external`）で読み、足す列を見出し行の profile の列の後ろに宣言の順で入れる（読めなければ 4）
 - platform-spec のファイルを読み込まない（基盤の profile の設定の項目名は写し、値は spec-loop の `external-profile.py` が読む）
 
@@ -152,16 +154,20 @@ class Broken(Exception):
     """重ね合わせが決まりに反する（1）。"""
 
 
+PROFILE_UNKNOWN = "<画面の profile>"  # `profile.csv` が読めず `重ねる先` が決まらないときの案内（#1597）
+
+
 class LayerBroken(checks.Stop):
-    """基盤の profile が名指す画面の層が、行の決まりに合わない（4。`check-screens.py` の `LayerRule`。#1582）。
+    """基盤の profile が名指す画面の層が、行の決まりに合わない（4。`check-screens.py` の `LayerRule`。#1582）——基盤の profile の `profile.csv` の中身が決まりに合わないのも（spec-loop の `ProfileContent`。#1597）。
 
     同じ外部の profile を `--external` で明示して渡しても止まるので、「明示して渡す」とだけ案内すると行き止まりになる。
     `reason` は止めた理由、`advice` は進める案内（外部の profile を直してタグを付け、設定のタグをそれにする——`shared/` の変更なので承認を取り直す——か、
     `shared/` を触らずに直したタグを `--profile <重ねる先> --external "<リポジトリ> <名前> <新しいタグ>"` で明示するか、`--profile <重ねる先> --external なし`。#1590）。
     """
 
-    def __init__(self, reason: str, profile: str, repo: str, name: str) -> None:
+    def __init__(self, reason: str, profile: str, repo: str, name: str, what: str = "画面の層が決まりに合わない") -> None:
         self.reason = reason
+        self.what = what  # hint の言い方——`profile.csv` の欠陥（#1597）では画面の層と言わない
         self.advice = (f"外部の profile を直してタグを付け、{PLATFORM_SETTINGS} の タグ をそれにする"
                        f"（shared/ の変更なので 2 つの承認を取り直し、基盤の層もそのタグの時点で読むことになる）か、"
                        f"shared/ を触らずに直したタグを --profile {profile} --external \"{repo} {name} <新しいタグ>\" で明示するか、"
@@ -334,7 +340,7 @@ def hint(docs: Docs) -> int:
     try:
         profile, external, note = base_initial(docs)
     except LayerBroken as e:
-        print(f"基盤の profile: 画面の層が決まりに合わない（{e.reason}）——init の引数を省いても、"
+        print(f"基盤の profile: {e.what}（{e.reason}）——init の引数を省いても、"
               f"同じ外部の profile を --external で明示して渡しても止まる（{e.advice}）")
         return 0
     except checks.Stop as e:
@@ -377,6 +383,7 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
 
     名指し = 基盤の profile のタグの時点の `profile.csv` の層 `画面` の `重ねる先`。基盤の profile が無い・画面の層が無い・`重ねる先` が空なら (`未設定`, None, …)。
     決められない（設定の形・spec-loop の `external-profile.py` が無い・clone・タグ・`profile.csv`・このプラグインに無い `重ねる先`）なら Stop。
+    `profile.csv` の中身の欠陥（spec-loop の `ProfileContent`）と画面の層の行の決まり（`LayerRule`）は、明示しても止まるので LayerBroken（#1582・#1597）。
     """
     setting = platform_settings(docs)
     if setting is None:
@@ -394,6 +401,8 @@ def base_initial(docs: Docs) -> tuple[str, tuple[str, str, str] | None, str]:
         clone, _ = ext.find_clone(repo, project=docs.docs.resolve().parent)
         commit = ext.resolve_tag(clone, tag)
         layers = ext.read_profile(clone, commit, name)
+    except getattr(ext, "ProfileContent", ()) as e:  # profile.csv の中身の欠陥——明示しても止まるので案内を言い分ける（#1597）。重ねる先は読めない
+        raise LayerBroken(f"{label} を読めない: {e}", PROFILE_UNKNOWN, repo, name, "profile.csv が決まりに合わない") from None
     except ext.Undetermined as e:
         raise checks.Stop(f"{label} を読めない: {e}") from None
     except Exception as e:  # noqa: BLE001 — git が無い・パスが読めないなど。今の初期値に落とさない

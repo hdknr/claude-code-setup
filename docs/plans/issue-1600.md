@@ -6,7 +6,7 @@ cruise（親 Issue #1604）の子として回す**不在の周**（`/dev-loop:cr
 マージは親がする（子は PR 側の CI の最終結果を見るところまで）。割り目では訊かずに「このまま続ける」。
 
 - 直す線: 既定（出所: cruise の確かめた線）
-- 版の上げ方: spec-loop を patch で上げる（0.138.1 → 0.138.2。不具合の修正——#1594 と同じ刻み）
+- 版の上げ方: spec-loop を patch で上げる（不具合の修正——#1594 と同じ刻み。周を始めたときは 0.138.1 → 0.138.2、2026-11-28 に main（0.140.0。#1616・#1623）を取り込んで 0.140.1）
 
 ## 変更範囲
 
@@ -63,7 +63,7 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 | 5 | 片付け（`TemporaryDirectory` の削除）の途中に信号が届いても残さない | d | 決めたこと 3 | 試料（`check-formal-rerun.py`） |
 | 6 | 信号を受けない回の判定・終了コード・出力は今までどおり（既存の試料と変異が全部通る） | a・b・c・f・g・h | 変えない | `scripts/test-check-formal-rerun.py`・`scripts/test-check-alloy.py`・`scripts/test-formal-sync.py`・`scripts/test-check-tlc.py`・`scripts/test-formal-statechart.py` |
 | 7 | `main` を同じプロセスで呼んだ後、信号の扱いが元に戻る | h | 決めたこと 3 | 試料（`check-alloy.py` を読み込んで `main` を呼び、前後の `signal.getsignal` を比べる） |
-| 8 | 版が 3 か所（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）で揃い、歯止めが全部通る | — | 0.138.2 | `python3 scripts/check-all.py`・PR 側の CI |
+| 8 | 版が 3 か所（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）で揃い、歯止めが全部通る | — | 0.140.1（main の取り込みで上げ直した） | `python3 scripts/check-all.py`・PR 側の CI |
 | 9 | 両方の関門に受入基準を渡す × 2 パス（4 つの受け渡し。2 パス目が該当なしなら 2 つ） | — | 手順 5・6 | 関門の記録 |
 
 この環境で証明できないもの: なし。

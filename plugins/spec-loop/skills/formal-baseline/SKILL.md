@@ -5,8 +5,8 @@ description: "仕様レビューをせずに、今の仕様から形式検査の
 
 # formal-baseline スキル
 
-<!-- skill-version: 0.138.2 -->
-> **このスキルの版: 0.138.2**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.140.1 -->
+> **このスキルの版: 0.140.1**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -89,6 +89,13 @@ python3 <このスキルの base ディレクトリ>/../../scripts/merge-version
 python3 <このスキルの base ディレクトリ>/../../scripts/formal-baseline.py check docs/v<n>/spec/formal/<対象>
 ```
 
+**どの対象も 0 になったら、`../spec-review/SKILL.md` の「モデルを残す」の 5 のとおりに、報告が名指ししたモデルのディレクトリを全部消す**（#1601。残せなかった・`判定できなかった` の対象の分も。
+`モデルの場所` の欄のディレクトリの絶対パスだけを同梱のスクリプトに渡し（`作っていない` の対象は渡さない）、`rm -rf` を打たない）:
+
+```bash
+python3 <このスキルの base ディレクトリ>/../../scripts/formal-baseline.py cleanup <報告のモデルの場所> [<報告のモデルの場所> …]
+```
+
 **残した対象が 1 つ以上あれば、正本の `spec-review/v<n>.csv` に `結果` が `モデルの保存` の行を 1 行足す**（列は `../../references/spec-exit.md` の「実行の上限と記録」。
 `回` は表の次の番号、`日付` は今日、ほかの列は `-`。表が無ければ見出しの行から作る）。**実行の行ではない**——上限・autopilot の周・指摘の表の `回` には数えない。
 **指摘の表（`v<n>-findings.csv`）には足さない**（同じ節）。
@@ -102,4 +109,5 @@ python3 <このスキルの base ディレクトリ>/../../scripts/formal-baseli
   振り分けと仕様の直しはそこで行う。残したモデルは次の spec-review の Formal Checker に渡る）
 - **反例は無いが Formal Checker が挙げた指摘**——同じく振り分けずに示し、spec-review を回すかは利用者に任せる
 - **外した対象・残せなかった対象**と、足りないもの・用意のしかた
+- **消せなかったモデルのディレクトリ**（上の `cleanup` の `消さなかった:`・`消せなかった:` の行のまま。別の手段で消さない）
 - 記録の表に足した行（`回`）と、変更したファイルの一覧（commit は「守ること」のとおり）
