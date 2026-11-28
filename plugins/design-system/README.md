@@ -1,0 +1,44 @@
+# design-system
+
+デザインシステムを [spec-loop](../spec-loop/README.md) の決め方（Q&A 表・レビュー会・承認・版）で作るプラグインです（設計は [#1613](https://github.com/hdknr/claude-code-setup/issues/1613)、親は [#1609](https://github.com/hdknr/claude-code-setup/issues/1609)）。
+デザインシステムは、組織のシステム構築ガイドの文書のリポジトリの中に置き、そのリポジトリで design-system と spec-loop を使って進めます（ガイドに何を含めるかは任意で、デザインシステムだけのガイドもあります）。表（トークン・部品・部品の仕様・パターン・規則）を検査し、
+使う側（案件の screen-spec・組織の UI プロファイル）が読む生成物と、人間がレビューするドキュメントの頁（ガイドのサイトに差し込む）を作ります。
+
+**デザインシステムと UI プロファイルは別の概念です**——デザインシステムは見た目と振る舞いのルール（技術に依存しない）、UI プロファイルはそれを実装する方式（組織ごとの screen-spec の外部の profile）で、UI プロファイルがデザインシステムを参照します。
+
+design-system は spec-loop の決まりに従い、**spec-loop は design-system に依存しません**。
+
+いまは**設計の原本だけ**です（スクリプト・スキル・判定役はまだありません）。
+
+## 中身
+
+| 場所 | 何があるか |
+| --- | --- |
+| `references/spec-loop.md` | spec-loop との境目——読み込むもの・使う段と使わない段・対応する spec-loop の版・spec-loop の見つけ方・spec-loop に要る口 |
+| `references/tree.md` | ガイドのリポジトリ（世界観と構成要素）の木・設定・5 つの表の列・散文・profile と並べる形 |
+| `references/outputs.md` | 生成物——索引（`spec-profile/<名前>/`）・DTCG のトークン・描画キット・ドキュメントのサイトと、コミットと鮮度・使う側が読む時点 |
+| `references/review.md` | 1 周の形・誰が決めるか・機械の検査・判定役 |
+| `references/handoff.md` | UI プロファイルへの引き渡しの Issue（単位・本文・印） |
+
+## 出所
+
+原本が「記事」と引くのは、デザインシステムの基本をまとめた記事 <https://hdknr.github.io/blogs/posts/2026/11/design-system-basics/> である（親 #1609 の本文が参考に挙げたもの）。
+
+## 子の Issue
+
+設計（#1613）の後に、次の順で入れます。
+
+| 段 | 中身 | Issue |
+| --- | --- | --- |
+| 1 | spec-loop: 5 つの表を行の単位で重ねる登録と、「見た目」の線と、レビュー会の資料の注記とリンクの文（`references/spec-loop.md` の「spec-loop に要る口」の 1・2・4） | #1617 |
+| 2 | design-system: `init` のスキルと書き込み、表の形の確定、機械の検査（`references/tree.md`・`references/review.md` の「機械の検査」）。既存の UI の棚卸しを起こせるかもここで決める（`references/spec-loop.md` の「決めていないこと」） | #1618 |
+| 3 | design-system: 生成物——索引・DTCG のトークン・描画キットと `--check`（`references/outputs.md`）。索引の層 `規則` は #1605、層 `参照` は #1607 が使う側として確定させる | #1619（#1605・#1607 はこの段の後） |
+| 4 | design-system: ドキュメントのサイト | #1611 |
+| 5 | spec-loop: 関門と、正本の根のディレクトリの名前を変える口（`references/spec-loop.md` の「spec-loop に要る口」の 3・5）。名前を変える口は dev-loop の 2 本（正本を探す側）も読む | #1620 |
+| 6 | design-system: レビューのスキルと判定役（`references/review.md` の「判定役」） | #1621 |
+| 7 | design-system: UI プロファイルへの引き渡し（`references/handoff.md`）と、dev-loop が印を読むか | #1622 |
+| 8 | 雛形のリポジトリの原本と公開——雛形はガイドのリポジトリの形（ガイドの文書とデザインシステムを含める。`references/tree.md` の「ガイドのリポジトリ」） | #1610 |
+
+デザインシステム・UI プロファイル・基盤の profile は 1 つのリポジトリに共存させてよく、組織のガイドラインの束として案件に一括で渡せる（`references/tree.md` の「モノレポで共存させる」）。リポジトリはいつも**組織のシステム構築ガイドの文書のリポジトリ**で、ガイドの文書が全体の世界観を説明し、デザインシステム・UI プロファイル・基盤の profile をその構成要素として持つ（`references/tree.md` の「ガイドのリポジトリ」）。人が読む入口はガイドのサイト 1 つで、design-system はそこへ頁を差し込む（`references/outputs.md` の「ドキュメントのサイト」）。design-system を使うには、正本の根の名前を変える spec-loop の口が前提になる（`references/spec-loop.md` の「spec-loop に要る口」の 5）。
+
+使う側（screen-spec）の Issue は #1606（案件がデザインシステムを名指す。束の基盤の profile から初期値を引く形もここ）・#1612（UI プロファイルとの対応）・#1614（UI モックを描画キットで描く）・#1608（版を上げたときの起票の候補）です。

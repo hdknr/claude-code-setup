@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""形式検査のモデルを残す場所を決め（`target`）、残したモデルの形を確かめる（`check`）。
+"""形式検査のモデルを残す場所を決め（`target`）、残したモデルの形を確かめ（`check`）、写し終えた一時のディレクトリを消す（`cleanup`）。
 
 usage:
     python3 formal-baseline.py target [--repo <正本リポジトリ>]
     python3 formal-baseline.py check <docs/v<n>/spec/formal/<対象>>
+    python3 formal-baseline.py cleanup [--repo <正本リポジトリ>] <ディレクトリの絶対パス> [<ディレクトリの絶対パス> …]
 
 **決まりの正は `references/tree.md` の「形式検査のモデル」である**（このプラグインの中にある）。
 下の定数（記録の項目・結果と前回のモデルの値）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-formal-baseline.py` が突き合わせて見る**。
-`formal-baseline` のスキル（#1031）が両方を呼び、`spec-review` の「モデルを残す」も `check` を呼ぶ。
+`formal-baseline` のスキル（#1031）が 3 つとも呼び、`spec-review` の「モデルを残す」も `check` と `cleanup` を呼ぶ。
 
 `target` — **モデルを書いてよい版**を決める:
 
@@ -38,11 +39,22 @@ usage:
   対応のファイル・関数が在るか、コミットが在るかは見ない（正本と実装のリポジトリが別のことがある——dev-loop の `formal-sync.py` が実装のリポジトリで読む）。
 - **ディレクトリの中身は、`README.md` と `モデルのファイル`・`陽性対照のファイル`・`図の対応のファイル`・`状態遷移図のファイル` の一覧だけ**——TLC の `states/`・Alloy の `<名前>/`・出力を落としたファイル・前に残したファイルが在れば違反。
 
+`cleanup` — **Formal Checker が報告したモデルのディレクトリ**（`$TMPDIR` の下で組んで走らせた場所。TLC の `states/` などの作業ファイルが残る）を、
+呼び出し元が `spec/formal/<対象>/` に写し終えてから消す（#1601。いつ呼ぶかは `skills/spec-review/SKILL.md` の「モデルを残す」を正とする）。
+**渡すパスは判定役の報告から来る——信頼できない入力なので、消してよい形かを確かめてから消す**:
+
+- **消すのは、一時ディレクトリ（`tempfile.gettempdir()`——`TMPDIR` を読む——の実体）の下のディレクトリだけ**（一時ディレクトリそのものは消さない）。パスは絶対パスで、それ自体が symlink でないこと
+  （途中の symlink は実体のパスで判定する——一時ディレクトリの中から外を指すリンクを辿った先は「外」）。
+- **リポジトリ（`--repo` の git の根。git でなければ `--repo` そのもの。既定は cwd）と `HOME` について、それを含むもの・その中のものは消さない**——正本と利用者の家を消さない
+  （`TMPDIR` が `HOME` かその祖先を指す環境でも、家の中は消さない）。
+- 当たらないパスは**消さずに名指しする**（`消さなかった: <パス>（理由）`）。消し始めて消し切れなかったものも名指しする（`消せなかった: `）。ほかの渡したパスは消す。
+- **無いパスは `無かった: ` と言って 0 に数える**——消すものが無い（前の回が消した・判定役が作らなかった）。途中が通常のファイルのパスも実在しえないので無いに数える。**在るのに辿れない（親が読めない）パスは無いと言わず、`消せなかった: ` で名指しする。**
+
 終了コード:
 
-- 0: `target` は書く場所を決めた／`check` は形どおり
-- 1: `check` の違反（違反を全部出す）
-- 2: 判定していない——git でない・浅い clone・リモートのタグを訊けない・版が無い・版の決まりに反する・ディレクトリが無い・`README.md` が読めない・想定外の例外
+- 0: `target` は書く場所を決めた／`check` は形どおり／`cleanup` は渡したパスを全部消した（無かったものを含む）
+- 1: `check` の違反（違反を全部出す）／`cleanup` で消さなかった・消せなかったパスがある（全部名指しする）
+- 2: 判定していない——git でない・浅い clone・リモートのタグを訊けない・版が無い・版の決まりに反する・ディレクトリが無い・`README.md` が読めない・`cleanup` にパスを渡していない・想定外の例外
 - 3: `target` で、作業中の版がリリース済み（書かない）
 
 **守ること**:
@@ -63,6 +75,10 @@ usage:
 | `実装の対応`・`対応を確かめたコミット` の片方だけ・`未実装` の食い違い・対応の形の違い・本体が定義しない行為・SHA でないコミットを違反にする（2 行とも無いのは通す。#1178） | dev-loop の周が触れたファイルからモデルを引けない・確かめていないのにコミットだけ進んだ形が残る |
 | `SPECIFICATION` が公平性の外で直に使う定義（`Init`・`Next`）を行為として挙げたら違反にする（#1178 の 2 パス目） | `SPECIFICATION Spec` 形の設定で `Next`・`Init` を対応に挙げて書き直し、検査を弱める |
 | 行為の定義と設定が名指す名前は、注釈（`(* … *)`・`\\*`）を除いてから読む（#1178 の 2 パス目） | 注釈の中だけの定義を本体が定義する行為として通す・設定の注釈に書いた名前で正しい記録を落とす |
+| `cleanup` は一時ディレクトリの実体の下のディレクトリだけを消し、一時ディレクトリそのもの・外（途中の symlink で外を指す先を含む）は消さずに 1（#1601） | 報告のパスの誤りで、一時ディレクトリごと・正本や家のディレクトリを消す |
+| `cleanup` は相対パス・symlink・ディレクトリでないものを消さずに 1 | cwd の取り違えでリポジトリの中を消す・リンクの先を消す |
+| `cleanup` はリポジトリと `HOME` について、含むもの・その中のものを消さずに 1 | 一時ディレクトリの下に置いた正本（試料・clone）や家・家の中を消す（`TMPDIR` が家かその祖先を指す環境） |
+| `cleanup` は消し切れなかったパスを名指しして 1、無いパス（`lstat` が「無い」か「途中がディレクトリでない」と言うもの）だけを 0 に数え、在るのに辿れないパスは名指しして 1 | 消せなかったものを「消した」と言う・前の回が消したもので毎回止まる・辿れないディレクトリを「無かった」と言って残す |
 
 **守らないもの**:
 
@@ -73,6 +89,8 @@ usage:
 | **記録の値が正しいか**（陽性対照が本当に反例を出したか・前提が全部か） | 文面の真偽は機械で決まらない |
 | **`実装の対応` のファイル・関数が在るか、`対応を確かめたコミット` が在るか・本当に確かめたか** | 正本と実装のリポジトリが別のことがあり、このディレクトリからは決まらない（dev-loop の `formal-sync.py` が実装のリポジトリで読む） |
 | **`残した回` が記録の表の行を指しているか** | 記録の表は版ごとに `docs/` の外にあり、このディレクトリからは決まらない |
+| **`cleanup` が、判定役の作った場所のうち `TMPDIR` の外のものを消すこと**（`TMPDIR` の違う環境で走った判定役・macOS の素の `mktemp -d`——`TMPDIR` を読まずに利用者の一時ディレクトリに作る） | 消し過ぎより残すほうに倒し、名指しする。判定役には `$TMPDIR` を含むテンプレートで作らせる（`agents/formal-checker.md`） |
+| **`cleanup` が、渡したディレクトリが判定役の作ったものか** | 一時ディレクトリの下の、ほかの道具の作業中のディレクトリを渡されたら消す。渡すのは報告の `モデルの場所` だけ（spec-review の「モデルを残す」） |
 | **前の版のモデルが重ね合わせた全体に残ること** | 決まりのとおり（前の版のファイルは直さない）。次の回は `モデルのファイル` の一覧だけを使う |
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`target` は `git` が要る）。
@@ -85,8 +103,10 @@ import importlib.util
 import os
 import posixpath
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -431,6 +451,86 @@ def check_sync(directory: Path, records: dict[str, str]) -> list[str]:
     return problems
 
 
+def _contains(outer: Path, inner: Path) -> bool:
+    """`outer` が `inner` と同じか、その祖先（どちらも実体のパス）。"""
+    return outer == inner or outer in inner.parents
+
+
+def _absent(path: Path) -> bool:
+    """パスが無い（`lstat` が `FileNotFoundError`、または途中が通常のファイル——`NotADirectoryError`——で実在しえない）。
+    辿れない（権限など）は無いと言わず `OSError` を投げる（#1601 の 2 パス目・狭いパス）。"""
+    try:
+        os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return True
+    return False
+
+
+def refusal(path: Path, temp: Path, repo_real: Path, home_real: Path) -> str | None:
+    """在る絶対パスを消してはならない理由（消してよければ None）。"""
+    if path.is_symlink():
+        return "symlink である"
+    if not path.is_dir():
+        return "ディレクトリでない"
+    real = Path(os.path.realpath(path))
+    if temp not in real.parents:
+        return f"一時ディレクトリ（{temp}）の下でない" if real != temp else "一時ディレクトリそのものである"
+    if _contains(real, repo_real) or _contains(repo_real, real):
+        return f"リポジトリ（{repo_real}）を含むか、その中にある"
+    if _contains(real, home_real) or _contains(home_real, real):
+        return f"HOME（{home_real}）を含むか、その中にある"
+    return None
+
+
+def cleanup(directories: list[str], repo: Path) -> tuple[int, list[str]]:
+    """Formal Checker が報告したモデルのディレクトリを、消してよい形のものだけ消す（#1601）。"""
+    temp = Path(os.path.realpath(tempfile.gettempdir()))
+    try:
+        top = frozen.git(repo, "rev-parse", "--show-toplevel")
+        root = top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else str(repo)
+    except frozen.Unjudged:  # git を起動できない——渡された場所そのものを守る
+        root = str(repo)
+    repo_real = Path(os.path.realpath(root))
+    home_real = Path(os.path.realpath(Path.home()))
+    code, lines = 0, []
+    for raw in directories:
+        path = Path(raw)
+        reason = None
+        if not path.is_absolute():
+            reason = "絶対パスでない"
+        else:
+            try:
+                absent = _absent(path)
+            except OSError as e:  # 在るかを決められない（親を辿れない）——無かったと言わない
+                code = 1
+                lines.append(f"消せなかった: {raw}（辿れない: {e.strerror or e}）")
+                continue
+            if absent:
+                lines.append(f"無かった: {raw}")
+                continue
+            reason = refusal(path, temp, repo_real, home_real)
+        if reason:
+            code = 1
+            lines.append(f"消さなかった: {raw}（{reason}）")
+            continue
+        try:
+            shutil.rmtree(path)
+        except OSError as e:
+            code = 1
+            lines.append(f"消せなかった: {raw}（{e.strerror or e}）")
+            continue
+        try:
+            gone = _absent(path)
+        except OSError:
+            gone = False
+        if not gone:
+            code = 1
+            lines.append(f"消せなかった: {raw}（消した後も残っている）")
+        else:
+            lines.append(f"消した: {raw}")
+    return code, lines
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     sub = parser.add_subparsers(dest="command")
@@ -438,11 +538,16 @@ def main(argv: list[str]) -> int:
     t.add_argument("--repo", default=".", type=Path)
     c = sub.add_parser("check")
     c.add_argument("directory", type=Path)
+    d = sub.add_parser("cleanup")
+    d.add_argument("--repo", default=".", type=Path)
+    d.add_argument("paths", nargs="+")
     args = parser.parse_args(argv)
     if args.command == "target":
         code, lines = target(args.repo)
     elif args.command == "check":
         code, lines = check(args.directory)
+    elif args.command == "cleanup":
+        code, lines = cleanup(args.paths, args.repo)
     else:
         parser.print_usage(sys.stderr)
         return 2
