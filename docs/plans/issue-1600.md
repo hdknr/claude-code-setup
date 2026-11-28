@@ -79,13 +79,13 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 
 - `check-formal-rerun.py`（16M 状態のモデルを本体に、8 秒後に SIGTERM）: 終了コード 143、`spec-loop-formal-rerun-pnjy2d0_` が残り、cwd がその下の java（TLC）が 1 秒後も居た。
 - `check-alloy.py`（0.5 秒後に SIGTERM）: 終了コード 143、`spec-loop-check-alloy-45rbeyoi` が残り、cwd がその下の java（`alloy.jar exec Broken.als`）が居た。
-- 観測窓: 各 1 回、信号の 0.2〜1 秒後の `ls` と `lsof` の cwd。
+- 観測窓: 各 1 回、信号の 0.2〜1 秒後の `ls` と `lsof` の cwd。手元の `$TMPDIR` にも古い形の `spec-loop-formal-rerun-*` が 4 つ残っていた（2026-11-24・25。出所は確かめていない）。
 
 直した後（2026-11-28、`b80cd0df` の作業ツリー。本物の TLC v1.7.4・Alloy 6.2.0、`TMPDIR` を空の一時ディレクトリにして、記録（`.tool-group`）が書かれてから TLC は 3 秒・Alloy は 0.3 秒後に SIGTERM。run-serial 越し）:
 
-- `check-formal-rerun.py`（2,700 万状態のモデルを本体に）: 信号の前に cwd が一時ディレクトリの下の java が 1 個（陽性対照——走っていた）→ 終了コード 143・記録した検査器のグループは居ない・`$TMPDIR` は空・cwd がその下の java は 0 個。
-- `check-alloy.py`: 同じく信号の前に java 1 個 → 143・グループ無し・空・0 個。
-- 観測窓: 各 1 回、信号の 1 秒後の `killpg(グループ, 0)`・`ls`・`lsof` の cwd。手元の `$TMPDIR` にも古い形の `spec-loop-formal-rerun-*` が 4 つ残っていた（2026-11-24・25。出所は確かめていない）。
+- `check-formal-rerun.py`（2,700 万状態のモデルを本体に）: 信号の前は cwd が一時ディレクトリの下の java が走っていた（陽性対照）→ 終了コード 143・記録した検査器のグループは居ない・`$TMPDIR` は空・cwd がその下の java は居ない。
+- `check-alloy.py`: 同じく信号の前は java が走っていた → 143・グループ無し・空・java は居ない。
+- 観測窓: 各 1 回、信号の 1 秒後の `killpg(グループ, 0)`・`ls`・`lsof` の cwd。
 
 ## 未解決・確認待ち
 
