@@ -87,10 +87,11 @@
 - 2 パス目の指摘対応: CR2-2 だけ（テストだけ）。`4e9e3527`（`check-all.py` 緑）
 - 狭いパス: 起点 `93d3cbec`・終点 `4e9e3527`。Verifier（`dev-loop:dev-loop-verifier`・sonnet）: 報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1597-narrow-1-20261127T104233Z.md`——反証 0 件。独立の変異 7 件のうち 6 件が赤、1 件が素通り（手当ての文を縮め、無関係な行に `<画面の profile>` と「利用者に選ばせる」を置く——同じ行に両方が在るかだけを見るので通る。陽性対照: 手当ての文は実際に消えている）
 - PR: #1623。PR 側の CI: 20 pass・1 skipping（`deploy`）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` が 3）。
+- マージの直前の取り込み（2026-11-28）: 取り込む前の先端 `82a7bd4e`・取り込んだ main `904ebcd9`（#1615・#1616）。git の衝突なし、同じ名前のぶつかりなし（main が足した名前は `formal-baseline.py` とそのテストの中だけ）。版を main の先端から上げ直した——spec-loop `0.139.0` → `0.140.0`（minor）・screen-spec は main が `0.12.4` のままなので `0.12.5`（patch）で据え置き。`ProfileContent` が入る spec-loop の版が `0.140.0` になったので、既知の限界の「0.138 以前」を「0.139 以前」に直した。関門はやり直していない。
 
 ## 既知の限界・決着済みの論点
 
-- screen-spec の対応する spec-loop の版の範囲は変えていないので、`ProfileContent` を持たない spec-loop（0.138 以前）と組むと、ここで言い分けた欠陥は今までどおり「読めない——明示して渡す」と出る（#1589 の `LayerContent` と同じ扱い）。
+- screen-spec の対応する spec-loop の版の範囲は変えていないので、`ProfileContent` を持たない spec-loop（0.139 以前）と組むと、ここで言い分けた欠陥は今までどおり「読めない——明示して渡す」と出る（#1589 の `LayerContent` と同じ扱い）。
 - `profile.csv` がその時点に無い（profile の名前かタグが違う）のは、設定か `--external` の名前・タグを変えれば進む余地があるので `Undetermined` のまま（Issue の範囲の外）。
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
