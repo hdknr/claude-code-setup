@@ -67,6 +67,33 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 | 2 | 引数が違う |
 | 4 | 判定できなかった——`CLAUDE.md` を読めない、同じ宣言が 2 行以上、外す宣言の値が `しない` でない、呼び方が空 |
 
+## 一時ディレクトリと信号の部品（#1600）
+
+`check-formal-rerun.py`・`check-alloy.py` が読み込んで使う（**ここが原本**。`formal-statechart.py` は #1594 の同じ形の写しを自前で持つ）。
+検査器を一時ディレクトリで走らせるスクリプトが、止められても `$TMPDIR` に一時ディレクトリと検査器（java）を残さないための部品である。このスクリプトの CLI（`probe`）は使わない。
+
+- **名前**: `owned_dir(<頭>)` は `<頭><pid>-<乱字 8 文字>` の一時ディレクトリを作る（`tempfile.TemporaryDirectory`。抜けたら消す）。
+- **信号**: `catch_signals(current_signals() の値)` は SIGTERM・SIGINT・SIGHUP を例外 `Interrupted`（`BaseException` の子——途中の `except Exception` に呑ませず、`with` の片付けまで上げる）にする。
+  **親が無視にした信号は無視のまま**（`nohup` の SIGHUP・`&` の SIGINT）。1 回目を受けたら全部を無視にする（片付けの途中で止めない）。`restore_signals()` で入れる前に戻す。
+  入れるのは呼ぶ側の `try` の中で（入れた直後の信号を `try` の外で上げない）。`restore_signals` は戻す途中の信号を待たせ、戻した後の扱いで受ける。
+  **`restore_signals` の入口（待たせる前）に届いた 1 回目は `Interrupted` として呼ぶ側の `finally` から上がる**——呼ぶ側はもう 1 つ外の `try` で受け、片付けて `restore_signals` を呼び直す（1 回目の後は全部を無視にしているので、呼び直しは止まらない）。
+  止められたことを言う 1 行は `say` で書く——標準エラーが書けなくても（SIGHUP の後の閉じた端末）128+信号の終了コードを変えない。
+  例外が `run_model` の待ちの中で起きれば、`run_model` が検査器のプロセスグループを止めてから上げる（時間切れの枝で止める前に届いた信号でも、`finally` で止める）。`run_model` は起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせ、検査器には待たせた分を引き継がない。
+- **消し直し**: `sweep(<頭>)` は自分の pid の `<頭><pid>-*` を消す——片付け（`TemporaryDirectory` の削除）の途中に届いた信号で、削除が途切れていることがある。
+- **回収**: `reclaim(<頭>)` は、名前が `<頭><pid>-<乱字 8 文字>` の形どおりで、その pid のプロセスが居ないもの（SIGKILL で片付けが走らなかった残り）を消す。
+  その中に `record_group` で記録した検査器のプロセスグループ（`GROUP_FILE`）がまだ居れば・記録が読めなければ、消さずに返す（`reclaim_lines` が言う行を作る）。
+
+| 守ること | 破る形 |
+| --- | --- |
+| 回収は、名前が形どおり（pid は先頭が 0 でない半角の 10 進・乱字は英小文字・数字・`_` のちょうど 8 文字・後ろに余分が無い）で、持ち主の pid が居ないものだけ | 並行する実行の作業中のディレクトリ・ほかの頭のもの・pid の無い古い名前・手で作った名前を消す |
+| 持ち主が居るか分からない（権限）pid は居るほうに倒す | 別の利用者の実行のディレクトリを消す |
+| 記録した検査器のグループがまだ居れば・記録が読めなければ（権限・ASCII でない・数字でない・0 以下）消さない | 走り続ける検査器の書くファイルを見えなくして「消した」と言う |
+| 親が無視にした信号は無視のまま、ほかは `Interrupted` にし、1 回目の後は全部を無視する | `nohup` で起こした実行が端末を閉じただけで止まる・片付けの途中の 2 回目で止まる |
+| `restore_signals` で入れる前の扱いに戻し、戻す途中の信号は戻した後の扱いで受ける | 同じプロセスで呼んだ後も、信号が例外のまま残る・戻す途中の信号が捕まえられずに 1 で終わる |
+| `run_model` は、起こしてから止められる所に入るまで（`Popen` の中を含む）信号を待たせ、検査器には待たせた分を引き継がない | 起こした直後に届いた信号で、検査器を止めずに抜ける・検査器が SIGTERM を受けられない |
+| `run_model` は、時間切れ・例外の枝の途中に届いた信号でも、抜ける前に検査器のプロセスグループを止める | 時間切れの直後（止める前）に届いた信号で、検査器を止めずに抜ける |
+| `say` は、標準エラーが書けなくても例外を上げず、終わるときの書き出しも失敗させない | SIGHUP の後に端末が閉じていると、128+信号ではなく 120 で終わる |
+
 ## 何を守り、何を守らないか
 
 守る:
@@ -102,6 +129,7 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 import argparse
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -193,26 +221,34 @@ def after_key(line, key):
 def run_model(call, workdir, name, timeout, started=None):
     """呼び方でモデル 1 つを検査させる。(終了コード or None（時間切れ・起動できない）, 出力)。
     `started` があれば、起こした直後にそのプロセス（別のセッションのリーダー。pid がプロセスグループの番号）を渡して呼ぶ。"""
+    # 起こしてから止められる所（下の try）に入るまで——Popen の中を含む——に届いた信号を待たせる（#1600）。子には待たせた分を引き継がない
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
     try:
         proc = subprocess.Popen(["/bin/sh", "-c", f"{call} {name}.tla"], cwd=workdir, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, errors="replace",
-                                start_new_session=True)
-    except OSError as e:
-        return None, f"起動できない: {e}"
+                                start_new_session=True, preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask))
+    except BaseException as e:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+        if isinstance(e, OSError):
+            return None, f"起動できない: {e}"
+        raise
     try:
         if started is not None:
             started(proc)
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # 待たせた信号はここで届き、下の枝で検査器を止める
         out, _ = proc.communicate(timeout=timeout)
         return proc.returncode, out
     except subprocess.TimeoutExpired:
         with_group(proc, signal.SIGKILL)
         out, _ = proc.communicate()
         return None, (out or "") + f"\n（{timeout} 秒で時間切れ）"
-    except BaseException:
-        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C）でも、別のセッションで起こした TLC を置き去りにしない（#1594）
-        with_group(proc, signal.SIGKILL)
-        proc.wait()
-        raise
+    finally:
+        # 待っている間の例外（信号を例外にした呼び出し元の formal-statechart.py・Ctrl-C。#1594）でも、時間切れの枝で止める前に届いた信号（#1600 の 2 パス目）でも、
+        # 別のセッションで起こした TLC を置き去りにしない——枝の中で上がった例外は兄弟の except に入らないので、finally で止める
+        if proc.returncode is None:
+            with_group(proc, signal.SIGKILL)
+            proc.wait()
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)  # started が上げた例外の枝でも解く
 
 
 def with_group(proc, sig):
@@ -220,6 +256,150 @@ def with_group(proc, sig):
         os.killpg(proc.pid, sig)
     except (ProcessLookupError, PermissionError):
         pass
+
+
+# 一時ディレクトリと信号の部品（#1600。docstring の「一時ディレクトリと信号の部品」が原本）
+SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+# 一時ディレクトリに書く、いま走らせている検査器のプロセスグループの番号（SIGKILL の後も検査器は別のセッションで走り続ける）
+GROUP_FILE = ".tool-group"
+UNREADABLE = -1  # 記録を読み出せない——プロセスグループの番号にはならない値
+
+
+class Interrupted(BaseException):
+    """信号で止められた。`Exception` の子にしない——途中の `except Exception` に呑ませず、`with` の片付けまで上げる。"""
+
+    def __init__(self, signum):
+        super().__init__(signum)
+        self.signum = signum
+
+
+def _on_signal(signum, frame):
+    for sig in SIGNALS:  # 2 回目は無視する——片付けの途中で止めない
+        signal.signal(sig, signal.SIG_IGN)
+    raise Interrupted(signum)
+
+
+def current_signals():
+    """いまの扱い（`catch_signals` と `restore_signals` に渡す）。入れる前に取り、入れるのは呼ぶ側の try の中で——入れた直後の信号を try の外で上げない。"""
+    return {sig: signal.getsignal(sig) for sig in SIGNALS}
+
+
+def catch_signals(saved):
+    """SIGTERM・SIGINT・SIGHUP を `Interrupted` にする（`saved` で親が無視にしていたものは無視のまま）。"""
+    for sig, old in saved.items():
+        if old is not signal.SIG_IGN:  # 親が無視にしたもの（`nohup` の SIGHUP・`&` の SIGINT）は無視のまま
+            signal.signal(sig, _on_signal)
+
+
+def restore_signals(saved):
+    # 戻す途中に届いた信号は待たせ、戻した後の扱いで受ける——1 つ目を戻した後の 2 つ目で `Interrupted` を try の外に上げない
+    mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
+    try:
+        for sig, old in saved.items():
+            signal.signal(sig, signal.SIG_DFL if old is None else old)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+
+
+def say(message):
+    """信号で止められたことを標準エラーに 1 行言う。書けなくても（SIGHUP の後の閉じた端末・読み手の居ない管）終了コードを変えない。"""
+    try:
+        print(message, file=sys.stderr, flush=True)
+    except OSError:
+        sys.stderr = None  # 終わるときの書き出しでも失敗させない——失敗すると Python は 120 で終わる
+
+
+def owned_pattern(prefix):
+    # この版が作る形だけを丸ごと（pid は先頭が 0 でない 10 進、乱字は `tempfile` の英小文字・数字・`_` のちょうど 8 文字）。`\d`・前方だけの一致は作っていない名前まで消す
+    return re.compile(re.escape(prefix) + r"([1-9][0-9]*)-[a-z0-9_]{8}")
+
+
+def owned_dir(prefix):
+    """`<頭><pid>-<乱字 8 文字>` の一時ディレクトリ（抜けたら消す）。"""
+    return tempfile.TemporaryDirectory(prefix=f"{prefix}{os.getpid()}-")
+
+
+def record_group(directory):
+    """`run_model` の `started` に渡す——起こした検査器のプロセスグループを一時ディレクトリに書く。"""
+    return lambda proc: (Path(directory) / GROUP_FILE).write_text(str(proc.pid), encoding="utf-8")
+
+
+def sweep(prefix):
+    """自分の pid の `<頭><pid>-*` を消す（片付けの途中に届いた信号で、削除が途切れていることがある）。"""
+    for path in Path(tempfile.gettempdir()).glob(f"{prefix}{os.getpid()}-*"):
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def alive(pid):
+    """そのプロセスが居るか。分からない（権限・範囲の外）は居るほうに倒す。"""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        return True
+    return True
+
+
+def running_group(path):
+    """そのディレクトリに書いた検査器のプロセスグループが、まだ居ればその番号。記録が無ければ None、読めなければ `UNREADABLE`。"""
+    try:
+        raw = (path / GROUP_FILE).read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError:  # 権限などで読めない
+        return UNREADABLE
+    try:
+        group = int(raw.decode("ascii").strip())
+    except ValueError:  # ASCII でない（UnicodeDecodeError も ValueError）・数字でない
+        return UNREADABLE
+    if group < 1:  # 0 は自分のグループ、負は別の意味の宛先——グループの番号ではない
+        return UNREADABLE
+    try:
+        os.killpg(group, 0)
+    except PermissionError:  # 別の利用者のグループが居る
+        return group
+    except (OSError, OverflowError):
+        return None
+    return group
+
+
+def reclaim(prefix, base=None):
+    """持ち主の pid が居ない `<頭><pid>-…` を消す（SIGKILL の残り）。(消したディレクトリ, 消さなかった (ディレクトリ, グループ))。"""
+    base = Path(tempfile.gettempdir()) if base is None else Path(base)
+    owned = owned_pattern(prefix)
+    gone, kept = [], []
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return gone, kept
+    for path in entries:
+        found = owned.fullmatch(path.name)
+        if not found or path.is_symlink() or not path.is_dir():
+            continue
+        if int(found.group(1)) == os.getpid() or alive(int(found.group(1))):
+            continue
+        group = running_group(path)
+        if group is not None:  # 持ち主が SIGKILL されても検査器は走り続け、ここに書いている——消しても空かず見えなくなるだけなので、消さずに言う
+            kept.append((path, group))
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists():
+            gone.append(path)
+    return gone, kept
+
+
+def reclaim_lines(gone, kept):
+    """回収の結果を言う行（標準エラーに出す）。"""
+    lines = [f"持ち主の居ない一時ディレクトリを消した: {path}" for path in gone]
+    for path, group in kept:
+        if group == UNREADABLE:
+            lines.append(f"持ち主の居ない一時ディレクトリだが、検査器のプロセスグループの記録（{GROUP_FILE}）が読めない（権限か、書かない中身）ので消していない: {path}"
+                         f"（検査器が走っていないことを確かめてから手で消す）")
+        else:
+            lines.append(f"持ち主の居ない一時ディレクトリだが、検査器（プロセスグループ {group}）がまだ書いているので消していない: {path}"
+                         f"（止めるなら kill -9 -{group}。止めた後の起動が消す）")
+    return lines
 
 
 def probe(call, timeout=None):

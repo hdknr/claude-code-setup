@@ -6,6 +6,9 @@ usage:
 
 **読むだけ**——正本リポジトリに書かない。モデルは一時ディレクトリへ写して走らせ、終わったら消す（TLC の `states/` を正本に残さない）。
 **走らせる 1 回ごとに別の一時ディレクトリへ写す**（#1346。下の「何を走らせるか」）。
+**止められても片付ける**（#1600）——SIGTERM・SIGINT・SIGHUP を受けたら TLC のプロセスグループを止め、一時ディレクトリを消して 128+信号の番号で終わる。
+一時ディレクトリの名前は `spec-loop-formal-rerun-<pid>-<乱字 8 文字>` で、起動時に持ち主の居ない残り（SIGKILL で片付けが走らなかったもの）を回収する。
+信号と回収の決まり（親が無視にした信号・回収する名前の形・TLC が走り続けているとき）は同梱の `check-tlc.py` の「一時ディレクトリと信号の部品」を正とする（読み込んで使う——写さない）。
 
 **決まりの正は `references/tree.md` の「形式検査のモデル」（記録の項目）と `references/spec-exit.md` の条件 4 である**（このプラグインの中にある）。
 記録（`README.md`）の読み方は同梱の `formal-baseline.py` の `read_records`、TLC の呼び方の読み方・走らせ方・判定の文字列は同梱の
@@ -50,6 +53,7 @@ usage:
 | 1 | どれかが `反例あり`（条件 4 を満たさない） |
 | 2 | 引数が違う・想定外の例外 |
 | 4 | `反例あり` は無いが、どれかが `判定できなかった` |
+| 128+信号の番号 | SIGTERM（143）・SIGINT（130）・SIGHUP（129）で止められた——判定していない。TLC を止め、一時ディレクトリを消した（#1600） |
 
 ## 何を守り、何を守らないか
 
@@ -68,6 +72,12 @@ usage:
 | 1 回の検査を `--timeout` 秒で止める（プロセスグループごと） | 大きいモデルで待ち続ける |
 | 走らせたモデルごとに状態数と経過時間を出し、状態数が読めなければそう言う（#1339） | 時間切れのとき、状態数が多すぎたのか遅いだけなのかが出力から分からない・読めない回に数を作る（知らない桁区切りの数の最後の 3 桁を数と読む） |
 | 状態数が読めなくても判定と終了コードを変えない | 診断の材料が無いことで、通るモデルを「判定できなかった」にする |
+| SIGTERM・SIGINT・SIGHUP で、TLC のプロセスグループを止め、一時ディレクトリを消して 128+信号で終わる（親が無視にした信号は無視のまま。#1600） | 止められた実行が `$TMPDIR` に一時ディレクトリと java を残す |
+| 片付けの途中に届いた信号の後も、自分の pid の一時ディレクトリを消し直す | 削除が途切れたディレクトリが残る |
+| 信号の扱いを戻す入口に届いた信号でも、128+信号で終わる（#1600 の 2 パス目） | `finally` から上がる `Interrupted` がトレースバックの 1（反例あり）になる |
+| 止められたことを言う 1 行が書けなくても（SIGHUP の後の閉じた端末）、128+信号で終わる | 120 で終わる |
+| 起動時に、持ち主の居ない `spec-loop-formal-rerun-<pid>-<乱字 8 文字>` を回収し、TLC がまだ走っていれば・記録が読めなければ消さずに言う | SIGKILL の残りが溜まり続ける・走り続ける TLC の書くファイルを見えなくする |
+| TLC のプロセスグループを一時ディレクトリに記録する（`rerun` を読み込んだ `formal-sync.py` の回も） | SIGKILL の後に走り続ける TLC のディレクトリを、次の起動が消して「消した」と言う |
 
 守らない:
 
@@ -79,6 +89,9 @@ usage:
 | **状態数の行の形の違い** | `distinct states found` の形は TLC 2.19 で確かめた（#1339。手元で英語・ドイツ語・フランス語のロケールで走らせた）。ほかの版・ほかの区切りで形が違えば「読めなかった」になるだけで、判定は変わらない |
 | **呼び方の安全** | 正本の `CLAUDE.md` の文字列をそのまま `sh` で走らせる（`check-tlc.py` と同じ） |
 | **前の版の残りのファイル** | 一覧のファイルだけを写す（`tree.md` の「次の回が使うのは一覧のファイルだけ」） |
+| **pid の無い古い名前の一時ディレクトリ**（`spec-loop-formal-rerun-<乱字>`。#1600 より前の版の残り） | 持ち主が分からないので回収しない。手で消す |
+| **SIGKILL の直後のディスク** | 片付けは走らず、TLC は別のセッションで走り続ける。次の起動は TLC が走っている間は消さずにプロセスグループの番号を言う。TLC を止めるのは人 |
+| **`rerun` を読み込んで呼ぶ側（dev-loop の `formal-sync.py`）の信号** | 信号を例外にするのはこのスクリプトの `main` だけ。読み込んだ側が止められたときの片付けは、その側の扱い（TLC のグループの記録は残るので、次のこのスクリプトの起動が回収する） |
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う。
 """
@@ -89,6 +102,7 @@ import argparse
 import importlib.util
 import re
 import shutil
+import signal
 import sys
 import tempfile
 import time
@@ -114,6 +128,8 @@ VIOLATED = (tlc.BROKEN_MARK, "were violated", "Deadlock reached")
 # 刈った先の状態が消えるので、時相の性質の「反例なし」は根拠にならない（`agents/formal-checker.md` の「検査が重いとき」）
 PRUNED_LIVENESS = "Declaring state or action constraints during liveness checking is dangerous"
 TIMEOUT = 600
+# 一時ディレクトリの名前の頭（後ろに持ち主の pid。#1600）
+PREFIX = "spec-loop-formal-rerun-"
 PASS, COUNTEREXAMPLE, UNKNOWN = "満たす", "反例あり", "判定できなかった"
 EXIT_OK, EXIT_COUNTEREXAMPLE, EXIT_USAGE, EXIT_UNKNOWN = 0, 1, 2, 4
 # TLC 2.19 の状態数の行（`<n> states generated, <m> distinct states found, <k> states left on queue.`。区切りなし）と、
@@ -143,11 +159,11 @@ def measure(out: str, seconds: float) -> str:
     return f"（{count}・{seconds:.1f} 秒）"
 
 
-def timed(call: str, where: str, name: str, timeout: int) -> tuple[int | None, str, str]:
-    """`tlc.run_model` を走らせ、(終了コード, 出力, 重さの注記)。"""
-    started = time.monotonic()
-    rc, out = tlc.run_model(call, where, name, timeout)
-    return rc, out, measure(out, time.monotonic() - started)
+def timed(call: str, where: str, name: str, timeout: int, started=None) -> tuple[int | None, str, str]:
+    """`tlc.run_model` を走らせ、(終了コード, 出力, 重さの注記)。`started` は `tlc.run_model` に渡す（TLC のプロセスグループの記録）。"""
+    begun = time.monotonic()
+    rc, out = tlc.run_model(call, where, name, timeout, started=started)
+    return rc, out, measure(out, time.monotonic() - begun)
 
 
 def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[str]]:
@@ -177,7 +193,8 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
         if "/" in name or name in (baseline.README, ".", "..") or source.is_symlink() or not source.is_file():
             return UNKNOWN, [f"{directory}: 一覧のファイル「{name}」がこのディレクトリの通常のファイルとして無い"]
     lines: list[str] = []
-    with tempfile.TemporaryDirectory(prefix="spec-loop-formal-rerun-") as tmp:
+    with tlc.owned_dir(PREFIX) as tmp:  # 名前に持ち主の pid を入れる——SIGKILL の残りを次の起動が回収する（#1600）
+        group = tlc.record_group(tmp)  # SIGKILL の後も走り続ける TLC を、回収が消さずに言えるように
 
         def fresh() -> str:
             """一覧のファイルを写した、空の新しい作業ディレクトリ。"""
@@ -190,7 +207,7 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
 
         verdict = PASS
         for name in bodies:
-            rc, out, weight = timed(call, fresh(), name, timeout)
+            rc, out, weight = timed(call, fresh(), name, timeout, group)
             if violated(out):
                 lines.append(f"{directory}: 本体 {name}.tla で反例が出た{weight}: {tlc.tail(out)}")
                 verdict = COUNTEREXAMPLE
@@ -206,7 +223,7 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
             else:
                 lines.append(f"{directory}: 本体 {name}.tla: 反例なし{weight}")
         for name in broken:
-            rc, out, weight = timed(call, fresh(), name, timeout)
+            rc, out, weight = timed(call, fresh(), name, timeout, group)
             if violated(out):
                 lines.append(f"{directory}: 陽性対照 {name}.tla: 反例が出た（空振りでない）{weight}")
             else:
@@ -214,6 +231,12 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
                 if verdict == PASS:
                     verdict = UNKNOWN
     return verdict, lines
+
+
+def stopped(stop) -> int:
+    tlc.sweep(PREFIX)  # 片付けの途中に届いた信号で、削除が途切れていることがある（信号はもう無視している）
+    tlc.say(f"判定していない: 信号 {signal.Signals(stop.signum).name} で止められた（TLC を止め、一時ディレクトリを消した）")
+    return 128 + stop.signum
 
 
 def main(argv: list[str]) -> int:
@@ -234,13 +257,27 @@ def main(argv: list[str]) -> int:
         call, note = None, str(e)
     if call is None:
         print(f"注記: {note}")
+    for line in tlc.reclaim_lines(*tlc.reclaim(PREFIX)):
+        print(line, file=sys.stderr)
     verdicts = []
-    for directory in args.targets:
-        verdict, lines = rerun(call, directory, int(args.timeout))
-        verdicts.append(verdict)
-        for line in lines:
-            print(line)
-        print(f"{directory}: {verdict}")
+    saved = tlc.current_signals()
+    try:
+        try:
+            tlc.catch_signals(saved)
+            for directory in args.targets:
+                verdict, lines = rerun(call, directory, int(args.timeout))
+                verdicts.append(verdict)
+                for line in lines:
+                    print(line)
+                print(f"{directory}: {verdict}")
+        except tlc.Interrupted as stop:
+            return stopped(stop)
+        finally:
+            tlc.restore_signals(saved)
+    except tlc.Interrupted as stop:  # 信号の扱いを戻す入口（待たせる前）に届いた 1 回目（`check-tlc.py` の部品。以後は無視なので、ここでは止まらない）
+        code = stopped(stop)
+        tlc.restore_signals(saved)
+        return code
     if COUNTEREXAMPLE in verdicts:
         print(f"条件 4 を満たさない（反例あり {verdicts.count(COUNTEREXAMPLE)} 件）")
         return EXIT_COUNTEREXAMPLE
