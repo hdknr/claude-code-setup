@@ -265,7 +265,7 @@ def gone(pid: int) -> bool:
             return True
         time.sleep(0.05)
     with contextlib.suppress(ProcessLookupError):
-        os.killpg(pid, signal.SIGKILL)  # 偽の Alloy を置き去りにしない
+        os.killpg(os.getpgid(pid), signal.SIGKILL)  # 偽の Alloy を置き去りにしない
     return False
 
 
@@ -409,7 +409,7 @@ def signals(script: Path, work: Path, tools: dict) -> dict:
         first = subprocess.run([sys.executable, "-I", str(script), str(root)], capture_output=True, text=True, env=env, cwd=work, timeout=120)
         kept = len(left()) == 1 and "まだ書いている" in first.stderr
         with contextlib.suppress(ProcessLookupError):
-            os.killpg(pid, signal.SIGKILL)
+            os.killpg(os.getpgid(pid), signal.SIGKILL)  # 偽物の pid はグループの番号とは限らない——Linux の sh（dash）は `sh -c` の最後のコマンドを exec しないことがある（PR #1627 の CI）
         stopped = gone(pid)
         subprocess.run([sys.executable, "-I", str(script), str(root)], capture_output=True, text=True, env=env, cwd=work, timeout=120)
         o["SIGKILL の後に Alloy が走っている"] = (kept, stopped, left())

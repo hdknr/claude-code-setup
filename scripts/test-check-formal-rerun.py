@@ -533,7 +533,7 @@ def killed_problems(script: Path, work: Path, fake: Path, fakebin: Path) -> list
             problems.append(f"TLC が走っている間に消した・そう言わない（残り {left}）: {out[-300:]!r}")
     finally:
         try:
-            os.killpg(pid, signal.SIGKILL)
+            os.killpg(os.getpgid(pid), signal.SIGKILL)  # 偽物の pid はグループの番号とは限らない——Linux の sh（dash）は `sh -c` の最後のコマンドを exec しないことがある（PR #1627 の CI）
         except ProcessLookupError:
             pass
     if not gone(pid):
