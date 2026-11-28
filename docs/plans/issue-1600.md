@@ -79,7 +79,13 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 
 - `check-formal-rerun.py`（16M 状態のモデルを本体に、8 秒後に SIGTERM）: 終了コード 143、`spec-loop-formal-rerun-pnjy2d0_` が残り、cwd がその下の java（TLC）が 1 秒後も居た。
 - `check-alloy.py`（0.5 秒後に SIGTERM）: 終了コード 143、`spec-loop-check-alloy-45rbeyoi` が残り、cwd がその下の java（`alloy.jar exec Broken.als`）が居た。
-- 観測窓: 各 1 回、信号の 0.2〜1 秒後の `ls` と `lsof` の cwd。手元の `$TMPDIR` にも古い形の `spec-loop-formal-rerun-*` が 4 つ残っていた（2026-11-24・25。出所は確かめていない）。
+- 観測窓: 各 1 回、信号の 0.2〜1 秒後の `ls` と `lsof` の cwd。
+
+直した後（2026-11-28、`b80cd0df` の作業ツリー。本物の TLC v1.7.4・Alloy 6.2.0、`TMPDIR` を空の一時ディレクトリにして、記録（`.tool-group`）が書かれてから TLC は 3 秒・Alloy は 0.3 秒後に SIGTERM。run-serial 越し）:
+
+- `check-formal-rerun.py`（2,700 万状態のモデルを本体に）: 信号の前に cwd が一時ディレクトリの下の java が 1 個（陽性対照——走っていた）→ 終了コード 143・記録した検査器のグループは居ない・`$TMPDIR` は空・cwd がその下の java は 0 個。
+- `check-alloy.py`: 同じく信号の前に java 1 個 → 143・グループ無し・空・0 個。
+- 観測窓: 各 1 回、信号の 1 秒後の `killpg(グループ, 0)`・`ls`・`lsof` の cwd。手元の `$TMPDIR` にも古い形の `spec-loop-formal-rerun-*` が 4 つ残っていた（2026-11-24・25。出所は確かめていない）。
 
 ## 未解決・確認待ち
 
@@ -100,7 +106,10 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 - 再開（2026-11-28、cruise の子として前のセッションの再開点から。`EnterWorktree` は呼ばず worktree を cwd にした）。肯定的な確認: ブランチ `issue/1600-tempdir-signal-cleanup`・HEAD `f3cea7f8`
 - Verifier 2 パス目（当て直し。dev-loop:dev-loop-verifier・sonnet）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1600-verifier-2-20261128T021432Z.md`。反証 1 件（V2-R1）。終点 `f3cea7f8`
 - /code-review 2 パス目: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1600-code-review-2-20261128T022032Z.md`。指摘 6 件（important 3・nit 3）。終点 `f3cea7f8`
-- 2 パス目の指摘対応（狭いパス）の起点: この行を書いたコミット（指摘対応を始める直前の HEAD。コミットの後に SHA を下に書く）
+- 2 パス目の指摘対応（狭いパス）の起点: `7369b977e01ec4462ad48f71be79c2e53ca8c764`（指摘対応を始める直前の HEAD。上の行を書いたコミット）
+- Verifier 2 パス目のもう 1 つの報告: 前のセッション（2026-11-27）が起こした Verifier 2 パス目の報告 `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/79aa671c-cc1b-41b2-8987-813115883552/scratchpad/gate-1600-verifier-2-20261127T102547Z.md`（終わりの印つき）が残っていた——再開点に書かれていなかった遅れた票として採る。反証 1 件（V2-old-1）。採否の表に載せた
+- 2 パス目の指摘対応: `b80cd0df985d4956de82e84b0533ad270cb5e4e8`（直す 4 行: V2-R1・CR2-1・CR2-2 の示せた部分・CR2-3）。関連のテスト 5 本（`test-check-formal-rerun.py`〔信号と回収の試料 18・変異 35〕・`test-check-alloy.py`・`test-formal-statechart.py`・`test-check-tlc.py`・`test-formal-sync.py`）は run-serial 越しで緑。`check-all.py`（run-serial 越し）: 59 本を回し失敗 1——`check-version-bump.py` が「spec-loop: version が 0.140.0 -> 0.138.2 に下がっている」（main が先に spec-loop を 0.140.0 に上げた。PR の前に main を取り込んで上げ直す）
+- 狭いパス: 起点 `7369b977e01ec4462ad48f71be79c2e53ca8c764` → 終点 `b80cd0df985d4956de82e84b0533ad270cb5e4e8`。報告のファイル（下に書き足す）
 - 1 回目の `check-all.py` は `( … ) &` で起こしたので SIGINT が無視の状態で走り、既存の `test-formal-statechart.py` の「信号: SIGINT」が落ちた（交絡。前景で回すと緑、`run_in_background` では SIGINT は既定のまま——実測）。2 回目は `run_in_background` で回して緑
 - 交絡を潰した手順: 陽性対照は base の木をリポジトリの外に取り出して走らせた（新しい実装と同じ試料・同じ手順で比べる）
 
@@ -126,6 +135,8 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 | CR1-4: `check-alloy.py` の `__main__` に想定外の例外を 2 にする枝が無く、`.tool-group` が書けないとトレースバックで 1 | 示せない（実験していない） | 無し | 残課題 |
 | CR1-5: 持ち主の pid が再使用されている間は回収されないことが、部品の節の守らないに無い | 示せない（文面の欠け） | 無し | 残課題 |
 
+- 2 パス目の指摘対応で足した試料: 「信号: 戻す入口」「信号: 時間切れの枝」「信号: 書けない標準エラー」（両スクリプト）。「信号: 片付けの途中に 2 回」は「3 回」に変えた——外の try が 2 回目を受けて片付け直すので、2 回では「1 回目の後に信号を無視しない」変異を赤にできなくなった（3 回目が外の try の片付けに届く）。
+  変異: `check-tlc.py` の「待っている間の例外・時間切れの枝で止める前の信号で検査器を止めない」（`except BaseException` の枝を `finally` に寄せたので 1 つにまとめた）・「書けない標準エラーで例外を上げる」・「書けない標準エラーで終わるときの書き出しを失敗させる」、`check-formal-rerun.py` の「戻す入口の信号を受けない」、`check-alloy.py` の「待っている間の例外・時間切れの枝の途中の信号で Alloy を止めない」・「戻す入口の信号を受けない」・「書けない標準エラーで終了コードを変える」。
 - 1 パス目の指摘対応のコミット: 下の「関門の進捗」。直した 3 行（V1-観察1・CR1-1・CR1-2）には試料を足した（「信号: 入れる途中」「信号: 起こした直後（Popen の中）」「信号: 戻す途中」と、検査器が待たされたまま起きないことの観測）と変異（`check-tlc.py` の 3 件・`check-formal-rerun.py` の 1 件・`check-alloy.py` の 2 件）。
 
 ### 2 パス目の指摘と採否（直す線: 既定）
@@ -139,6 +150,7 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 | CR2-4: `.tool-group` を書く前（`Popen` と `record_group` の間）の SIGKILL で、走っている検査器のディレクトリを次の起動が消す | 示せない（コードの読解） | 無し（示せない） | 残課題 |
 | CR2-5: 受入基準 1 の「本物の TLC・Alloy でも SIGTERM を 1 回ずつ」の直した後の結果が計画ファイルに無い | 計画ファイルの記録の欠け（成果物ではない） | 無し | 計画ファイルに記録する（2 パス目の指摘対応の後の木で本物の TLC・Alloy に当てて、下の「陽性対照」の節に足す） |
 | CR2-6: 受入基準 7 の試料は `signal.getsignal` しか比べず、待たせ方を戻さない形を赤にしない | 示せない（変異を当てていない） | 無し | 残課題 |
+| V2-old-1（前のセッションの Verifier 2 パス目）: `run_model` の `Popen` が `OSError` の枝と末尾の `finally` の待たせ方の解除を外す変異が、試料で赤にならない（今のコードは正しい） | 示せない（成果物の失敗ではなく、試料の欠け。Verifier も「修正が要る欠陥ではない」） | 無し | 残課題 |
 
 ### 決着済み
 
