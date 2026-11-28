@@ -124,6 +124,8 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 - 2 パス目の指摘対応（狭いパス）の起点: `46d85a59b51baa60a036b230763b6541af737f05`（指摘対応を始める直前の HEAD）
 - 2 パス目の指摘対応: `0cbc474b03a37deb45a670ce5fdc27bbaf31032b`（直す 2 行: CR2-2・CR2-4）。`test-check-tlc.py`: 緑
 - 狭いパス: 起点 `46d85a59b51baa60a036b230763b6541af737f05` → 終点 `0cbc474b03a37deb45a670ce5fdc27bbaf31032b`（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-narrow-1-20261128T075215Z.md`
+- 狭いパス: 反証 1 件（N1）。終点 `0cbc474b`
+- 狭いパスの N1 を直した（cruise の線 `マージ前の判断 = 推奨で決めて起票（後退・未達を含む）`——受入基準 3 を破る指摘は推奨の前にまず直して 1 回だけ当て直す）: `ac01f429d3e6a8327aceb01b6d38e3feae6cded6`。当て直しの Verifier: 起点 `0cbc474b03a37deb45a670ce5fdc27bbaf31032b` → 終点 `ac01f429d3e6a8327aceb01b6d38e3feae6cded6`。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-redo-1-20261128T075619Z.md`
 
 ```dev-loop-gates
 周の base: 627822c40e7c256da6c7c7916418e0b1e3ce36ee
@@ -131,6 +133,12 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 ```
 
 ## 既知の限界・決着済みの論点
+
+### 狭いパスの指摘と振り分け（cruise の線 `マージ前の判断 = 推奨で決めて起票（後退・未達を含む）`）
+
+| 指摘 | 実物で失敗を示せるか | 振り分け | 後退を示すか | 推奨と理由 |
+| --- | --- | --- | --- | --- |
+| N1: `formal-checker.md` の `-dumpTrace` が使えないときの写し先（63 行）と報告の `トレース` の列（189 行）が、どの回の出力から写すかを名指さない——最初の複数ワーカーの回の揺れる経路を写す読み方が残る | 示せる——文面（63・189 行。62 行の「取り直せなければ書かない」とも食い違う） | 直す（受入基準 3 を破る） | 示す——この周が回を 2 つにしたので生まれた読み方 | 直してからマージする——文面の 2 か所を「取り直した回の出力」と名指す。直して当て直し 1 回 |
 
 ### 2 パス目の指摘と採否（直す線: 既定）
 
