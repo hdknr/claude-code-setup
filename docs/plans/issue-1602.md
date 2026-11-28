@@ -126,9 +126,25 @@ TLC を走らせる入口: (a) `check-formal-rerun.py` の CLI（本体・陽性
 - 狭いパス: 起点 `46d85a59b51baa60a036b230763b6541af737f05` → 終点 `0cbc474b03a37deb45a670ce5fdc27bbaf31032b`（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-narrow-1-20261128T075215Z.md`
 - 狭いパス: 反証 1 件（N1）。終点 `0cbc474b`
 - 狭いパスの N1 を直した（cruise の線 `マージ前の判断 = 推奨で決めて起票（後退・未達を含む）`——受入基準 3 を破る指摘は推奨の前にまず直して 1 回だけ当て直す）: `ac01f429d3e6a8327aceb01b6d38e3feae6cded6`。当て直しの Verifier: 起点 `0cbc474b03a37deb45a670ce5fdc27bbaf31032b` → 終点 `ac01f429d3e6a8327aceb01b6d38e3feae6cded6`。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1602-redo-1-20261128T075619Z.md`
+- 当て直しの Verifier: 反証 0 件（観察 1 件——`-simulate` の反例を網羅の検査で確かめる回のワーカーの数が文面で決まらない。記録だけ）。終点 `ac01f429`
 
 ```dev-loop-gates
 周の base: 627822c40e7c256da6c7c7916418e0b1e3ce36ee
+関門: Verifier 1 1191dc34d9ce89fd6afbe94a5a795ef9569b0618 反証=1
+関門: /code-review 1 1191dc34d9ce89fd6afbe94a5a795ef9569b0618 指摘=7
+関門: Verifier 2 46d85a59b51baa60a036b230763b6541af737f05 反証=0
+関門: /code-review 2 46d85a59b51baa60a036b230763b6541af737f05 指摘=6
+関門: 狭いパス 46d85a59b51baa60a036b230763b6541af737f05 0cbc474b03a37deb45a670ce5fdc27bbaf31032b 反証=1
+関門: 当て直し 0cbc474b03a37deb45a670ce5fdc27bbaf31032b ac01f429d3e6a8327aceb01b6d38e3feae6cded6 反証=0
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+受入基準: 5 満たす
+受入基準: 6 満たす
+受入基準: 7 満たす
+受入基準: 8 満たす
+受入基準: 9 満たす
 マージの反映: ドキュメントとプラグインの配布
 ```
 
