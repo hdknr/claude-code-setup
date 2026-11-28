@@ -185,6 +185,21 @@ def unsure_files() -> dict[str, str]:
     return files
 
 
+def same_name_child_files() -> dict[str, str]:
+    # 親と同じ名前の子（`meta` と `meta.meta`）は別の入力——1 つにまとめない
+    files = tables(screen("S-001", "top") + screen("S-002", "form", "F-002"), item("I-101", "S-002", "meta"))
+    files[f"v1/{IR}"] = ir(feature("F-002", "op_mejirushi_save", {"meta": {"type": "object", "properties": {"meta": field(), "note": field()}}}))
+    return files
+
+
+def full_path_files() -> dict[str, str]:
+    # 項目名がパス全体（`rows[].qty`）でだけ当たる（末尾の名前 `qty` とは違う文字列）
+    files = tables(screen("S-001", "top") + screen("S-002", "form", "F-002"), item("I-101", "S-002", "rows[].qty"))
+    files[f"v1/{IR}"] = ir(feature("F-002", "op_mejirushi_save",
+                                   {"rows": {"type": "array", "items": {"type": "object", "properties": {"qty": field("integer")}}}}))
+    return files
+
+
 def array_array_files() -> dict[str, str]:
     files = tables(screen("S-001", "top") + screen("S-002", "form", "F-002"), item("I-101", "S-002", "m"))
     files[f"v1/{IR}"] = ir(feature("F-002", "op_mejirushi_save", {"m": {"type": "array", "items": {"type": "array", "items": field("integer")}}}))
@@ -220,7 +235,10 @@ CASES = [
      ["引けない 5（機能が空 1・機能が中間表現に無い 1・入力を持つ入口が無い 1・入口が 1 つに決まらない 1・対応の CSV の入口が中間表現に無い 1）",
       "引けない 6（画面の入口が決まらない 5・当たるフィールドが無い 0・当たるフィールドが 2 つ以上 0・画面が表に無い 1）",
       "画面の表に無い画面: 入力 1", "照らした入口 0"], []),
-    ("many-fields", many_files(), None, [], 0, ["当たるフィールドが 2 つ以上 1"], []),
+    ("many-fields", many_files(), None, [], 0,
+     ["当たるフィールドが 2 つ以上 1", "どの項目からも指されない 0・指されない（引けない項目のある入口） 2"], []),
+    ("same-name-child", same_name_child_files(), None, [], 0, ["当たるフィールドが 2 つ以上 1", "一致 0"], []),
+    ("full-path-name", full_path_files(), None, [], 0, ["一致 1・食い違い 0", "当たるフィールドが無い 0"], []),
     ("nested", nested_files(), NESTED_MAP, [], 0,
      ["一致 4・食い違い 1", "照らした入口 1・葉 6 — どの項目からも指されない 1・指されない（引けない項目のある入口） 0・システムが埋めると宣言 0・パスの変数 0"], []),
     ("nested-detail", nested_files(), NESTED_MAP, ["--detail"], 0,
@@ -383,6 +401,8 @@ def doc_problems(module, text: str) -> list[str]:
             out.append(f"「{heading}」の表が本体と違う（{doc_table(text, heading)} と {values}）")
     if f"見出し行は `{','.join(module.MAP_COLUMNS)}`" not in text:
         out.append("対応の CSV の見出し行が原本に無い")
+    if f"`{module.KIND_OUTSIDE}`" not in text:
+        out.append("種別が決まりの外 の書き方が原本に無い")
     if f"`{module.NOT_SAVED}`" not in text:
         out.append("保存しない の書き方が原本に無い")
     codes = re.search(r"^## 終了コード\n(.*?)(?=^## |\Z)", text, re.M | re.S)
@@ -416,7 +436,10 @@ MUTATIONS = [
     ("保存しないだけの画面の入口を逆向きに照らす", "                counts[SAVED_NOT] += 1\n", "                counts[SAVED_NOT] += 1\n                saving.add(sid)\n", "not-saved-only"),
     ("引けない項目のある入口を分けない", "                elif oid in unsure:\n", "                elif False:\n", "name-unsure"),
     ("種別のセルをそのまま出す", 'row["種別"] if row["種別"] in screens_check.SCREEN_KINDS else KIND_OUTSIDE', 'row["種別"]', "kind-outside"),
-    ("下のパスも名前の当たりに残す", "                hits = [h for h in hits if not any(o != h and covers(o, h) for o in hits)]", "                pass", "name-array-array"),
+    ("下のパスも名前の当たりに残す", '                hits = [h for h in hits if not any(o != h and h.rstrip("[]") == o for o in hits)]', "                pass", "name-array-array"),
+    ("親の下のパスを全部名前の当たりから外す", 'not any(o != h and h.rstrip("[]") == o for o in hits)', "not any(o != h and covers(o, h) for o in hits)", "same-name-child"),
+    ("2 つ以上の当たりの入口を unsure にしない", "                    unresolved(MANY_FIELDS)\n                    unsure.add(oid)\n", "                    unresolved(MANY_FIELDS)\n", "many-fields"),
+    ("パス全体では名前を引かない", 'if p == row["項目名"] or last_name(p)', "if last_name(p)", "full-path-name"),
     ("隣の spec-loop が無くても探さずに進む", "        spec_loop = screens_check.find_spec_loop(named, docs)\n", "        spec_loop = Path(named) if named else HERE.parent.parent / 'spec-loop'\n", "stop-no-spec-loop"),
     ("既定の出力に画面ID を出す", 'label = f"画面 {order[sid]}', 'label = f"画面 {sid}', "positive-8"),
     ("宣言したパスが入力に在るかを見ない", "                elif value not in self.paths[target]:\n", "                elif False:\n", "bad-map-system"),
@@ -451,6 +474,8 @@ def main() -> int:
             failures.append(f"原本との突き合わせ: {problem}")
         broken = text.replace("| `当たるフィールドが無い` |", "| `当たるフィールドが見つからない` |", 1)
         check("原本との突き合わせ: 原本を崩すと落ちる（陽性対照）", broken != text and bool(doc_problems(module, broken)))
+        broken_kind = text.replace("`種別が決まりの外`", "`種別が表の外`")
+        check("原本との突き合わせ: 種別の書き方を崩すと落ちる（陽性対照）", broken_kind != text and bool(doc_problems(module, broken_kind)))
 
         # 変異
         check("変異の数が「守ること」の行の数以上", len(MUTATIONS) >= keep_lines(source),
