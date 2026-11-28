@@ -111,6 +111,7 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 - 2 パス目の指摘対応: `b80cd0df985d4956de82e84b0533ad270cb5e4e8`（直す 4 行: V2-R1・CR2-1・CR2-2 の示せた部分・CR2-3）。関連のテスト 5 本（`test-check-formal-rerun.py`〔信号と回収の試料 18・変異 35〕・`test-check-alloy.py`・`test-formal-statechart.py`・`test-check-tlc.py`・`test-formal-sync.py`）は run-serial 越しで緑。`check-all.py`（run-serial 越し）: 59 本を回し失敗 1——`check-version-bump.py` が「spec-loop: version が 0.140.0 -> 0.138.2 に下がっている」（main が先に spec-loop を 0.140.0 に上げた。PR の前に main を取り込んで上げ直す）
 - 狭いパス: 起点 `7369b977e01ec4462ad48f71be79c2e53ca8c764` → 終点 `b80cd0df985d4956de82e84b0533ad270cb5e4e8`（dev-loop:dev-loop-verifier・sonnet）。報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1600-narrow-1-20261128T035025Z.md`。反証 3 件（N1〜N3。どれも試料の穴か、実際の利用でまず起きない形——下の振り分け）。周の中では直さない（直すに入った行が無い）
 - PR #1627 を出した（先端 `5f96d211`）。PR 側の CI で 2 ジョブが落ちた——`test-check-formal-rerun.py` の「SIGKILL の後に TLC が走っている」が「偽の TLC を止められない（試料を組めない）」、`test-check-alloy.py` の「SIGKILL の後に Alloy が走っている…」が FAIL（Linux の CI だけ。手元の macOS は緑）。どちらも試料が偽の検査器の pid をそのままプロセスグループとして `killpg` している。推定の原因: Linux の `/bin/sh`（dash）が `sh -c "<偽物> <モデル>"` を exec しないと、偽物の pid はグループの番号（`sh` の pid）でなく、`killpg` が ESRCH で黙って外れる（macOS の `/bin/sh` は bash で exec するので一致する）。**手元では再現していない**——直した後の PR 側の CI の緑で確かめる。受入基準 8（PR 側の CI）の直しとして、試料が `os.getpgid(pid)` のグループを止めるように直し、その差分だけに当て直しの Verifier を 1 回当てる。当て直しの起点: `5f96d211eab476f53da9e609275ded4977968f74`
+- CI の直し: `ccbcdd17a6beb44904ccea75083632f6845627b7`（2 本のテストを手元で緑）。当て直しの Verifier（sonnet。`5f96d211..ccbcdd17`）: 報告のファイル `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/9ca242d9-1e14-4e59-880c-ea52c4e9c7a3/scratchpad/gate-1600-redo-1-20261128T051741Z.md`。反証 0 件——偽の Alloy を「ラッパーが子として起こす」形（exec しない sh と同じく偽物の pid ≠ グループの番号）にした外の複製で、旧い試料は「止められず残り 1」、直した試料は緑（陽性対照つき）。本体は exec しない形でもグループのリーダーを記録して消さなかった
 - main の取り込み（2026-11-28、PR を出す前）: `9eb9708b`（origin/main `03d4c260`——#1615・#1616・#1623）。衝突は版の行だけ（spec-loop の 9 ファイル）で、版を 0.140.1 にした。同じ名前を足す並行の周の種類（番号・名前空間・生成物）でぶつかりは無い——main の `0c824eac..03d4c260` はこの周の触るファイル（`check-tlc.py`・`check-alloy.py`・`check-formal-rerun.py` と 3 つのテスト）に触れず、一時ディレクトリの頭・`.tool-group`・`say`・`stopped` を足していない。`git diff origin/main` はこの周の変更と版の行だけ
 - 1 回目の `check-all.py` は `( … ) &` で起こしたので SIGINT が無視の状態で走り、既存の `test-formal-statechart.py` の「信号: SIGINT」が落ちた（交絡。前景で回すと緑、`run_in_background` では SIGINT は既定のまま——実測）。2 回目は `run_in_background` で回して緑
 - 交絡を潰した手順: 陽性対照は base の木をリポジトリの外に取り出して走らせた（新しい実装と同じ試料・同じ手順で比べる）
@@ -122,6 +123,7 @@ main へのマージでプラグイン（spec-loop）の配布と GitHub Pages �
 関門: Verifier 2 f3cea7f8555c510969719a576a1765549efb5945 反証=1
 関門: /code-review 2 f3cea7f8555c510969719a576a1765549efb5945 指摘=6
 関門: 狭いパス 7369b977e01ec4462ad48f71be79c2e53ca8c764 b80cd0df985d4956de82e84b0533ad270cb5e4e8 反証=3
+関門: 当て直し 5f96d211eab476f53da9e609275ded4977968f74 ccbcdd17a6beb44904ccea75083632f6845627b7 反証=0
 受入基準: 1 満たす
 受入基準: 2 満たす
 受入基準: 3 満たす
